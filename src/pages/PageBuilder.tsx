@@ -73,7 +73,8 @@ function readBuilderState(): PersistedBuilderState {
  * `page-preview-engine.ts`) is shared between the two pages.
  */
 export default function PageBuilder() {
-  useDocumentTitle("Page Builder");
+  const [previewTitle, setPreviewTitle] = useState("");
+  useDocumentTitle(previewTitle ? `${previewTitle} - Page builder` : "Page builder");
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
 
@@ -391,6 +392,7 @@ export default function PageBuilder() {
         onNavigate={setPathname}
         onSave={() => void openSavePreview()}
         onVeiClick={handleVeiClick}
+        onTitleChange={setPreviewTitle}
         codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
         contentRevision={contentRevision}
         veiOverrides={veiOverrides}
@@ -430,6 +432,8 @@ export default function PageBuilder() {
           onReset={() => reset(match.entryPath)}
           onClose={() => setPanelMode(null)}
           onWidthChange={setCodePanelWidth}
+          layoutPaths={match.layoutPaths}
+          onOpenLayout={setFileDialogPath}
         />
       )}
 
@@ -449,6 +453,10 @@ export default function PageBuilder() {
           assetHrefs={assetHrefs}
           origin={origin}
           adminPath={path}
+          previewPathname={pathname}
+          previewEntryPath={match?.entryPath ?? null}
+          previewLayoutPaths={match?.layoutPaths ?? []}
+          previewParams={match?.params ?? {}}
         />
       )}
 

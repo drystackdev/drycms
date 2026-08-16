@@ -36,6 +36,7 @@ export interface PreviewFrameProps {
   onNavigate: (pathname: string) => void;
   onSave: () => void;
   onVeiClick: (ref: PreviewVeiClickRef) => void;
+  onTitleChange: (title: string) => void;
   codePanelWidth: number;
   /** Changes only after a successful VEI content save, forcing a fresh
    * `dry()` render even though no page-source code changed. */
@@ -52,6 +53,11 @@ export default function PreviewFrame(props: PreviewFrameProps) {
 
   const syncVeiMode = () => {
     iframeRef.current?.contentWindow?.postMessage({ type: PREVIEW_VEI_MODE_MESSAGE, enabled: props.veiEnabled }, "*");
+  };
+
+  const handleLoad = () => {
+    syncVeiMode();
+    props.onTitleChange(iframeRef.current?.contentDocument?.title.trim() ?? "");
   };
 
   useEffect(syncVeiMode, [props.veiEnabled]);
@@ -137,7 +143,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
         class="page-builder-preview-frame"
         title="Page preview"
         aria-busy={loading}
-        onLoad={syncVeiMode}
+        onLoad={handleLoad}
         style={{ width: "100%", height: "100%", border: "0", display: match ? "block" : "none" }}
       />
     </div>

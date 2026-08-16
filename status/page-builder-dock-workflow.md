@@ -24,6 +24,12 @@
 - Complete: VEI string boxing is idempotent, preventing read-only character-index assignments during route changes.
 - Complete: an already-open repeatable-item dialog resyncs when the entry's IndexedDB draft finishes hydrating after reload.
 - Complete: reverting the final field in Save Preview discards the draft and immediately clears its VEI override, row, Preview action, and badge count.
+- Complete: route layouts are listed below the code panel; layout/component dialogs share responsive xs-xl preview, zoom/Fit controls, and header-only actions.
+- Complete: browser title follows the rendered page title as `<Page title> - Page builder`.
+- Complete: layout/component dialog mirrors code-page-editor with a realtime draggable preview/code split and a compact preview-local viewport/zoom toolbar.
+- Complete: the code-panel layout footer renders its root-to-leaf chain as chevron-separated breadcrumbs.
+- Complete: removed the preview panel's duplicate border beside the dialog resize handle.
+- Complete: dialog preview scrolling uses the app's OverlayScrollbars theme while sharing its viewport with Fit measurement.
 
 # Speed
 

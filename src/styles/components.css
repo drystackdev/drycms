@@ -7735,10 +7735,41 @@
       min-height: 0;
     }
 
+    .page-builder-code-panel-layouts {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      min-height: 2.75rem;
+      padding: 0.375rem 0.75rem;
+      overflow-x: auto;
+      border-top: 1px solid var(--dry-border);
+      background: var(--dry-popover);
+
+      & button {
+        flex: none;
+        max-width: 15rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .page-builder-code-panel-layout-crumb {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      flex: none;
+
+      & > svg {
+        width: 0.875rem;
+        height: 0.875rem;
+        color: var(--dry-muted-foreground);
+      }
+    }
+
     /* `FileDialog.tsx` - component/style/md files, 1 or 2 columns. */
     .page-builder-file-dialog[open] {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr);
       height: min(48rem, calc(100dvh - 2rem));
       max-height: calc(100dvh - 2rem);
       box-sizing: border-box;
@@ -7750,26 +7781,40 @@
       }
     }
 
+    .page-builder-file-dialog-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .page-builder-file-dialog-title {
+      max-width: 16rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .page-builder-file-dialog-body {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 1rem;
+      display: flex;
       min-height: 0;
       overflow: hidden;
 
       &.split {
-        grid-template-columns: 23.4375rem minmax(0, 1fr);
+        gap: 0;
       }
     }
 
     .page-builder-file-dialog-editor {
       min-width: 0;
       min-height: 0;
+      flex: 1;
       overflow: hidden;
     }
 
     .page-builder-file-dialog-preview {
       display: flex;
+      flex: none;
       flex-direction: column;
       min-width: 0;
       min-height: 0;
@@ -7777,11 +7822,45 @@
       border-radius: var(--dry-radius-md);
       overflow: hidden;
 
-      & > iframe {
-        width: 23.4375rem !important;
-        max-width: 100%;
-        margin-inline: auto;
+    }
+
+    .page-builder-file-dialog-body.split .page-builder-file-dialog-preview {
+      border-right: 0;
+      border-radius: var(--dry-radius-md) 0 0 var(--dry-radius-md);
+    }
+
+    .page-builder-file-dialog-preview-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      min-height: 2.75rem;
+      padding: 0.375rem 0.5rem;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--dry-border);
+      background: var(--dry-popover);
+
+      & > * {
+        flex: none;
       }
+    }
+
+    .page-builder-file-dialog-preview-error {
+      margin: 0.5rem;
+    }
+
+    .page-builder-file-dialog-preview-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .page-builder-file-dialog-preview-scroll-viewport {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      padding: 0.5rem;
+      overflow: auto;
     }
 
     .page-builder-save-dialog-body {

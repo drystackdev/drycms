@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import Editer from "../../../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../../../components/Editer/types.js";
 import { useResizablePanel } from "../../../lib/useResizablePanel.js";
+import { ArrowRightIcon } from "../../../components/icons/index.js";
 
 const PANEL_WIDTH = { initial: 480, min: 320, max: 900 };
 const DIAGNOSTICS_HEIGHT = { initial: 160, min: 80, max: 360 };
@@ -17,6 +18,8 @@ export interface CodePanelProps {
   onReset: () => void;
   onClose: () => void;
   onWidthChange: (width: number) => void;
+  layoutPaths: string[];
+  onOpenLayout: (path: string) => void;
 }
 
 /**
@@ -110,6 +113,17 @@ export default function CodePanel(props: CodePanelProps) {
             <p class="hint" style={{ padding: "0.5rem" }}>No problems detected.</p>
           )
         )}
+      </div>
+      <div class="page-builder-code-panel-layouts">
+        <span class="hint">Layouts</span>
+        {props.layoutPaths.length > 0 ? props.layoutPaths.map((layoutPath) => (
+          <span class="page-builder-code-panel-layout-crumb" key={layoutPath}>
+            <ArrowRightIcon />
+            <button type="button" class="ghost sm" title={`Edit ${layoutPath}`} onClick={() => props.onOpenLayout(layoutPath)}>
+              {layoutPath}
+            </button>
+          </span>
+        )) : <span class="hint">No layout</span>}
       </div>
     </div>
   );
