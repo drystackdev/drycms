@@ -15,6 +15,7 @@
 - Follow-up: restored preview hydration under the opaque sandbox by mapping unsaved modules to `data:` URLs and allowing CORS from serialized origin `null` only on public JS/built assets. The sandbox still has no `allow-same-origin`.
 - Follow-up 2: `ThemeToggle.tsx` still threw on `localStorage.setItem()` inside the opaque frame. Preview documents now receive isolated, in-memory Storage-compatible `localStorage`/`sessionStorage` shims; no admin storage is exposed. Dev server restarted with the new Vite headers.
 - Follow-up 3: Vite's CORS middleware overwrote the static header on transformed and 304 `/src/**` module responses. `server.cors.origin` is now explicitly `null`; verified both 200 and conditional 304 responses, plus every module URL reported by the browser console.
+- DevTools performance: detached previews no longer load their own `/@vite/client` (the parent Page Builder already owns rebuilding/HMR), and preview data-module URLs use compact base64 instead of percent-escaped source.
 
 # Speed
 

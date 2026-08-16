@@ -143,6 +143,16 @@ export interface BuildPreviewSrcdocResult {
   blobUrls: string[];
 }
 
+function previewModuleDataUrl(source: string): string {
+  const bytes = new TextEncoder().encode(source);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  // Base64 is materially smaller than encodeURIComponent for ordinary JS
+  // source and keeps DevTools from tokenizing a percent-escaped module URL
+  // several times larger than the module itself.
+  return `data:text/javascript;base64,${btoa(binary)}`;
+}
+
 /**
  * `buildPage()` + everything `PageEditor.tsx`'s `refreshPreview` used to do
  * by hand to turn the result into a droppable `iframe.srcdoc` string:
@@ -163,7 +173,7 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
     // URL created here belongs to the admin parent origin and cannot be
     // imported there; a data-module URL is self-contained and retains the
     // exact unsaved source without granting the frame `allow-same-origin`.
-    const moduleUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(asset.source)}`;
+    const moduleUrl = previewModuleDataUrl(asset.source);
     const realUrl = builtAssetUrlForJsPath(input.buildInput.builtAssetsBaseUrl, asset.jsPath);
     importMap.imports[realUrl] = moduleUrl;
     // Vite dev's import-analysis pass appends `?import` to every dynamic
@@ -174,7 +184,14 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
     importMap.imports[`${realUrl}?import`] = moduleUrl;
   }
 
-  const withoutVei = result.html.replace(`<script type="module" src="${input.veiOverlayHref}"></script>`, "");
+  const withoutVei = result.html
+    .replace(`<script type="module" src="${input.veiOverlayHref}"></script>`, "")
+    // `buildDocument()` adds Vite's HMR client whenever its own build runs in
+    // dev. A detached srcdoc preview is already rebuilt by Page Builder and
+    // must not become a second Vite app: the extra client duplicates the WS,
+    // module tracking and error overlay for every preview frame, which is
+    // especially expensive while DevTools is instrumenting all contexts.
+    .replace('<script type="module" src="/@vite/client"></script>', "");
 
   const veiStyle = input.veiEnabled ? `<style>${VEI_PREVIEW_MARKER_CSS}</style>` : "";
   const headExtras =
