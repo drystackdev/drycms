@@ -52,7 +52,7 @@ const VEI_PREVIEW_MARKER_CSS = `
 html.dry-vei-enabled [data-dry],
 html.dry-vei-enabled [data-dry-src],
 html.dry-vei-enabled [data-dry-html] {
-  outline: 1px dashed color-mix(in srgb, #919eab 60%, transparent);
+  outline: 2px dashed color-mix(in srgb, #919eab 60%, transparent);
   cursor: pointer;
 }
 .dry-vei-preview-highlight {

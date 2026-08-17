@@ -34,7 +34,10 @@ export interface FileDialogProps {
    * and `@component/*` imports show as unresolved - warnings Page Editor's
    * own Editer never has, since it always wires this same set up. */
   extraFiles: Record<string, string>;
+  /** Has changes that have not been built and published yet. */
   dirty: boolean;
+  /** See `CodePanelProps.canDiscard`. */
+  canDiscard: boolean;
   saving: boolean;
   onChange: (code: string) => void;
   /** A debounced write is in flight - shows "Saving…" instead of "Saved". */
@@ -142,7 +145,7 @@ export default function FileDialog(props: FileDialogProps) {
         {/* See `CodePanel.tsx` - editing writes itself through, so there is
             nothing for a Save button to do here either. */}
         <span class="hint">{props.autosaving ? "Saving…" : props.dirty ? "Not published" : "Saved"}</span>
-        <button type="button" class="outline sm" disabled={!props.dirty || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">Discard</button>
+        <button type="button" class="outline sm" disabled={!props.canDiscard || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">Discard</button>
         <button type="button" class="ghost sm" onClick={props.onClose}>Close</button>
       </header>
       <div class={hasPreview ? "page-builder-file-dialog-body split" : "page-builder-file-dialog-body"}>

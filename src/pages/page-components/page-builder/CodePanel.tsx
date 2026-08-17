@@ -10,7 +10,11 @@ const DIAGNOSTICS_HEIGHT = { initial: 160, min: 80, max: 360 };
 export interface CodePanelProps {
   path: string;
   source: string;
+  /** Has changes that have not been built and published yet. */
   dirty: boolean;
+  /** Discard has a baseline to restore from - always true for an unpublished
+   * file under git (HEAD), only true before autosave lands without it. */
+  canDiscard: boolean;
   saving: boolean;
   /** A debounced write is in flight - shows "Saving…" instead of "Saved". */
   autosaving: boolean;
@@ -68,7 +72,7 @@ export default function CodePanel(props: CodePanelProps) {
         <span class="hint page-builder-code-panel-status">
           {props.autosaving ? "Saving…" : props.dirty ? "Not published" : "Saved"}
         </span>
-        <button type="button" class="outline sm" disabled={!props.dirty || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">
+        <button type="button" class="outline sm" disabled={!props.canDiscard || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">
           Discard
         </button>
         <button type="button" class="ghost sm" onClick={props.onClose}>

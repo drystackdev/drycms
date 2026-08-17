@@ -100,12 +100,14 @@ export default function PageBuilder() {
     error: loadError,
     updateSource,
     isDirty,
+    canDiscard,
     flushPendingWrites,
     reset,
     saving,
     autosaving,
     dirtyPaths,
     pendingCommitPaths,
+    markPublished,
     createFile,
     renameFile,
     deleteFile,
@@ -503,6 +505,10 @@ export default function PageBuilder() {
         }
       }
       setSaveProgress({ percent: 100, label: "Built and published" });
+      // These files have now reached the live site, so they stop counting
+      // toward the dock's badge. Under git the same fact comes from a clean
+      // `statusMatrix` after the commit; this is the no-repository half.
+      markPublished(codePaths);
       setVeiOverrides({});
       setContentRevision((revision) => revision + 1);
       setSaveDrafts([]);
@@ -594,6 +600,7 @@ export default function PageBuilder() {
           path={match.entryPath}
           source={sourceByPath[match.entryPath] ?? ""}
           dirty={isDirty(match.entryPath)}
+          canDiscard={canDiscard(match.entryPath)}
           saving={saving}
           extraFiles={codePanelExtraFiles}
           onChange={(code) => updateSource(match.entryPath, code)}
@@ -614,6 +621,7 @@ export default function PageBuilder() {
           sourceByPath={sourceByPath}
           extraFiles={fileDialogExtraFiles}
           dirty={isDirty(fileDialogPath)}
+          canDiscard={canDiscard(fileDialogPath)}
           saving={saving}
           onChange={(code) => updateSource(fileDialogPath, code)}
           autosaving={autosaving}

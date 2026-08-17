@@ -1,72 +1,110 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { BUILDER_TIMEOUT, codePanel, dock, expectPreviewText, openBuilder, preview } from "./page-builder-utils.js";
 
 /**
- * Page Builder is the ONLY page-source editing surface now (the code Page
- * Editor and the public-site VEI overlay were both deleted), so the coverage
- * the old `page-editor.spec.ts` provided moved here: the file menu's
- * create/rename/delete, the dock's navigation buttons, and the public site's
- * one remaining editing affordance - the Edit button that deep-links in.
+ * Page Builder's shell: the dock, the full-screen preview, the three panels
+ * it can put beside it, and the two ways in and out of the page. File
+ * operations, code editing and publishing have their own specs
+ * (`page-builder-files`, `page-builder-editing`, `page-builder-publish`).
+ *
+ * This is the ONLY page-source editing surface now - the code Page Editor and
+ * the public-site VEI overlay were both deleted - so the coverage the old
+ * `page-editor.spec.ts` provided lives across these four files.
  */
-const TEMP_DIR = "e2e-tmp";
+test.describe.configure({ timeout: BUILDER_TIMEOUT });
 
-// Opening the builder compiles the previewed page in-browser (Sucrase +
-// Tailwind), which routinely takes longer than the 30s default on a cold
-// run - the file operations after it are fast.
-test.describe.configure({ timeout: 120_000 });
+test.describe("Page Builder shell", () => {
+  test("renders the previewed route and every dock action", async ({ page }) => {
+    await openBuilder(page, "/");
 
-async function openBuilder(page: Page): Promise<void> {
-  await page.goto("/dry/page-builder?path=%2F");
-  await expect(page.locator(".dock")).toBeVisible({ timeout: 60_000 });
-}
+    // The preview is a real build of `pages/page.tsx` through the layout, not
+    // a server render: `pages/layout.tsx`'s header is only there if the
+    // layout chain was resolved and compiled too.
+    await expectPreviewText(page, "Your drycms project starts here");
+    await expect(preview(page).locator("header")).toContainText("drycms");
+    // `setTitle("Home")` inside the previewed page, relayed out of the
+    // sandboxed frame by the bridge script's title message.
+    await expect(page).toHaveTitle("Home - Page builder");
 
-async function openFileMenu(page: Page) {
-  await page.locator(".dock").getByRole("button", { name: "Open file menu" }).click();
-  const menu = page.getByRole("dialog", { name: "Page source files" });
-  await expect(menu).toBeVisible();
-  return menu;
-}
-
-test.describe("Page Builder", () => {
-  test("the dock offers Dashboard and Close, and Magic Chat is mounted", async ({ page }) => {
-    await openBuilder(page);
-    const dock = page.locator(".dock");
-
-    await expect(dock.getByRole("button", { name: "Dashboard" })).toBeVisible();
-    await expect(dock.getByRole("button", { name: "Close page builder" })).toBeVisible();
+    for (const name of ["Open file menu", "Visual editing", "Code editor", "Dashboard", "Build and publish", "Close page builder"]) {
+      await expect(dock(page).getByRole("button", { name })).toBeVisible();
+    }
+    // Nothing has been edited yet, so there is nothing to publish.
+    await expect(dock(page).getByRole("button", { name: "Build and publish" })).toBeDisabled();
+    await expect(dock(page).locator(".dock-save-badge")).toHaveCount(0);
     // Magic Chat moved here from the deleted Page Editor.
     await expect(page.locator(".magic-chat-bubble")).toBeVisible();
-
-    await dock.getByRole("button", { name: "Dashboard" }).click();
-    await page.waitForURL(/\/dry\/dashboard/);
   });
 
-  test("creates, renames and deletes a page-source file from the file menu", async ({ page }) => {
-    await openBuilder(page);
+  test("toggles between the code panel, the visual editor and neither", async ({ page }) => {
+    await openBuilder(page, "/");
+    const codeToggle = dock(page).getByRole("button", { name: "Code editor" });
+    const veiToggle = dock(page).getByRole("button", { name: "Visual editing" });
 
-    const menu = await openFileMenu(page);
-    await menu.getByRole("button", { name: "New file" }).click();
-    await menu.getByLabel("New file path").fill(`component/${TEMP_DIR}/Widget.tsx`);
-    await menu.getByRole("button", { name: "Create", exact: true }).click();
-    // Creating a component file opens it in the file dialog.
-    await expect(page.getByRole("dialog").filter({ hasText: "Widget.tsx" }).first()).toBeVisible({ timeout: 60_000 });
-    await page.keyboard.press("Escape");
+    // A fresh session starts on the previewed route's own page.tsx.
+    await expect(codeToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(codePanel(page)).toBeVisible();
+    await expect(codePanel(page).locator(".page-builder-code-panel-path")).toHaveText("pages/page.tsx");
 
-    // Rename it - folders render expanded, so the new file is already listed
-    // under the component tab (2nd tab in `PAGES_SOURCE_ROOTS` order).
-    const menu2 = await openFileMenu(page);
-    await menu2.locator(".page-builder-bubble-tabs [role=tab]").nth(1).click();
-    const renameTarget = menu2.getByRole("button", { name: "Rename Widget.tsx" });
-    await expect(renameTarget).toBeVisible({ timeout: 30_000 });
-    await renameTarget.click();
-    await menu2.getByLabel("New path").fill(`component/${TEMP_DIR}/Renamed.tsx`);
-    await menu2.getByRole("button", { name: "Rename", exact: true }).click();
-    const renamedRow = menu2.getByRole("button", { name: "Renamed.tsx", exact: true });
-    await expect(renamedRow).toBeVisible({ timeout: 60_000 });
+    // The two panels share one slot: switching to VEI closes the code panel.
+    await veiToggle.click();
+    await expect(veiToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(codeToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(codePanel(page)).toHaveCount(0);
+    const veiSheet = page.locator(".page-builder-vei-sheet");
+    await expect(veiSheet).toBeVisible();
+    await expect(veiSheet).toContainText("Select content in the preview");
 
-    // Delete it again, leaving the fixture tree as it was found.
-    await menu2.getByRole("button", { name: "Delete Renamed.tsx" }).click();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
-    await expect(renamedRow).toBeHidden({ timeout: 60_000 });
+    // Clicking the active toggle again closes the panel entirely.
+    await veiToggle.click();
+    await expect(veiSheet).toHaveCount(0);
+    await expect(veiToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(codeToggle).toHaveAttribute("aria-pressed", "false");
+
+    await codeToggle.click();
+    await expect(codePanel(page)).toBeVisible();
+    await codePanel(page).getByRole("button", { name: "Close" }).click();
+    await expect(codePanel(page)).toHaveCount(0);
+  });
+
+  test("follows a link clicked inside the preview instead of navigating the frame", async ({ page }) => {
+    await openBuilder(page, "/about");
+    await expectPreviewText(page, "Built with drycms");
+    await expect(codePanel(page).locator(".page-builder-code-panel-path")).toHaveText("pages/about/page.tsx");
+
+    // The preview is a detached `srcdoc` render with no route of its own, so
+    // its bridge script intercepts every click and reports the pathname back
+    // out; the builder re-resolves and re-compiles for that route.
+    await preview(page).locator("header a", { hasText: "drycms" }).click();
+    await page.waitForURL(/path=%2F$/);
+    await expectPreviewText(page, "Your drycms project starts here");
+    await expect(codePanel(page).locator(".page-builder-code-panel-path")).toHaveText("pages/page.tsx");
+  });
+
+  test("restores which panel and file were open across a reload", async ({ page }) => {
+    await openBuilder(page, "/");
+    await dock(page).getByRole("button", { name: "Visual editing" }).click();
+    await expect(page.locator(".page-builder-vei-sheet")).toBeVisible();
+
+    await page.reload();
+    await expect(dock(page)).toBeVisible({ timeout: 60_000 });
+    // Restored from `sessionStorage` ("drycms:page-builder-state"), which is
+    // why `openBuilder` clears it before navigating rather than on every load.
+    await expect(page.locator(".page-builder-vei-sheet")).toBeVisible();
+    await expect(dock(page).getByRole("button", { name: "Visual editing" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("leaves for the dashboard, and back to the previewed page", async ({ page }) => {
+    await openBuilder(page, "/about");
+    await dock(page).getByRole("button", { name: "Dashboard" }).click();
+    await page.waitForURL(/\/dry\/dashboard/);
+
+    // "x" is the return leg of the public site's Edit button: back to the
+    // exact public page that was being previewed, not to the admin root.
+    await openBuilder(page, "/about");
+    await dock(page).getByRole("button", { name: "Close page builder" }).click();
+    await page.waitForURL((url) => url.pathname === "/about");
+    await expect(page.locator("h1")).toContainText("Built with drycms");
   });
 
   test("the public site offers one Edit button that deep-links into the builder", async ({ page }) => {
@@ -85,15 +123,5 @@ test.describe("Page Builder", () => {
     await launcher.locator("button").click();
     await page.waitForURL(/\/dry\/page-builder\?path=/);
     expect(new URL(page.url()).searchParams.get("path")).toBe("/");
-  });
-
-  test("built-in style files cannot be deleted from the tree", async ({ page }) => {
-    await openBuilder(page);
-    const menu = await openFileMenu(page);
-    // 3rd tab is `styles/` (`PAGES_SOURCE_ROOTS` order).
-    await menu.locator(".page-builder-bubble-tabs [role=tab]").nth(2).click();
-    await expect(menu.getByText("globals.css")).toBeVisible({ timeout: 30_000 });
-    await expect(menu.getByRole("button", { name: "Delete globals.css" })).toHaveCount(0);
-    await expect(menu.getByRole("button", { name: "Rename globals.css" })).toBeVisible();
   });
 });

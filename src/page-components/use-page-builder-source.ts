@@ -6,6 +6,41 @@ import { loadAllPagesSource } from "./pages-source-http.js";
 
 const PAGES_SOURCE_BROWSER_EVENT = "dry:pages-source-change";
 
+/**
+ * Which files have been written but not yet built and published, when there
+ * is NO repository connected.
+ *
+ * With git, `git.statusMatrix` answers this for free and survives anything -
+ * the working copy is the record. Without it, a write lands straight in the
+ * HTTP store and the store has no notion of "published", so the only place
+ * that knowledge can live is here. Session-scoped rather than in-memory
+ * because losing it on a reload would strand the change exactly the way it
+ * did before this existed: written to storage, invisible to Build & publish,
+ * never reaching the live site.
+ *
+ * A stale entry (published from `/dry/page-build` instead) costs one
+ * redundant rebuild of a page that was already current, which is why erring
+ * toward keeping the entry is the safe direction.
+ */
+const UNPUBLISHED_KEY = "drycms:page-builder-unpublished";
+
+function readUnpublished(): Set<string> {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(UNPUBLISHED_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeUnpublished(paths: Set<string>): void {
+  try {
+    sessionStorage.setItem(UNPUBLISHED_KEY, JSON.stringify([...paths]));
+  } catch {
+    // Private-mode/quota - the badge just goes back to being session-local.
+  }
+}
+
 /** Long enough that a fast typist writes once per pause rather than per
  * word, short enough that closing a panel (or the tab) right after typing
  * has already persisted. */
@@ -63,8 +98,16 @@ export interface UsePageBuilderSourceResult {
   error: string | null;
   /** Live in-memory edit, not yet saved. */
   updateSource: (path: string, code: string) => void;
-  /** `true` when `path`'s in-memory content differs from what's on storage. */
+  /** `true` when `path` has changes that have not been built and published
+   * yet - against HEAD under git, against `UNPUBLISHED_KEY`'s ledger without
+   * it. NOT "has an unwritten buffer": autosave makes that go false within a
+   * second of the last keystroke, long before anything reaches the site. */
   isDirty: (path: string) => boolean;
+  /** `true` when Discard has something to restore. Under git that is any
+   * unpublished change (HEAD is the baseline); without git the only baseline
+   * is the file already in storage, so this narrows to "the buffer differs
+   * from what was written" and goes false once autosave lands. */
+  canDiscard: (path: string) => boolean;
   /** Writes any debounced edit out immediately - Build & publish awaits this
    * before committing. */
   flushPendingWrites: () => Promise<void>;
@@ -75,10 +118,13 @@ export interface UsePageBuilderSourceResult {
   autosaving: boolean;
   /** Unsaved editor buffers. */
   dirtyPaths: string[];
-  /** Buffers PLUS working-copy changes already written through (file
-   * create/rename/delete) - what Save must commit. Equals `dirtyPaths` when
-   * no repository is connected. */
+  /** Buffers PLUS everything already written through but not yet published -
+   * file create/rename/delete included, since those never had a buffer of
+   * their own. This is what Build & publish acts on. */
   pendingCommitPaths: string[];
+  /** Clears `paths` from the unpublished ledger - called once Build & publish
+   * has actually built and published them. */
+  markPublished: (paths: string[]) => void;
   /** Writes an empty (or templated) file straight to storage and adds it to
    * the tree - unlike `updateSource`, a brand-new file has nothing to be
    * dirty against, so this is immediate rather than deferred to Save. */
@@ -108,6 +154,9 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   /** Debounced writes still in flight, keyed by path (see `updateSource`). */
   const pendingWritesRef = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; code: string; done: Promise<void> }>());
   const [autosaving, setAutosaving] = useState(false);
+  /** See `UNPUBLISHED_KEY` - only maintained when there is no repository; with
+   * one, `gitState.dirty` is the authoritative answer and this stays empty. */
+  const [unpublishedPaths, setUnpublishedPaths] = useState<Set<string>>(readUnpublished);
 
   const api = useMemo(() => createPagesSourceApi(`${adminPath}/api/pages-source`), [adminPath]);
 
@@ -123,6 +172,32 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
    */
   const gitPhase = gitState.value.phase;
   const usingGit = gitPhase !== "unconfigured";
+
+  /** Records a write against the no-repository ledger. A no-op under git,
+   * where the working copy already tracks exactly this. */
+  const markUnpublished = useCallback(
+    (...paths: string[]) => {
+      if (usingGit) return;
+      setUnpublishedPaths((previous) => {
+        if (paths.every((filePath) => previous.has(filePath))) return previous;
+        const next = new Set(previous);
+        for (const filePath of paths) next.add(filePath);
+        writeUnpublished(next);
+        return next;
+      });
+    },
+    [usingGit],
+  );
+
+  const markPublished = useCallback((paths: string[]) => {
+    setUnpublishedPaths((previous) => {
+      if (!paths.some((filePath) => previous.has(filePath))) return previous;
+      const next = new Set(previous);
+      for (const filePath of paths) next.delete(filePath);
+      writeUnpublished(next);
+      return next;
+    });
+  }, []);
 
   /** In dev the Vite server renders the site straight off `.dry/pages-source`
    * (`DevPagesSource`), so a save that only landed in IndexedDB would leave
@@ -290,8 +365,9 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         return;
       }
       await api.save(filePath, code, baseSource);
+      markUnpublished(filePath);
     },
-    [api, usingGit, mirrorToDisk],
+    [api, usingGit, mirrorToDisk, markUnpublished],
   );
 
   const moveThrough = useCallback(
@@ -303,8 +379,12 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         return;
       }
       await api.move(from, to);
+      // Both halves of a move need publishing: the new path so the site gains
+      // it, the old one so whatever referenced it is rebuilt against its
+      // absence.
+      markUnpublished(from, to);
     },
-    [api, usingGit],
+    [api, usingGit, markUnpublished],
   );
 
   /** `updateSource`'s debounced timer fires long after the render that
@@ -323,25 +403,44 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         return;
       }
       await api.remove(filePath);
+      markUnpublished(filePath);
     },
-    [api, usingGit],
+    [api, usingGit, markUnpublished],
+  );
+
+  /** The buffer half of "dirty": what has been typed but not written out yet.
+   * True for at most a second after the last keystroke (`AUTOSAVE_DELAY_MS`),
+   * which is precisely why it can't be the whole answer below. */
+  const hasUnwrittenBuffer = useCallback(
+    (filePath: string) => !!sourceByPath && sourceByPath[filePath] !== savedByPath[filePath],
+    [sourceByPath, savedByPath],
   );
 
   /**
    * "Has unpublished changes", NOT "has unwritten buffer" - with autosave
    * those are different questions and only the first one is useful: a
-   * keystroke is in the working copy a few hundred ms later, so a
-   * buffer-vs-working-copy comparison goes false almost immediately and would
-   * leave Discard disabled on a file the admin has very much changed.
-   * Against HEAD (`git.statusMatrix`, via `gitState`) it stays true until the
-   * change is actually published.
+   * keystroke is written a few hundred ms later, so a buffer-vs-store
+   * comparison goes false almost immediately and would leave the file looking
+   * published when nothing has been built.
+   *
+   * Against HEAD (`git.statusMatrix`, via `gitState`) under git; against the
+   * `UNPUBLISHED_KEY` ledger without one, where the store itself cannot
+   * answer the question.
    */
   const isDirty = useCallback(
     (filePath: string) => {
-      if (usingGit && gitState.value.dirty.includes(filePath)) return true;
-      return !!sourceByPath && sourceByPath[filePath] !== savedByPath[filePath];
+      if (usingGit ? gitState.value.dirty.includes(filePath) : unpublishedPaths.has(filePath)) return true;
+      return hasUnwrittenBuffer(filePath);
     },
-    [sourceByPath, savedByPath, usingGit, gitState.value.dirty],
+    [hasUnwrittenBuffer, usingGit, gitState.value.dirty, unpublishedPaths],
+  );
+
+  /** Discard needs a baseline to restore FROM. Git has one (HEAD); without it
+   * the only recoverable state is the file already in storage, so once
+   * autosave has landed there is genuinely nothing left to undo. */
+  const canDiscard = useCallback(
+    (filePath: string) => (usingGit ? isDirty(filePath) : hasUnwrittenBuffer(filePath)),
+    [usingGit, isDirty, hasUnwrittenBuffer],
   );
 
   const save = useCallback(
@@ -416,16 +515,17 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   );
 
   /**
-   * Everything the next commit would carry: unsaved buffers PLUS whatever
-   * already differs from HEAD in the working copy. The second half matters -
-   * creating, renaming or deleting a file writes straight through (there is
-   * no buffer for it), so without this the dock would offer nothing to save
-   * after a file operation and the change would sit in IndexedDB forever,
-   * invisible to everyone but this tab.
+   * Everything the next Build & publish would carry: unwritten buffers PLUS
+   * everything already written but not yet published. The second half matters
+   * twice over - creating, renaming or deleting a file writes straight through
+   * (there is no buffer for it), and autosave empties the first half within a
+   * second of the last keystroke. Without it the dock offers nothing to
+   * publish moments after an edit, and the change sits in storage reaching
+   * nobody.
    */
   const pendingCommitPaths = useMemo(
-    () => [...new Set([...dirtyPaths, ...(usingGit ? gitState.value.dirty : [])])],
-    [dirtyPaths, usingGit, gitState.value.dirty],
+    () => [...new Set([...dirtyPaths, ...(usingGit ? gitState.value.dirty : unpublishedPaths)])],
+    [dirtyPaths, usingGit, gitState.value.dirty, unpublishedPaths],
   );
 
   const createFile = useCallback(
@@ -517,12 +617,14 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     error,
     updateSource,
     isDirty,
+    canDiscard,
     flushPendingWrites,
     reset,
     saving,
     autosaving,
     dirtyPaths,
     pendingCommitPaths,
+    markPublished,
     reload,
     createFile,
     renameFile,
