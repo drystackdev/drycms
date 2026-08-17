@@ -22,6 +22,15 @@ export interface ToolbarProps {
   saveDisabled: boolean;
   saveCount: number;
   onOpenHistory?: () => void;
+  /** Gates the file menu, the Code editor toggle, and (via `onOpenHistory`
+   * already being `undefined` when this is false - see `PageBuilder.tsx`)
+   * History: all raw-source actions, backed by the single `system-build`
+   * permission. */
+  canEditCode: boolean;
+  /** Gates the Visual editing toggle - true once the role has `view`+
+   * `update`/`setting` on at least one content type, same rule the VEI panel
+   * itself filters entries by. */
+  canUseVei: boolean;
 }
 
 export default function Toolbar(props: ToolbarProps) {
@@ -36,9 +45,9 @@ export default function Toolbar(props: ToolbarProps) {
       extraActions={
         <>
           {props.onOpenHistory && <span class="dock-action" data-tooltip="History"><button type="button" class="icon ghost round" aria-label="Page source history" onClick={props.onOpenHistory}><HistoryIcon /></button></span>}
-          <span class="dock-action" data-tooltip="Src Code"><button type="button" class="icon ghost round" aria-label="Open file menu" onClick={props.onOpenMenu}><MenuIcon /></button></span>
-          <span class="dock-action" data-tooltip="Visual editing"><button type="button" class="icon ghost round panel-mode" aria-label="Visual editing" aria-pressed={props.panelMode === "vei"} onClick={() => props.onTogglePanel("vei")}><EditIcon /></button></span>
-          <span class="dock-action" data-tooltip="Code editor"><button type="button" class="icon ghost round panel-mode" aria-label="Code editor" aria-pressed={props.panelMode === "code"} onClick={() => props.onTogglePanel("code")}><CodeFieldTypeIcon /></button></span>
+          {props.canEditCode && <span class="dock-action" data-tooltip="Src Code"><button type="button" class="icon ghost round" aria-label="Open file menu" onClick={props.onOpenMenu}><MenuIcon /></button></span>}
+          {props.canUseVei && <span class="dock-action" data-tooltip="Visual editing"><button type="button" class="icon ghost round panel-mode" aria-label="Visual editing" aria-pressed={props.panelMode === "vei"} onClick={() => props.onTogglePanel("vei")}><EditIcon /></button></span>}
+          {props.canEditCode && <span class="dock-action" data-tooltip="Code editor"><button type="button" class="icon ghost round panel-mode" aria-label="Code editor" aria-pressed={props.panelMode === "code"} onClick={() => props.onTogglePanel("code")}><CodeFieldTypeIcon /></button></span>}
         </>
       }
     />

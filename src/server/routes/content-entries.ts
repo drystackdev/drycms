@@ -4,7 +4,7 @@ import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError } from "../../content-types/engine/types.js";
-import type { PermissionAction } from "../../content-types/permissions.js";
+import { PAGE_BUILDER_RESOURCE_ID, type PermissionAction } from "../../content-types/permissions.js";
 import { recordSlugRedirect } from "../../content-types/redirects.js";
 import { removeEntryMediaFolder, rewriteEntryMediaPaths, syncEntryMediaFolder, type EntryMediaMove } from "../../content-types/entry-media.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
@@ -102,6 +102,30 @@ export async function checkAccess(
   if (!access) return unauthenticatedResponse();
   if (!access.can(type.id, action)) return forbiddenResponse();
   return null;
+}
+
+/** Same as `checkAccess`, but also admits the code-edit permission
+ * (`PAGE_BUILDER_RESOURCE_ID`) even without an explicit grant on `type` -
+ * the mirror, for this route's own `GET` (read) path, of the read-only
+ * fallback `handler.ts` now gives a content-only role over page source: a
+ * code editor needs to see real entry data (browsing a collection,
+ * previewing a page's content in Page Builder) to write `dry()` calls
+ * against it, without a separate explicit per-type grant. Same bypass
+ * `dry-http.ts`'s `POST` already gives page-read queries - this just extends
+ * it to this route's own reads. Never used for a write - those stay behind
+ * `checkAccess`'s exact grant, no fallback. */
+async function checkReadAccess(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  type: ContentTypeDefinition,
+  action: PermissionAction,
+): Promise<Response | null> {
+  if (!context.session) return unauthenticatedResponse();
+  const access = await resolveAccessCached(context, entryAdapter, allTypes, context.session);
+  if (!access) return unauthenticatedResponse();
+  if (access.can(type.id, action) || access.can(PAGE_BUILDER_RESOURCE_ID, "setting")) return null;
+  return forbiddenResponse();
 }
 
 async function protectSystemMutation(
@@ -309,7 +333,7 @@ export const GET: DryRouteHandler = async (context) => {
     const { typeSlug, hashedId } = parseSlug(context);
     const { type, allTypes } = await resolveType(context, typeSlug);
     const entryAdapter = getContentAdapters(context).entries;
-    const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "view");
+    const denied = await checkReadAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "view");
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
 

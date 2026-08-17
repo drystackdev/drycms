@@ -89,7 +89,7 @@ export default function Dock(props: DockProps) {
     <div class="dock" ref={ref}>
       {props.extraActions}
       <span class="dock-action" data-tooltip="Dashboard"><button type="button" class="icon ghost round" aria-label="Dashboard" onClick={props.onDashboard}><DashboardIcon /></button></span>
-      <span class="dock-action" data-tooltip="Build and publish - commits saved changes to git, then rebuilds affected pages" tabIndex={props.saveDisabled ? 0 : undefined}>
+      <span class="dock-action" data-tooltip="Build and publish" tabIndex={props.saveDisabled ? 0 : undefined}>
         <button
           type="button"
           class="round dock-save icon"

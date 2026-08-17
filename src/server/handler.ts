@@ -34,7 +34,7 @@ import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import * as backupRoute from "./routes/backup.js";
 import * as storageBackupRoute from "./routes/storage-backup.js";
-import { requirePermission } from "./admin-access.js";
+import { requirePermission, requirePermissionOrVeiAccess } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_BUILDER_RESOURCE_ID,
@@ -276,12 +276,22 @@ export async function handleApiRequest(
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
-  // Page source is executable tenant code, so reads and writes share the
-  // same Page Builder grant. A content-only session must not be able to
-  // download code merely because it knows this endpoint.
+  // Page source is executable tenant code, so writes always need the code-
+  // edit grant, and a content-only session still can't reach anything here
+  // merely by knowing the endpoint - but a READ (this segment's `GET`,
+  // `git`'s `git-upload-pack` clone/fetch) also admits a role with no
+  // code-edit grant that can already edit at least one real content type
+  // (`requirePermissionOrVeiAccess`) - it needs to read page source to
+  // render a VEI preview, even though it can never write any. `git-receive-
+  // pack` (push) is a write and never gets this fallback.
   const isGitConfigRead = segment === "git" && request.method === "GET" && slug === "config";
   if (segment === "pages-source" || (segment === "git" && !isGitConfigRead)) {
-    const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
+    const isReadOnly =
+      (segment === "pages-source" && request.method === "GET") ||
+      (segment === "git" && gitRoute.isGitReadRequest(request.method, slug, url.searchParams));
+    const denied = isReadOnly
+      ? await requirePermissionOrVeiAccess(context, PAGE_BUILDER_RESOURCE_ID, "setting")
+      : await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   // `page-source-ai` (`status/page-editor-magic-chat.md`) is the Page

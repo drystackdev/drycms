@@ -1,6 +1,6 @@
 import type { DryRouteContext } from "./context.js";
 import { resolveAccessCached } from "../content-types/access.js";
-import type { PermissionAction } from "../content-types/permissions.js";
+import { isVeiEditableType, type PermissionAction } from "../content-types/permissions.js";
 import { getContentAdapters } from "./content-adapters.js";
 import { forbiddenResponse, unauthenticatedResponse } from "./route-helpers.js";
 
@@ -46,4 +46,26 @@ export async function requirePermission(
   const access = await resolveAccessCached(context, entries, allTypes, context.session);
   if (!access) return unauthenticatedResponse();
   return access.can(resourceId, action) ? null : forbiddenResponse(message);
+}
+
+/** Same as `requirePermission`, but also admits a role with no `resourceId`
+ * grant so long as it can already edit (`isVeiEditableType`) at least one
+ * real content type - for READ-ONLY page-source access
+ * (`pages-source.ts`'s `GET`, `git.ts`'s `git-upload-pack`) a content-only
+ * role needs to render a VEI preview, even though it holds no code-edit
+ * permission. Never use this for a write - those stay behind
+ * `requirePermission`'s exact grant, no fallback. */
+export async function requirePermissionOrVeiAccess(
+  context: DryRouteContext,
+  resourceId: string,
+  action: PermissionAction,
+  message = "You don't have permission to do this.",
+): Promise<Response | null> {
+  if (!context.session) return unauthenticatedResponse();
+  const { schema, entries } = getContentAdapters(context);
+  const allTypes = await schema.listContentTypes();
+  const access = await resolveAccessCached(context, entries, allTypes, context.session);
+  if (!access) return unauthenticatedResponse();
+  if (access.can(resourceId, action)) return null;
+  return allTypes.some((type) => isVeiEditableType(type, access.can)) ? null : forbiddenResponse(message);
 }

@@ -113,6 +113,25 @@ export function supportsMagic(target: ContentTypeDefinition): boolean {
   return !NO_MAGIC_TYPE_NAMES.has(target.name);
 }
 
+/** Whether `type` is eligible for Visual Editing under `can` - a real,
+ * non-hidden, non-component, non-`user` content type the caller can already
+ * edit through the ordinary per-resource model: `view`+`update` for a
+ * collection, `setting` for a singleton. No separate "VEI" permission - this
+ * is just the existing model, named. Shared by `PageBuilder.tsx`'s own VEI
+ * type list (`.filter`) and `handler.ts`'s read-only page-source gate
+ * (`.some`) - a content-only role (no `PAGE_BUILDER_RESOURCE_ID` grant) may
+ * READ page source once this is true for at least one type, so it can render
+ * a VEI preview; WRITING page source stays exclusively behind the code-edit
+ * permission regardless. */
+export function isVeiEditableType(
+  type: ContentTypeDefinition,
+  can: (resourceId: string, action: PermissionAction) => boolean,
+): boolean {
+  if (type.hidden || type.name === "user" || type.kind === "component") return false;
+  if (type.kind === "singleton") return can(type.id, "setting");
+  return can(type.id, "view") && can(type.id, "update");
+}
+
 /** The exact actions the Role editor and request authorization expose for a
  * content type. Pure and safe to import from client code. */
 export function permissionActionsFor(target: ContentTypeDefinition): PermissionAction[] {

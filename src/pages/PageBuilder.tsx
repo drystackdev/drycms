@@ -3,7 +3,7 @@ const { path } = window.__DRY_CONFIG__;
 import { useParam } from "../hooks/useParam.js";
 import { useDocumentTitle } from "./page-common.js";
 import { authState, canAccess } from "../store/auth.js";
-import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
+import { isVeiEditableType, PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
 import { dryVeiOverrideKey, type DryVeiOverrideMap } from "../content-types/dry-reader-http.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -136,8 +136,29 @@ export default function PageBuilder() {
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewReady, setPreviewReady] = useState(false);
   useDocumentTitle(previewTitle ? `${previewTitle} - Page builder` : "Page builder");
-  const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
+  /** Code-editing capability: raw source, file browser, git history, Magic
+   * Chat - the one long-standing "Page Builder" System toggle, unchanged. */
+  const canEditCode = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
+  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
+  const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
+  const [dryTypes, setDryTypes] = useState<string | null>(null);
+
+  /** Visual-editing capability: reuses the ordinary per-resource permission
+   * model (same rule `VeiEntryFrame`'s `contentTypes` filter below applies) -
+   * no separate toggle. A role needs `view`+`update` on a collection or
+   * `setting` on a singleton for at least one editable type to use VEI at
+   * all here. */
+  const veiEditableTypes = useMemo(
+    () => (allTypes ?? []).filter((type) => isVeiEditableType(type, canAccess)),
+    [allTypes],
+  );
+  const canUseVei = veiEditableTypes.length > 0;
+  /** Either capability admits the page - matches the server's own either/or
+   * model (`pages-build.ts`'s `resolvePublishAccess`/`canPublishPath`,
+   * `dry-http.ts`'s POST handler): a role with only content permissions can
+   * already publish what it can see, without the code-edit grant. */
+  const canEnterBuilder = canEditCode || canUseVei;
 
   const {
     sourceByPath,
@@ -157,10 +178,7 @@ export default function PageBuilder() {
     createFile,
     renameFile,
     deleteFile,
-  } = usePageBuilderSource(path, canEdit);
-  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
-  const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
-  const [dryTypes, setDryTypes] = useState<string | null>(null);
+  } = usePageBuilderSource(path, canEnterBuilder);
   const [origin] = useState(() => window.location.origin);
   const [historyPath, setHistoryPath] = useState<string | null | undefined>(undefined);
   const [review, setReview] = useState<ReviewState | null>(null);
@@ -198,7 +216,12 @@ export default function PageBuilder() {
   }
 
   useEffect(() => {
-    if (!canEdit) return;
+    // Not gated on either capability: `allTypes` is what `canUseVei` above
+    // is computed FROM, so a VEI-only role (no `canEditCode`) needs this to
+    // run in order to ever resolve as able to enter at all. Safe regardless
+    // of permission - `content-types:list` is itself server-permission-
+    // scoped, and `canAccess` reads the session's own grants, not this
+    // fetch.
     void (async () => {
       try {
         const typesApi = createContentTypesApi(`${path}/api/content-types`);
@@ -216,7 +239,7 @@ export default function PageBuilder() {
       .then((response) => (response.ok ? response.text() : null))
       .then((text) => setDryTypes(text))
       .catch(() => setDryTypes(null));
-  }, [canEdit]);
+  }, []);
 
   /** Every OTHER loaded file, PLUS `dry.generated.d.ts` - `Editer`'s ambient
    * reference set for cross-file TS resolution, mirroring `PageBuilder.tsx`'s
@@ -251,9 +274,20 @@ export default function PageBuilder() {
   // Start on the route's own page.tsx as soon as the manifest resolves;
   // preview navigation then keeps this same panel focused on the newly
   // matched entry path without requiring a second file-menu selection.
-  const [panelMode, setPanelMode] = useState<BuilderPanelMode>(restoredState.panelMode);
+  //
+  // `restoredState` is `sessionStorage`, shared by every role that has ever
+  // opened this browser tab - it has no idea which capability THIS session
+  // has. Restoring "code" for a VEI-only role (or a file-dialog path, itself
+  // a code-editing surface) would silently show the raw source panel a role
+  // with no `canEditCode` grant should never see, even though the dock
+  // already hides the button that would normally open it.
+  const [panelMode, setPanelMode] = useState<BuilderPanelMode>(() => {
+    if (restoredState.panelMode === "code") return canEditCode ? "code" : null;
+    if (restoredState.panelMode === "vei") return canUseVei ? "vei" : null;
+    return null;
+  });
   const [codePanelWidth, setCodePanelWidth] = useState(restoredState.panelWidth);
-  const [fileDialogPath, setFileDialogPath] = useState<string | null>(restoredState.fileDialogPath);
+  const [fileDialogPath, setFileDialogPath] = useState<string | null>(canEditCode ? restoredState.fileDialogPath : null);
   const [veiTarget, setVeiTarget] = useState<PreviewVeiClickRef | null>(restoredState.veiTarget);
   const [contentRevision, setContentRevision] = useState(0);
   const [veiOverrides, setVeiOverrides] = useState<DryVeiOverrideMap>({});
@@ -284,7 +318,10 @@ export default function PageBuilder() {
    * check moved here. Runs once per loaded tree. */
   const ranCoreStyleRecovery = useRef(false);
   useEffect(() => {
-    if (!sourceByPath || ranCoreStyleRecovery.current) return;
+    // `createFile` below writes page source - a code-editing action a
+    // VEI-only role (no `canEditCode`) has no server-side permission for
+    // (`pages-source.ts` stays gated purely on `system-build:setting`).
+    if (!canEditCode || !sourceByPath || ranCoreStyleRecovery.current) return;
     ranCoreStyleRecovery.current = true;
     const missing = CORE_STYLE_FILES.filter((file) => !(`${STYLES_ROOT}/${file.name}` in sourceByPath));
     if (missing.length === 0) return;
@@ -307,7 +344,7 @@ export default function PageBuilder() {
         description: "See the styles tab in the file menu.",
       });
     })();
-  }, [sourceByPath, createFile]);
+  }, [canEditCode, sourceByPath, createFile]);
 
   useEffect(() => {
     sessionStorage.setItem(BUILDER_STATE_KEY, JSON.stringify({ panelMode, panelWidth: codePanelWidth, fileDialogPath, veiTarget } satisfies PersistedBuilderState));
@@ -628,8 +665,11 @@ export default function PageBuilder() {
     }
   }
 
-  if (!canEdit) return <span class="error">You don't have permission to use the Page Builder.</span>;
   if (loadError) return <span class="error">{loadError}</span>;
+  // Only judged once `allTypes` has actually resolved - `canUseVei` depends
+  // on it, so checking permission any earlier would flash this at a
+  // VEI-only role on every load, before its own access can be seen.
+  if (allTypes && !canEnterBuilder) return <span class="error">You don't have permission to use the Page Builder.</span>;
   if (loading || !sourceByPath || !allTypes || !assetHrefs || !draftsHydrated) {
     return (
       <div class="page-builder-root">
@@ -679,10 +719,12 @@ export default function PageBuilder() {
         onSave={() => void openSavePreview()}
         saveDisabled={pendingCommitPaths.length === 0 && saveDrafts.length === 0 && Object.keys(veiOverrides).length === 0}
         saveCount={saveItemCount}
-        onOpenHistory={gitState.value.phase === "unconfigured" ? undefined : () => setHistoryPath(null)}
+        onOpenHistory={gitState.value.phase === "unconfigured" || !canEditCode ? undefined : () => setHistoryPath(null)}
+        canEditCode={canEditCode}
+        canUseVei={canUseVei}
       />}
 
-      {bubbleRoot && (
+      {canEditCode && bubbleRoot && (
         <BubbleMenu
           sourceByPath={sourceByPath}
           activeRoot={bubbleRoot}
@@ -705,7 +747,7 @@ export default function PageBuilder() {
         />
       )}
 
-      {panelMode === "code" && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
+      {canEditCode && panelMode === "code" && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
         <CodePanel
           path={match.entryPath}
           source={effectiveSource[match.entryPath] ?? ""}
@@ -726,7 +768,7 @@ export default function PageBuilder() {
         />
       )}
 
-      {fileDialogPath && (
+      {canEditCode && fileDialogPath && (
         <FileDialog
           path={fileDialogPath}
           source={effectiveSource[fileDialogPath] ?? ""}
@@ -758,11 +800,7 @@ export default function PageBuilder() {
           initialWidth={codePanelWidth}
           onWidthChange={setCodePanelWidth}
           adminPath={path}
-          contentTypes={(allTypes ?? []).filter((type) => {
-            if (type.hidden || type.name === "user" || type.kind === "component") return false;
-            if (type.kind === "singleton") return canAccess(type.id, "setting");
-            return canAccess(type.id, "view") && canAccess(type.id, "update");
-          })}
+          contentTypes={veiEditableTypes}
           onBrowse={() => setVeiTarget(null)}
           onClose={() => {
             setVeiTarget(null);
@@ -782,10 +820,10 @@ export default function PageBuilder() {
         code={sourceByPath[magicPath] ?? ""}
         projectFiles={projectFiles}
         onCodeChange={handleMagicCodeChange}
-        canUse={canEdit}
+        canUse={canEditCode}
       />}
 
-      {historyPath !== undefined && <HistoryDialog open adminPath={path} filePath={historyPath ?? undefined} onReviewFile={(commit, filePath) => void reviewFile(commit, filePath)} onReviewCommit={(commit) => void reviewCommit(commit)} onClose={() => setHistoryPath(undefined)} />}
+      {canEditCode && historyPath !== undefined && <HistoryDialog open adminPath={path} filePath={historyPath ?? undefined} onReviewFile={(commit, filePath) => void reviewFile(commit, filePath)} onReviewCommit={(commit) => void reviewCommit(commit)} onClose={() => setHistoryPath(undefined)} />}
 
       <SavePreviewDialog
         open={saveDialogOpen}

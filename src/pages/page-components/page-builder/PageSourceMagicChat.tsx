@@ -153,11 +153,13 @@ export interface PageSourceMagicChatProps {
    * `pushCodeWrittenStatus`), with whatever `path` THAT write named - never
    * assumed to be the file currently open. */
   onCodeChange: (path: string, code: string) => void;
-  /** `PageBuilder.tsx`'s own `canEdit` (`canAccess(PAGE_BUILDER_RESOURCE_ID,
-   * "setting")`) - the same single toggle already gating the whole page,
-   * reused as-is rather than adding a separate "magic" grant (see
-   * `status/page-editor-magic-chat.md`: the System fieldset's toggles are
-   * deliberately flat, all-or-nothing). */
+  /** `PageBuilder.tsx`'s own `canEditCode` (`canAccess(PAGE_BUILDER_RESOURCE_ID,
+   * "setting")`) - the code-editing capability, not the page-level gate (a
+   * VEI-only role can enter Page Builder without this). Magic here writes
+   * raw page source through the same seam as `CodePanel`, so it needs the
+   * same permission - reused as-is rather than adding a separate "magic"
+   * grant (see `status/page-editor-magic-chat.md`: the System fieldset's
+   * toggles are deliberately flat, all-or-nothing). */
   canUse: boolean;
 }
 

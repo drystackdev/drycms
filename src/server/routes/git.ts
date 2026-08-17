@@ -29,7 +29,12 @@ import { validateOutboundUrlForRequest } from "../outbound-url.js";
  *
  * Gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`, same as
  * `pages-source` - a git clone through here IS a read of that same
- * executable tenant source.
+ * executable tenant source. `git-upload-pack` (read/clone) also admits a
+ * role with no code-edit grant but real content permissions on at least one
+ * type (`isGitReadRequest` below, `permissions.ts`'s `isVeiEditableType`) -
+ * it needs to read page source to render a VEI preview, even though it can
+ * never write any. `git-receive-pack` (push) stays exclusively behind the
+ * code-edit permission, no exception.
  */
 const GITHUB_GIT_BASE = "https://github.com";
 const UPLOAD_PACK = "git-upload-pack";
@@ -51,6 +56,18 @@ interface ResolvedTarget {
    * (push). Kept even though both are allowed, so a future "read-only
    * viewer" role has one obvious place to branch on. */
   service: typeof UPLOAD_PACK | typeof RECEIVE_PACK;
+}
+
+/** Whether this request only needs read (clone/fetch, `git-upload-pack`)
+ * access, as opposed to `git-receive-pack` (push) which always needs the
+ * full code-edit permission - `handler.ts`'s gate calls this to decide
+ * whether a content-only role's `hasAnyVeiAccess` fallback applies, without
+ * needing a resolved repo/provider (unlike `resolveGitTarget` below, this
+ * never touches `loadGitConfig` or github.com). Mirrors that function's own
+ * method/slug/service matching. */
+export function isGitReadRequest(method: string, slug: string | undefined, search: URLSearchParams): boolean {
+  if (method === "GET" && slug === "info/refs") return search.get("service") === UPLOAD_PACK;
+  return method === "POST" && slug === UPLOAD_PACK;
 }
 
 /**

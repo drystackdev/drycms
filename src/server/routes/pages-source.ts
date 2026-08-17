@@ -20,7 +20,11 @@ import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
  * Every method is gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`
  * ("Page Builder") - originally a separate `system-code` toggle (quyết định
  * #12), merged with the build permission since the two were never granted
- * independently in practice.
+ * independently in practice. `GET` also admits a role with no code-edit
+ * grant but real content permissions on at least one type
+ * (`permissions.ts`'s `isVeiEditableType`) - it needs to read page source to
+ * render a VEI preview, even though it can never write any; every write
+ * method stays exclusively behind the code-edit permission, no exception.
  */
 async function handleTree(adapter: StorageAdapter): Promise<Response> {
   if (!adapter.listAll) return jsonResponse({ supported: false });
