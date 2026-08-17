@@ -56,6 +56,22 @@ function commitMessageFor(paths: string[], sourceByPath: Record<string, string>)
   return `${verb} ${paths.length} page source files`;
 }
 
+/**
+ * The site pathname a `pages/**\/page.tsx` serves, derived from the file path
+ * alone - `pages/page.tsx` -> `/`, `pages/about/page.tsx` -> `/about`.
+ *
+ * `null` for a dynamic template (`pages/blog/[slug]/page.tsx`): that route has
+ * no single pathname until an entry is picked, which is
+ * `resolvePageFilePathname`'s job. Used only where the route manifest isn't
+ * usable yet (a file created this tick - see `handleCreateFile`); everywhere
+ * else the manifest stays the source of truth.
+ */
+function staticPathnameForPageFile(filePath: string): string | null {
+  const relative = filePath.slice(`${PAGES_ROOT}/`.length).replace(/(^|\/)page\.tsx$/, "");
+  if (relative.includes("[")) return null;
+  return relative === "" ? "/" : `/${relative}`;
+}
+
 function readBuilderState(): PersistedBuilderState {
   const fallback: PersistedBuilderState = { panelMode: "code", panelWidth: 480, fileDialogPath: null, veiTarget: null };
   try {
@@ -318,8 +334,24 @@ export default function PageBuilder() {
   async function handleCreateFile(filePath: string, code: string) {
     await createFile(filePath, code);
     setBubbleRoot(null);
-    if (rootOf(filePath)?.id === PAGES_ROOT && /(^|\/)page\.tsx$/.test(filePath)) await handleSelectPageFile(filePath);
-    else setFileDialogPath(filePath);
+    if (rootOf(filePath)?.id !== PAGES_ROOT || !/(^|\/)page\.tsx$/.test(filePath)) {
+      setFileDialogPath(filePath);
+      return;
+    }
+    // NOT `handleSelectPageFile` for a brand-new page: that resolves through
+    // `manifest`, which is memoized off the `sourceByPath` of the render this
+    // handler closed over - a file created one line ago is never in it, so the
+    // lookup silently found nothing and creating a page appeared to do
+    // nothing at all. A static route's pathname is derivable from the file
+    // path alone, so derive it; a dynamic template still needs a real entry to
+    // preview against, which only the manifest path can find.
+    const directPathname = staticPathnameForPageFile(filePath);
+    if (directPathname === null) {
+      await handleSelectPageFile(filePath);
+      return;
+    }
+    setPathname(directPathname);
+    setPanelMode("code");
   }
 
   async function handleRenameFile(from: string, to: string) {

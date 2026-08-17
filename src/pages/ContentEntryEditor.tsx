@@ -430,7 +430,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // change regardless of source (typing, `SlugField`'s derived slug, the
     // `dry:field-set` listener below) - a listener can't tell those apart,
     // same as it can't for a real user's own edit.
-    dispatchFieldInput(fieldName, fieldValue, { typeSlug, entryId });
+    //
+    // `draftEntryId`, NOT the loaded `entryId`: a singleton keys off `null`
+    // everywhere this identifier is consumed (`entry-draft-store.ts`'s draft
+    // slot, `dryVeiOverrideKey`, `dry-reader-http.ts`'s own override lookup,
+    // which hardcodes `null` for `kind: "singleton"`). Reporting the row's
+    // real id here instead made every singleton edit land under a key nothing
+    // else ever looks up - found live: editing a singleton field through
+    // Page Builder's visual editor queued the draft but the preview kept
+    // rendering the old value, forever.
+    dispatchFieldInput(fieldName, fieldValue, { typeSlug, entryId: draftEntryId });
   }
 
   // The other direction - an outside listener drives this form by
@@ -458,12 +467,14 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     );
     dispatchFieldInput(path.split(".", 1)[0]!, fieldValue, {
       typeSlug,
-      entryId,
+      entryId: draftEntryId,
     });
   }
   // Re-subscribes on `typeSlug`/`entryId` change (not just `[]`) so the
-  // closure `applyFieldSet` dispatches through never reports a stale
-  // `entryId` (e.g. right after a new entry's first save).
+  // closure `applyFieldSet` dispatches through is never stale. `entryId` is
+  // no longer what it reports (`draftEntryId` is, see `updateFieldValue`),
+  // but it still moves whenever the loaded entry does, so it remains the
+  // right thing to re-subscribe on.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `applyFieldSet` isn't memoized; typeSlug/entryId are its only free variables that matter here
   useEffect(() => listenForFieldSet(applyFieldSet), [typeSlug, entryId]);
 
@@ -490,7 +501,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     };
     const onFocusIn = (event: FocusEvent) => {
       const name = fieldNameFor(event.target);
-      if (name) dispatchFieldFocus(name, { typeSlug, entryId });
+      if (name) dispatchFieldFocus(name, { typeSlug, entryId: draftEntryId });
     };
     const onFocusOut = (event: FocusEvent) => {
       // `relatedTarget` is what's ABOUT to gain focus - still inside the
@@ -498,7 +509,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       // changed; a `focusin` for a genuinely different field fires its own
       // event right after, so only report "nothing focused" when the next
       // stop isn't a field at all.
-      if (fieldNameFor(event.relatedTarget) === null) dispatchFieldFocus(null, { typeSlug, entryId });
+      if (fieldNameFor(event.relatedTarget) === null) dispatchFieldFocus(null, { typeSlug, entryId: draftEntryId });
     };
     document.addEventListener("focusin", onFocusIn);
     document.addEventListener("focusout", onFocusOut);

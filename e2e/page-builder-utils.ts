@@ -85,10 +85,28 @@ export async function expectPreviewText(page: Page, text: string | RegExp): Prom
   await expect(preview(page).locator("body")).toContainText(text, { timeout: 120_000 });
 }
 
+/**
+ * Opens the bubble file menu, re-opening it if it vanishes.
+ *
+ * The menu lives in component state, so anything that remounts the app drops
+ * it - and under the dev server Vite occasionally decides to re-optimize a
+ * dependency and force a full page reload seconds after load, which is
+ * exactly such an event. Re-clicking the (toggle) button is safe here because
+ * this only fires when the menu is verifiably gone.
+ */
 export async function openFileMenu(page: Page): Promise<Locator> {
-  await dock(page).getByRole("button", { name: "Open file menu" }).click();
   const menu = page.getByRole("dialog", { name: "Page source files" });
-  await expect(menu).toBeVisible();
+  const trigger = dock(page).getByRole("button", { name: "Open file menu" });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await trigger.click();
+    try {
+      await expect(menu.getByRole("button", { name: "New file" })).toBeVisible({ timeout: 10_000 });
+      return menu;
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await expect(menu).toHaveCount(0, { timeout: 10_000 });
+    }
+  }
   return menu;
 }
 
@@ -119,33 +137,48 @@ export async function readSource(page: Page, path: string): Promise<string> {
   }, path);
 }
 
-export async function writeSource(page: Page, path: string, code: string): Promise<void> {
-  const status = await page.evaluate(
-    async ([filePath, body]) => {
-      const response = await fetch(`/dry/api/pages-source/${filePath.split("/").map(encodeURIComponent).join("/")}`, {
-        method: "PUT",
-        body,
-      });
-      return response.status;
+/**
+ * Sends the CSRF header explicitly rather than relying on
+ * `lib/native/csrf-fetch.ts`'s global `window.fetch` patch.
+ *
+ * `page.goto()` resolves on `load`, which can be before the admin bundle has
+ * installed that patch - a mutating `page.evaluate(fetch(...))` fired in that
+ * window goes out bare and comes back 403 `csrf_failed`. Reading the cookie
+ * here removes the race entirely.
+ */
+export async function apiFetch(
+  page: Page,
+  url: string,
+  init: { method: string; body?: string; json?: boolean } = { method: "GET" },
+): Promise<{ status: number; body: string }> {
+  return page.evaluate(
+    async ({ target, options }) => {
+      const token = document.cookie.split("; ").find((entry) => entry.startsWith("drycms_csrf="))?.slice("drycms_csrf=".length);
+      const headers: Record<string, string> = {};
+      if (token) headers["X-CSRF-Token"] = decodeURIComponent(token);
+      if (options.json) headers["Content-Type"] = "application/json";
+      const response = await fetch(target, { method: options.method, headers, body: options.body, cache: "no-store" });
+      return { status: response.status, body: await response.text() };
     },
-    [path, code],
+    { target: url, options: init },
   );
-  expect(status, `PUT ${path}`).toBeLessThan(300);
+}
+
+export async function writeSource(page: Page, path: string, code: string): Promise<void> {
+  const { status, body } = await apiFetch(page, `/dry/api/pages-source/${path.split("/").map(encodeURIComponent).join("/")}`, {
+    method: "PUT",
+    body: code,
+  });
+  expect(status, `PUT ${path}: ${body}`).toBeLessThan(300);
 }
 
 /** Best-effort cleanup - a spec's `finally` block calls this for paths that
  * may or may not exist, so a 404 is not a failure. */
 export async function deleteSource(page: Page, path: string): Promise<void> {
   if (page.isClosed()) return;
-  await page
-    .evaluate(
-      (filePath) =>
-        fetch(`/dry/api/pages-source/${filePath.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" }).then(
-          () => undefined,
-        ),
-      path,
-    )
-    .catch(() => undefined);
+  await apiFetch(page, `/dry/api/pages-source/${path.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" }).catch(
+    () => undefined,
+  );
 }
 
 /**
@@ -184,7 +217,14 @@ export async function listSourcePaths(page: Page): Promise<string[]> {
 export async function fillEditor(container: Locator, code: string): Promise<void> {
   const textarea = container.locator("textarea").first();
   await expect(textarea).toBeVisible();
-  await textarea.fill(code);
+  // The last character goes in as a real keystroke. `fill()` alone sets the
+  // value and fires one synthetic `input`, which `Editer` occasionally misses
+  // when it arrives in the same tick as its own mount - a genuine keypress
+  // always goes through `prism-code-editor`'s `beforeinput`/`input` pipeline
+  // that both its history extension and this component's `onUpdate` listen on.
+  await textarea.fill(code.slice(0, -1));
+  await textarea.pressSequentially(code.slice(-1));
+  await expect(textarea).toHaveValue(code);
 }
 
 /**

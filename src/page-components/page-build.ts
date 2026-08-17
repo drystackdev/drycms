@@ -547,11 +547,38 @@ async function fetchSeoDefaults(dryHttpEndpoint: string, cacheTtlMs: number | un
 }
 
 /**
- * Compiles + renders one page to a complete HTML document. Does NOT write
- * anything anywhere - see `publishBuiltPage` for the storage/registry half
- * (`routes/pages-build.ts`).
+ * Serializes `buildPage`, because a build is NOT re-entrant.
+ *
+ * Everything a render needs to reach `dry()` travels through module-global
+ * state - `configureHttpDryReader`'s active config (call log, deps, SEO
+ * layers, and the `vei` context that decides whether values get boxed at
+ * all) plus `setCurrentParams`/`resetHttpTitle`. `buildPage` then awaits
+ * several times before and while the page component runs, so a second build
+ * starting inside one of those gaps replaces the config the FIRST build's
+ * components are about to read.
+ *
+ * Found live, as an intermittent Visual Editing failure (roughly one preview
+ * in three): the admin's own initial publish (`initial-publish.ts`, no `vei`)
+ * overlapped Page Builder's preview build (`vei` set), the preview's `dry()`
+ * calls read the publish's config, and the page came back with no `data-dry`
+ * markers and an empty replay log - nothing editable, until an unrelated
+ * edit happened to rebuild it cleanly. Two overlapping publishes corrupt each
+ * other's `_page_deps` the same way, just less visibly.
+ *
+ * A queue rather than per-call context because there is no browser
+ * `AsyncLocalStorage` to scope this properly, and builds are CPU-bound in one
+ * tab anyway - they never actually ran in parallel, they only interleaved.
  */
-export async function buildPage(input: PageBuildInput): Promise<PageBuildResult> {
+let buildQueue: Promise<unknown> = Promise.resolve();
+
+export function buildPage(input: PageBuildInput): Promise<PageBuildResult> {
+  const result = buildQueue.then(() => buildPageUnsynchronized(input));
+  // Never let one failed build wedge the queue for every later one.
+  buildQueue = result.catch(() => undefined);
+  return result;
+}
+
+async function buildPageUnsynchronized(input: PageBuildInput): Promise<PageBuildResult> {
   setCurrentParams(input.params);
   resetHttpTitle();
   const seo: DrySeoLayers = {};

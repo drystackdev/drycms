@@ -417,6 +417,66 @@ describe("buildPage", () => {
     // straight off the singleton's real id/field name/declared field type.
     expect(result.html).toContain('data-dry="s:siteSettings:1:title:text"');
   });
+
+  /**
+   * Two builds started at once must not read each other's reader config.
+   *
+   * Everything a render needs to reach `dry()` (call log, deps, and the `vei`
+   * context that decides whether values are boxed) lives in module-global
+   * state that `buildPage` sets and then awaits across, so an overlapping
+   * build used to replace it mid-render. Live symptom: Page Builder's preview
+   * (with `vei`) overlapped the admin's own initial publish (without), and
+   * came back with no markers and an empty replay log - nothing editable
+   * until something happened to rebuild it cleanly.
+   *
+   * The slow `seoDefaults` response is what forces the overlap deterministically:
+   * it lands inside exactly the `await` the second build used to slip into.
+   */
+  it("does not let an overlapping build steal its reader config", async () => {
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { kind: string; name: string };
+      if (body.kind === "singleton" && body.name === "siteSettings") {
+        const text = encodeCallLog([{ kind: "singleton", name: "siteSettings", method: "get", result: { id: 1, title: "My Site" } }]);
+        return new Response(text, { status: 200, headers: jsonHeaders("siteSettings", 7) });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const text = encodeCallLog([{ kind: "singleton", name: "seoDefaults", method: "get", result: null }]);
+      return new Response(text, { status: 200, headers: jsonHeaders("seoDefaults", 0) });
+    });
+
+    const shared = {
+      pathname: "/",
+      origin: "https://example.com",
+      adminPath: "/dry",
+      siteLang: "en",
+      assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
+      dryHttpEndpoint: "/dry/api/dry-http",
+      allTypes: [SITE_SETTINGS_TYPE, SEO_DEFAULTS_TYPE],
+      sourceByPath: {
+        "page.tsx": `export default async function Page() {\n  const settings = await dry().singleton("siteSettings").get();\n  return <div>{settings.title}</div>;\n}\n`,
+        "layout.tsx": LAYOUT_SOURCE,
+      },
+      entryPath: "page.tsx",
+      layoutPaths: ["layout.tsx"],
+      params: {},
+      skipJsAssets: true,
+    };
+
+    const [withVei, withoutVei] = await Promise.all([
+      buildPage({ ...shared, vei: { canUpdate: () => true } satisfies DryVeiContext }),
+      buildPage(shared),
+    ]);
+
+    expect(withVei.html).toContain('data-dry="s:siteSettings:1:title:text"');
+    expect(withoutVei.html).not.toContain("data-dry");
+    // Each build's own replay log, not one of them holding both sets of calls.
+    for (const result of [withVei, withoutVei]) {
+      expect(result.html).toContain('id="dry-replay-data"');
+      expect(result.html).not.toContain('id="dry-replay-data">[]<');
+    }
+  });
 });
 
 describe("publishBuiltPage", () => {

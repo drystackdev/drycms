@@ -302,6 +302,24 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
    */
   const updateSource = useCallback((filePath: string, code: string) => {
     setSourceByPath((prev) => (prev && prev[filePath] === code ? prev : { ...prev, [filePath]: code }));
+
+    // An `onChange` that reports the file's CURRENT content is not an edit.
+    // `Editer` emits one on mount (and after a format pass), so without this
+    // every file merely OPENED would be written back to storage and counted
+    // as an unpublished change - found live: opening a page in the code panel
+    // and touching nothing still queued it for Build & publish. Also cancels
+    // a debounce still in flight, since typing back to the stored content
+    // leaves nothing to write.
+    const currentlyStored = savedByPath[filePath];
+    if (currentlyStored !== undefined && code === currentlyStored) {
+      const inFlight = pendingWritesRef.current.get(filePath);
+      if (inFlight) {
+        clearTimeout(inFlight.timer);
+        pendingWritesRef.current.delete(filePath);
+      }
+      return;
+    }
+
     setLocallyEditedPaths((previous) => {
       if (previous.has(filePath)) return previous;
       editBaseByPathRef.current[filePath] = savedByPath[filePath] ?? "";
@@ -547,6 +565,12 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       if (!sourceByPath || from === to) return;
       setSaving(true);
       try {
+        // Rewriting imports has to see what the admin has TYPED, not only
+        // what has been written out: an edit sits in `pendingWritesRef` for
+        // up to `AUTOSAVE_DELAY_MS`, and renaming a file inside that window
+        // would otherwise rewrite against the previous contents and silently
+        // leave the importer pointing at a path that no longer exists.
+        await flushPendingWrites();
         await moveThrough(from, to);
         // The move itself only relocates bytes; every relative specifier
         // that pointed at `from` (and the moved file's own, now resolved
@@ -580,7 +604,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         setSaving(false);
       }
     },
-    [moveThrough, writeThrough, sourceByPath],
+    [moveThrough, writeThrough, sourceByPath, flushPendingWrites],
   );
 
   const deleteFile = useCallback(

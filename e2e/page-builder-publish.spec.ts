@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   BUILDER_TIMEOUT,
+  closeFileDialog,
   codePanel,
   deleteSource,
   dock,
@@ -52,7 +53,7 @@ test.describe("Page Builder build & publish", () => {
       await dock(page).getByRole("button", { name: "Build and publish" }).click();
       const dialog = saveDialog(page);
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByText("Build & publish", { exact: true })).toBeVisible();
+      await expect(dialog.locator(".dialog-title")).toHaveText("Build & publish");
 
       // Code changes on one side, content-entry drafts on the other - this
       // run edited no content, so that half stays empty.
@@ -88,8 +89,8 @@ test.describe("Page Builder build & publish", () => {
       await menu.getByRole("button", { name: "New file" }).click();
       await menu.getByLabel("New file path").fill(NEW_PAGE);
       await menu.getByRole("button", { name: "Create", exact: true }).click();
-      await page.waitForURL(new RegExp(`path=${encodeURIComponent(NEW_ROUTE).replace("/", "%2F")}`));
       await expect(codePanel(page).locator(".page-builder-code-panel-path")).toHaveText(NEW_PAGE);
+      await page.waitForURL(new RegExp(`path=${encodeURIComponent(NEW_ROUTE)}$`));
 
       await fillEditor(
         codePanel(page),
@@ -142,6 +143,7 @@ test.describe("Page Builder build & publish", () => {
       await menu.getByLabel("New file path").fill(note);
       await menu.getByRole("button", { name: "Create", exact: true }).click();
       await expect(fileDialog(page)).toHaveAttribute("aria-label", note);
+      await closeFileDialog(page);
 
       expect(await saveBadgeCount(page)).toBe(1);
       await dock(page).getByRole("button", { name: "Build and publish" }).click();

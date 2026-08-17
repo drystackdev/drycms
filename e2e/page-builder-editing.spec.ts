@@ -3,7 +3,6 @@ import {
   BUILDER_TIMEOUT,
   closeFileDialog,
   codePanel,
-  deleteSource,
   dock,
   expectPreviewText,
   expectStoredSource,
