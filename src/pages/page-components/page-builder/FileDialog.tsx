@@ -15,6 +15,7 @@ import { useScaledPreview } from "../../page-components/useDevicePreview.js";
 import { useResizablePanel } from "../../../lib/useResizablePanel.js";
 import { useOverlayScrollbars } from "../../../hooks/overlayscrollbars.js";
 import { mergeRefs } from "../../../lib/merge-refs.js";
+import { HistoryIcon } from "../../../components/icons/index.js";
 
 type ViewportKey = "xs" | "sm" | "md" | "lg" | "xl";
 const VIEWPORT_WIDTHS: Record<ViewportKey, number> = { xs: 375, sm: 640, md: 768, lg: 1024, xl: 1280 };
@@ -52,6 +53,8 @@ export interface FileDialogProps {
   previewEntryPath: string | null;
   previewLayoutPaths: string[];
   previewParams: Record<string, string | string[]>;
+  readOnly?: boolean;
+  onOpenHistory?: () => void;
 }
 
 function languageForPath(path: string): EditerFormatLanguage {
@@ -145,7 +148,8 @@ export default function FileDialog(props: FileDialogProps) {
         {/* See `CodePanel.tsx` - editing writes itself through, so there is
             nothing for a Save button to do here either. */}
         <span class="hint">{props.autosaving ? "Saving…" : props.dirty ? "Not published" : "Saved"}</span>
-        <button type="button" class="outline sm" disabled={!props.canDiscard || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">Discard</button>
+        {props.onOpenHistory && <button type="button" class="ghost icon sm" aria-label="File history" title="History" onClick={props.onOpenHistory}><HistoryIcon /></button>}
+        <button type="button" class="outline sm" disabled={props.readOnly || !props.canDiscard || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">Discard</button>
         <button type="button" class="ghost sm" onClick={props.onClose}>Close</button>
       </header>
       <div class={hasPreview ? "page-builder-file-dialog-body split" : "page-builder-file-dialog-body"}>
@@ -180,13 +184,14 @@ export default function FileDialog(props: FileDialogProps) {
         {hasPreview && <div class={`page-components-resize-handle${previewPanel.dragging ? " dragging" : ""}`} {...previewPanel.handleProps} />}
         <div class="page-builder-file-dialog-editor">
           <Editer
-            key={props.path}
+            key={`${props.path}:${props.readOnly ? "readonly" : "edit"}`}
             value={props.source}
             onChange={handleChange}
             extraFiles={props.extraFiles}
             language={languageForPath(props.path)}
             describeProps={isComponent}
             style={{ height: "100%" }}
+            readOnly={props.readOnly}
           />
         </div>
       </div>

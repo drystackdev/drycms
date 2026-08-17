@@ -58,7 +58,7 @@ describe("git proxy route", () => {
     configBox.result = { error: "not-configured" };
     const response = await GET(context("https://site.test/dry/api/git/info/refs?service=git-upload-pack"));
     expect(response.status).toBe(412);
-    expect((await response.json()).message).toContain("Settings -> GitHub Sync");
+    expect((await response.json()).message).toContain("Settings -> GitHub");
   });
 
   it("refuses a repo value that is not owner/name", async () => {

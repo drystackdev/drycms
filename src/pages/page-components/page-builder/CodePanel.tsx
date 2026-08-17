@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import Editer from "../../../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../../../components/Editer/types.js";
 import { useResizablePanel } from "../../../lib/useResizablePanel.js";
-import { ArrowRightIcon } from "../../../components/icons/index.js";
+import { ArrowRightIcon, HistoryIcon } from "../../../components/icons/index.js";
 import { BUILDER_PANEL_WIDTH, clampBuilderPanelWidth } from "./panel-width.js";
 
 const DIAGNOSTICS_HEIGHT = { initial: 160, min: 80, max: 360 };
@@ -26,6 +26,8 @@ export interface CodePanelProps {
   initialWidth: number;
   layoutPaths: string[];
   onOpenLayout: (path: string) => void;
+  readOnly?: boolean;
+  onOpenHistory?: () => void;
 }
 
 /**
@@ -72,7 +74,8 @@ export default function CodePanel(props: CodePanelProps) {
         <span class="hint page-builder-code-panel-status">
           {props.autosaving ? "Saving…" : props.dirty ? "Not published" : "Saved"}
         </span>
-        <button type="button" class="outline sm" disabled={!props.canDiscard || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">
+        {props.onOpenHistory && <button type="button" class="ghost icon sm" aria-label="File history" title="History" onClick={props.onOpenHistory}><HistoryIcon /></button>}
+        <button type="button" class="outline sm" disabled={props.readOnly || !props.canDiscard || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">
           Discard
         </button>
         <button type="button" class="ghost sm" onClick={props.onClose}>
@@ -81,12 +84,13 @@ export default function CodePanel(props: CodePanelProps) {
       </div>
       <div class="page-builder-code-panel-body">
         <Editer
-          key={props.path}
+          key={`${props.path}:${props.readOnly ? "readonly" : "edit"}`}
           value={props.source}
           onChange={handleChange}
           extraFiles={props.extraFiles}
           language="tsx"
           style={{ height: "100%" }}
+          readOnly={props.readOnly}
         />
       </div>
       {diagnosticsOpen && (

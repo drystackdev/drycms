@@ -1,7 +1,6 @@
 import type { DryRouteContext } from "./context.js";
 import { getContentAdapters } from "./content-adapters.js";
 import { decryptSecret } from "../lib/secret-crypto.js";
-import { readEnvVar } from "./options.js";
 import { GITHUB_SYNC_TYPE_ID } from "../content-types/system-fields.js";
 
 export interface GitRepoConfig {
@@ -27,33 +26,10 @@ export interface GitRepoConfig {
  * caller can show verbatim, since "GitHub isn't configured yet" is an
  * ordinary state for a fresh tenant, not an exception.
  */
-/** A Workers secret/var (`context.env`) first, then Node's `process.env`/
- * `.env` (`options.ts`'s own resolution order) - the same two places every
- * other deployment-level value in this server comes from. */
-function envValue(context: DryRouteContext, name: string): string {
-  const binding = context.env?.[name];
-  if (typeof binding === "string" && binding.trim()) return binding.trim();
-  return readEnvVar(name)?.trim() ?? "";
-}
-
 export async function loadGitConfig(context: DryRouteContext): Promise<{ config: GitRepoConfig } | { error: string }> {
-  // Deployment config wins over the admin UI's singleton: `GITHUB_REPO` /
-  // `GITHUB_BRANCH` / `GITHUB_PAT_KEY` are set by whoever owns the
-  // deployment (a `.env` locally, `wrangler secret put` in production), and
-  // a PAT held there never lands in the content database at all - strictly
-  // better than storing it encrypted in D1, and the only shape that works
-  // before any admin has been able to open Settings.
-  const envRepo = envValue(context, "GITHUB_REPO");
-  if (envRepo) {
-    return {
-      config: {
-        repo: envRepo,
-        branch: envValue(context, "GITHUB_BRANCH") || "main",
-        token: envValue(context, "GITHUB_PAT_KEY"),
-      },
-    };
-  }
-
+  // GitHub is product configuration owned by the `githubSync` singleton and
+  // its Settings page. Environment variables must not silently bypass the
+  // first-login setup gate or override what an administrator saved there.
   const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
   const type = allTypes.find((candidate) => candidate.id === GITHUB_SYNC_TYPE_ID);

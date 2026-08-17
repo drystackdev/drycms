@@ -16,6 +16,11 @@ Yêu cầu gốc của user: `plans/history-code-page.md`.
 | 6 | Conflict khi publish | **Không bao giờ hỏi conflict.** File mình publish luôn ghi đè bản trên remote; file mình KHÔNG đụng tới thì giữ bản của người kia. Không force push cả branch → không xoá commit của ai. |
 | 7 | Sau khi publish xong | **Kéo toàn bộ code về ngay** (working copy reset về đúng remote) rồi reload cây trong editor. |
 
+Điều chỉnh theo xác nhận của user (2026-08-17): cấu hình GitHub là singleton
+`githubSync` trong database, quản lý tại `/dry/settings/github-sync`. Các biến
+`GITHUB_*` trong môi trường không còn được coi là cấu hình sản phẩm và không
+được phép bỏ qua màn hình setup.
+
 ### 0. Ràng buộc đã xác minh trong repo (quyết định gần hết thiết kế)
 
 | # | Sự thật trong code | Hệ quả |
@@ -27,7 +32,7 @@ Yêu cầu gốc của user: `plans/history-code-page.md`.
 | 5 | `Editer` có sẵn `readOnly?: boolean` (`Editer/Editer.tsx:94`), nhưng **set-once-at-mount** | Vào/ra chế độ history phải đổi `key` để remount `Editer`. |
 | 6 | Mọi thao tác ghi đi qua đúng 3 hàm trong `use-page-builder-source.ts` (`writeThrough`/`moveThrough`/`removeThrough`) | Revert chỉ cần đi qua seam sẵn có, không thêm đường ghi thứ hai. |
 | 7 | `pushPagesSourceSnapshot` tạo tree **KHÔNG có `base_tree`** (`github-source-sync.ts:160`) | Một snapshot commit đã tự động xoá mọi file không có trong snapshot. Liên quan trực tiếp tới yêu cầu "Reset pages 2 commit". |
-| 8 | `loadGitConfig` ưu tiên **env** (`GITHUB_REPO`/`GITHUB_BRANCH`/`GITHUB_PAT_KEY`) rồi mới tới singleton `githubSync` (`git-config.ts:46`) | Màn hình ép cấu hình phải hỏi `GET /api/git/config`, **không** hỏi singleton - nếu không, deploy cấu hình bằng env sẽ bị ép nhập lại vô lý. |
+| 8 | `loadGitConfig` đọc singleton `githubSync` trong database | `GET /api/git/config` và màn hình setup phản ánh đúng dữ liệu được quản lý tại Settings; `.env` không thể bỏ qua onboarding. |
 | 9 | `scripts/e2e-server.mjs` blank `GITHUB_*` → e2e chạy ở `phase: "unconfigured"` | UI history phải **ẩn sạch** khi chưa cấu hình git, nếu không 28 test e2e hiện tại gãy. |
 
 ---
@@ -75,7 +80,7 @@ Cái thứ 3 là phần dễ quên nhất và là phần phá hoại nhất → 
 Yêu cầu hợp lý, nhưng nếu chặn tuyệt đối sẽ khoá chết admin trong 3 tình huống thật:
 
 1. **User không có quyền `system-build`** (biên tập viên chỉ sửa content) đăng nhập → bị đẩy vào trang cấu hình GitHub mà họ không có quyền lưu → **không dùng được CMS nữa**. → Gate chỉ áp dụng cho user `canAccess(PAGE_BUILDER_RESOURCE_ID, "setting")`; user khác đi thẳng vào dashboard.
-2. **Đã cấu hình bằng env** (`GITHUB_REPO` trong `.env` / `wrangler secret`) → phải nhận ra là đã cấu hình rồi (hỏi `GET /api/git/config`, ràng buộc #8), không hỏi lại.
+2. **Có biến `GITHUB_*` cũ trong env** → vẫn chưa cấu hình; chỉ singleton `githubSync` trong database mới hoàn tất setup (ràng buộc #8).
 3. **GitHub down / token hết hạn lúc validate** → không được biến thành vòng lặp không thoát. Nút **Sign out** luôn phải bấm được trên trang setup, và lỗi validate hiện inline trên field (đúng rule "inline field validation, not toast") kèm nút thử lại.
 
 #### 1.5 ⚠️ "Reset pages = 2 commit" - hiện tại 1 commit đã đủ, nhưng vẫn làm được sạch
@@ -346,14 +351,50 @@ Gói 1-4 là một chuỗi (ship được sau Gói 4). Gói 5 độc lập hoàn
 
 ## Status
 
-Chưa bắt đầu code. Kế hoạch viết xong 2026-08-17 sau khi đọc lại toàn bộ
+Đã triển khai đủ 7 gói (2026-08-17): publish REST kiểu ours-wins + retry và
+re-clone, API history, wrapper/icon, review readonly trong memory, history
+từng file/toàn branch, setup gate + validate GitHub, và reset 2 commit/1 lần
+đổi ref. Đã thêm banner cho user không có quyền Page Builder khi GitHub chưa
+cấu hình và đổi nhãn hiển thị thành "GitHub".
+
+Kiểm tra: `bun run typecheck` xanh; full unit suite cuối cùng **1423/1423
+xanh**. Lần chạy full đầu tiên có lỗi duy
+nhất ban đầu do import eager mới làm mock `config.js` của test pages-source
+thiếu export; đã chuyển import sang lazy và test suite đó chạy lại xanh
+(19/19). Nhóm handler/git/pages-source chạy lại xanh (37/37). Production
+`bun run build` xanh (chỉ có cảnh báo chunk dynamic-import không ảnh hưởng
+runtime và cảnh báo seed assets vốn có). `git diff --check` xanh.
+
+Sửa sau QA của user: local `.env` còn các biến `GITHUB_*` cũ nên gate từng
+nhận nhầm là đã setup dù bảng `githubSync` trong `.dry/content.sqlite` chưa có
+row nào. `loadGitConfig` giờ chỉ đọc database; thêm test chứng minh env không
+thể bypass DB. Typecheck xanh và nhóm `git-config`/git route/handler chạy lại
+20/20 test xanh.
+
+QA runtime: dev server cũ giữ nguyên module server đã load lúc startup nên
+vẫn trả config từ env cho tới khi restart. Đã restart `bun run dev`; request
+thật có session tới `/dry/api/git/config` hiện trả
+`{"configured":false,"repo":"","branch":"","hasToken":false}`, và client
+đang serve nhánh redirect `/dry/setup/github` mới.
+
+Sửa UI setup sau screenshot QA: điều kiện `setupOnly` từng bọc nhầm card
+Repository và để lọt card Reset pages. Đã đảo đúng: form Repository/Branch/
+Access Token luôn hiện; Enabled và toàn bộ Reset pages/confirm chỉ hiện ở
+Settings thường. Typecheck + `git diff --check` xanh, module live trên dev
+server đã phản ánh đúng hai điều kiện này.
+
+Sửa tiếp layout theo screenshot QA: setup giữ đúng một `.card` ngoài; section
+Repository và vùng fields dùng layout `.stack` phẳng, không còn `.card` hay
+`.under` lồng bên trong. Settings thường không đổi. Typecheck và diff check
+xanh; dev server đã nhận đúng class theo `setupOnly`.
+
+Kế hoạch viết xong 2026-08-17 sau khi đọc lại toàn bộ
 đường git hiện tại (`git-repo.ts`, `git-state.ts`,
 `use-page-builder-source.ts`, `routes/git.ts`, `github-source-sync.ts`,
 `pages-source-github-restore.ts`) và đối chiếu với `plans/history-code-page.md`.
 
-**Đã chốt 7 quyết định với user** (bảng đầu mục Plan) - kế hoạch bên dưới đã
-cập nhật theo. Không còn câu hỏi chặn; sẵn sàng bắt đầu **Gói 6** (đường
-publish phải hết trạng thái "bị từ chối" trước khi có nút Revert).
+**Đã chốt 7 quyết định với user** (bảng đầu mục Plan), sau đó điều chỉnh nguồn
+cấu hình GitHub thành database theo QA thực tế ở trên.
 
 Ba điểm user KHÔNG phải chọn vì không phải lựa chọn mà là lỗi phải tránh,
 đã nằm sẵn trong plan: xoá file thừa khi revert cả commit (1.3), re-clone
@@ -361,6 +402,7 @@ working copy sau Reset pages (1.6), và banner chữ kèm viền primary (1.7).
 
 ## Speed
 
-Chưa có blocker kỹ thuật. Không cần thêm dependency mới - toàn bộ phần đọc
+Hoàn tất triển khai trong một lượt, chưa có blocker kỹ thuật.
+Không cần thêm dependency mới - toàn bộ phần đọc
 lịch sử dùng lại `githubRequest` sẵn có, phần UI dùng lại `Editer`/
 `ConfirmDialog`/`useDialogSync` sẵn có.

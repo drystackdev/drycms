@@ -28,6 +28,7 @@ import * as pagesSourceRoute from "./routes/pages-source.js";
 import * as pageSourceAiRoute from "./routes/ai-page-source-write.js";
 import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.js";
 import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
+import * as pageHistoryRoute from "./routes/page-history.js";
 import * as gitRoute from "./routes/git.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
@@ -98,6 +99,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "page-source-ai": pageSourceAiRoute,
   "github-sync": pagesSourceGithubSyncRoute,
   "github-restore": pagesSourceGithubRestoreRoute,
+  "page-history": pageHistoryRoute,
   // The git smart-HTTP proxy the browser working copy talks to
   // (`routes/git.ts`) - same permission as `pages-source` below, since a
   // clone through it IS a read of that same executable tenant source.
@@ -277,7 +279,8 @@ export async function handleApiRequest(
   // Page source is executable tenant code, so reads and writes share the
   // same Page Builder grant. A content-only session must not be able to
   // download code merely because it knows this endpoint.
-  if (segment === "pages-source" || segment === "git") {
+  const isGitConfigRead = segment === "git" && request.method === "GET" && slug === "config";
+  if (segment === "pages-source" || (segment === "git" && !isGitConfigRead)) {
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
@@ -298,7 +301,7 @@ export async function handleApiRequest(
   // the same merged Page Builder permission as `pages-source`'s own write
   // methods above, every method including GET (same "one all-or-nothing
   // toggle" shape as Page Components).
-  if (segment === "github-restore") {
+  if (segment === "github-restore" || segment === "page-history") {
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }

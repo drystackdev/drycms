@@ -240,6 +240,43 @@ export async function status(): Promise<GitStatus> {
   };
 }
 
+/** Sends only dirty paths to the server-side Git Data API. The server layers
+ * them on the latest remote tree, so unrelated concurrent edits survive. */
+export async function commitWorkingCopy(
+  adminPath: string,
+  message: string,
+  author: { name: string; email: string },
+): Promise<{ committed: boolean; commitSha?: string; reason?: string }> {
+  const fs = await gitFs();
+  const pending = await status();
+  if (pending.dirty.length === 0) return { committed: false };
+  const files: Record<string, string | null> = {};
+  for (const path of pending.dirty) {
+    try {
+      files[path] = await fs.promises.readFile(`${REPO_DIR}/${path}`, "utf8") as string;
+    } catch {
+      files[path] = null;
+    }
+  }
+  const response = await fetch(`${adminPath}/api/pages-source/commit`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, author, files }),
+  });
+  const result = await response.json().catch(() => ({})) as { committed?: boolean; commitSha?: string; reason?: string; message?: string };
+  if (!response.ok) throw new Error(result.reason ?? result.message ?? `Commit failed (${response.status}).`);
+  return { committed: result.committed === true, commitSha: result.commitSha, reason: result.reason };
+}
+
+/** The working copy is a cache. After a successful remote commit, replace it
+ * wholesale so HEAD and every file exactly match the merged remote tree. */
+export async function resyncWorkingCopy(options: EnsureClonedOptions): Promise<void> {
+  const fs = await gitFs();
+  await withGitLock(() => fs.promises.rm(REPO_DIR, { recursive: true, force: true }));
+  await ensureCloned(options);
+}
+
 export interface CommitOptions {
   message: string;
   /** The signed-in admin, so a commit is attributed to the person who made

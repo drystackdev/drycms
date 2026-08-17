@@ -4,7 +4,7 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { jsonResponse } from "../route-helpers.js";
 import { loadGitConfig } from "../git-config.js";
-import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, type GithubSyncConfig } from "../github-source-sync.js";
+import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, resetBranchToSnapshot, type GithubSyncConfig } from "../github-source-sync.js";
 import { bufferOf } from "../../storage/util.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
 import { SAMPLE_PAGES_SOURCE_FILES } from "../app-router/sample-pages-source.js";
@@ -126,9 +126,10 @@ export const PUT: DryRouteHandler = async (context) => {
   let commitSha: string | undefined;
   let githubReason: string | undefined;
   if ("config" in loaded) {
-    const pushed = await pushPagesSourceSnapshot(sourceByPath, loaded.config, `Reset all pages from mock - ${new Date().toISOString()}`);
-    if (pushed.pushed) commitSha = pushed.commitSha;
-    else githubReason = pushed.reason ?? "GitHub sync failed.";
+    const stamp = new Date().toISOString();
+    const pushed = await resetBranchToSnapshot(loaded.config, sourceByPath, { clear: `Reset pages - clear source - ${stamp}`, restore: `Reset pages from mock - ${stamp}` });
+    if (pushed.ok) commitSha = pushed.commitSha;
+    else githubReason = pushed.reason;
   } else {
     githubReason = loaded.error;
   }

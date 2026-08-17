@@ -15,10 +15,11 @@ import Toaster, { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
-import { ensureRepoReady } from "../page-components/git/git-state.js";
+import { ensureRepoReady, fetchGitConfig } from "../page-components/git/git-state.js";
 import OAuthConsent from "../pages/OAuthConsent.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
+import GithubSetup from "../pages/GithubSetup.js";
 import { isVeiFrame, startVeiBridge } from "../pages/content-entry-editor/builder-bridge.js";
 import BuilderBridgeFrame from "../pages/content-entry-editor/BuilderBridgeFrame.js";
 import { authState, canAccess, loadSession } from "../store/auth.js";
@@ -298,6 +299,7 @@ function AuthenticatedApp() {
 const LOGIN_PATH = `${path}/login`;
 const REGISTER_PATH = `${path}/register`;
 const OAUTH_CONSENT_PATH = `${path}/oauth/consent`;
+const GITHUB_SETUP_PATH = `${path}/setup/github`;
 
 /**
  * Sits above `DryLayout`/`<Router>`. `/login`/`/register` are real, always-
@@ -326,10 +328,16 @@ function AuthGate() {
   // the query string silently stripped.
   const { url, path: locationPath, query } = useLocation();
   const inScope = url === path || url.startsWith(`${path}/`);
+  const [githubConfigured, setGithubConfigured] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (inScope) void loadSession();
   }, [inScope]);
+
+  useEffect(() => {
+    if (authState.value.status !== "authenticated" || !canAccess(PAGE_BUILDER_RESOURCE_ID, "setting")) return;
+    void fetchGitConfig(path).then((config) => setGithubConfigured(config.configured)).catch(() => setGithubConfigured(true));
+  }, [authState.value.status]);
 
   if (!inScope) return null;
 
@@ -364,6 +372,15 @@ function AuthGate() {
       ? returnTo
       : `${path}/dashboard`;
     return <Redirect to={target} />;
+  }
+  if (canAccess(PAGE_BUILDER_RESOURCE_ID, "setting")) {
+    if (githubConfigured === null) return <progress class="route-progress" />;
+    if (!githubConfigured) {
+      return locationPath === GITHUB_SETUP_PATH
+        ? <GithubSetup onSaved={() => setGithubConfigured(true)} />
+        : <Redirect to={GITHUB_SETUP_PATH} />;
+    }
+    if (locationPath === GITHUB_SETUP_PATH) return <Redirect to={`${path}/dashboard`} />;
   }
   // Rendered standalone, same as `SignIn`/`RegisterSuperAdmin` above - a
   // one-off "approve this connection" prompt has no business inside

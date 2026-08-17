@@ -470,7 +470,7 @@ export default function DryLayout({ children }: Props) {
     }
     const githubSyncType = contentTypes?.find((t) => t.name === "githubSync");
     if (githubSyncType && canAccess(githubSyncType.id, "setting")) {
-      items.push({ id: "github-sync", label: "GitHub Sync", href: `${path}/settings/github-sync` });
+      items.push({ id: "github-sync", label: "GitHub", href: `${path}/settings/github-sync` });
     }
     return items;
   }, [contentTypes]);

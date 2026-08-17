@@ -1,4 +1,5 @@
 import { fetchNoRedirect } from "./outbound-url.js";
+import { PAGES_SOURCE_ROOTS } from "./app-router/source-roots.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
 export const PAGE_SOURCE_FILE_PATTERN = /\.(?:tsx?|css|md)$/i;
@@ -43,6 +44,10 @@ interface GithubCommitListEntry {
     committer?: { name?: string; date?: string };
   };
 }
+interface GithubCommitDetailResponse extends GithubCommitListEntry {
+  files?: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>;
+}
+interface GithubContentResponse { content: string; encoding: string }
 interface GithubTreeEntry {
   path: string;
   type: string;
@@ -237,10 +242,14 @@ export type GithubHistoryResult =
 export async function listSnapshotCommits(
   config: Pick<GithubSyncConfig, "repo" | "branch" | "token">,
   limit: number,
+  options: { path?: string; page?: number } = {},
 ): Promise<GithubHistoryResult> {
   try {
+    const query = new URLSearchParams({ sha: config.branch, per_page: String(limit) });
+    if (options.path) query.set("path", options.path);
+    if (options.page) query.set("page", String(options.page));
     const commits = await githubRequest<GithubCommitListEntry[]>(
-      `/repos/${config.repo}/commits?sha=${encodeURIComponent(config.branch)}&per_page=${limit}`,
+      `/repos/${config.repo}/commits?${query}`,
       config.token,
     );
     return {
@@ -254,6 +263,139 @@ export async function listSnapshotCommits(
     };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "Failed to list GitHub commits." };
+  }
+}
+
+export interface GithubCommitFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+export type GithubCommitDetailResult =
+  | { ok: true; sha: string; message: string; authorName: string; date: string; files: GithubCommitFile[] }
+  | { ok: false; reason: string };
+
+function isPageSourcePath(path: string): boolean {
+  return PAGES_SOURCE_ROOTS.some((root) => path.startsWith(`${root.id}/`)) && PAGE_SOURCE_FILE_PATTERN.test(path);
+}
+
+export async function getCommitDetail(config: GithubSyncConfig, sha: string): Promise<GithubCommitDetailResult> {
+  try {
+    const entry = await githubRequest<GithubCommitDetailResponse>(`/repos/${config.repo}/commits/${encodeURIComponent(sha)}`, config.token);
+    return {
+      ok: true,
+      sha: entry.sha,
+      message: entry.commit.message,
+      authorName: entry.commit.author?.name ?? entry.commit.committer?.name ?? "unknown",
+      date: entry.commit.author?.date ?? entry.commit.committer?.date ?? "",
+      files: (entry.files ?? []).filter((file) => isPageSourcePath(file.filename)).map((file) => ({
+        path: file.filename, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.patch,
+      })),
+    };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Failed to read the GitHub commit." };
+  }
+}
+
+export type GithubFileAtCommitResult = { ok: true; content: string } | { ok: true; missing: true } | { ok: false; reason: string };
+
+export async function readFileAtCommit(config: GithubSyncConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  if (!isPageSourcePath(path)) return { ok: false, reason: "The path is outside page source." };
+  try {
+    const file = await githubRequest<GithubContentResponse>(
+      `/repos/${config.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(sha)}`,
+      config.token,
+    );
+    return { ok: true, content: file.encoding === "base64" ? Buffer.from(file.content, "base64").toString("utf-8") : file.content };
+  } catch (error) {
+    if (error instanceof GithubApiError && error.status === 404) return { ok: true, missing: true };
+    return { ok: false, reason: error instanceof Error ? error.message : "Failed to read the file from GitHub." };
+  }
+}
+
+export type GithubPatchResult = { ok: true; commitSha: string } | { ok: false; reason: string };
+
+/** Applies only the caller's paths on top of the latest remote tree. A ref
+ * race is retried from the new HEAD, preserving unrelated concurrent work. */
+export async function commitPagesSourceChanges(
+  config: GithubSyncConfig,
+  files: Record<string, string | null>,
+  message: string,
+  author: { name: string; email: string },
+): Promise<GithubPatchResult> {
+  const entries = Object.entries(files);
+  if (entries.length === 0) return { ok: false, reason: "No page-source changes to commit." };
+  if (entries.some(([path]) => !isPageSourcePath(path))) return { ok: false, reason: "A path is outside page source." };
+  try {
+    const blobs = new Map<string, string>();
+    await Promise.all(entries.filter(([, content]) => content !== null).map(async ([path, content]) => {
+      const blob = await githubRequest<GithubBlobResponse>(`/repos/${config.repo}/git/blobs`, config.token, {
+        method: "POST", body: JSON.stringify({ content, encoding: "utf-8" }),
+      });
+      blobs.set(path, blob.sha);
+    }));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const base = await resolveBaseCommit(config.repo, config.branch, config.token);
+      if (!base.sha) return { ok: false, reason: "The configured branch does not exist." };
+      const baseCommit = await githubRequest<GithubCommitResponse>(`/repos/${config.repo}/git/commits/${base.sha}`, config.token);
+      const tree = await githubRequest<GithubTreeResponse>(`/repos/${config.repo}/git/trees`, config.token, {
+        method: "POST",
+        body: JSON.stringify({
+          base_tree: baseCommit.tree.sha,
+          tree: entries.map(([path, content]) => ({ path, mode: "100644", type: "blob", sha: content === null ? null : blobs.get(path) })),
+        }),
+      });
+      const commit = await githubRequest<GithubCommitResponse>(`/repos/${config.repo}/git/commits`, config.token, {
+        method: "POST", body: JSON.stringify({ message, tree: tree.sha, parents: [base.sha], author }),
+      });
+      try {
+        await githubRequest(`/repos/${config.repo}/git/refs/heads/${encodeURIComponent(config.branch)}`, config.token, {
+          method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }),
+        });
+        return { ok: true, commitSha: commit.sha };
+      } catch (error) {
+        if (!(error instanceof GithubApiError) || ![409, 422].includes(error.status) || attempt === 2) throw error;
+      }
+    }
+    return { ok: false, reason: "The branch kept moving while publishing." };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "GitHub commit failed." };
+  }
+}
+
+const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/** Creates the readable two-commit reset history, then moves the branch only
+ * once so no observer can ever see the intermediate empty tree. */
+export async function resetBranchToSnapshot(
+  config: GithubSyncConfig,
+  sourceByPath: Record<string, string>,
+  messages: { clear: string; restore: string },
+): Promise<GithubPatchResult> {
+  try {
+    const base = await resolveBaseCommit(config.repo, config.branch, config.token);
+    if (!base.sha) return { ok: false, reason: "The configured branch does not exist." };
+    const cleared = await githubRequest<GithubCommitResponse>(`/repos/${config.repo}/git/commits`, config.token, {
+      method: "POST", body: JSON.stringify({ message: messages.clear, tree: EMPTY_TREE_SHA, parents: [base.sha] }),
+    });
+    const blobs = await Promise.all(Object.entries(sourceByPath).map(async ([path, content]) => {
+      const blob = await githubRequest<GithubBlobResponse>(`/repos/${config.repo}/git/blobs`, config.token, { method: "POST", body: JSON.stringify({ content, encoding: "utf-8" }) });
+      return { path, sha: blob.sha };
+    }));
+    const tree = await githubRequest<GithubTreeResponse>(`/repos/${config.repo}/git/trees`, config.token, {
+      method: "POST", body: JSON.stringify({ tree: blobs.map(({ path, sha }) => ({ path, mode: "100644", type: "blob", sha })) }),
+    });
+    const restored = await githubRequest<GithubCommitResponse>(`/repos/${config.repo}/git/commits`, config.token, {
+      method: "POST", body: JSON.stringify({ message: messages.restore, tree: tree.sha, parents: [cleared.sha] }),
+    });
+    await githubRequest(`/repos/${config.repo}/git/refs/heads/${encodeURIComponent(config.branch)}`, config.token, {
+      method: "PATCH", body: JSON.stringify({ sha: restored.sha, force: false }),
+    });
+    return { ok: true, commitSha: restored.sha };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "GitHub reset failed." };
   }
 }
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from '../components/ConfirmDialog.js';
@@ -7,7 +7,7 @@ import { TrashIcon } from '../components/icons/index.js';
 import { toast } from '../components/Toast.js';
 import { discardEntryDraft, entryDraftIndex } from '../content-types/entry-draft-store.js';
 import { createContentTypesApi } from '../content-types/http-api.js';
-import { permissionActionsFor, type PermissionAction } from '../content-types/permissions.js';
+import { PAGE_BUILDER_RESOURCE_ID, permissionActionsFor, type PermissionAction } from '../content-types/permissions.js';
 import type { ContentTypeDefinition } from '../content-types/types.js';
 import { useFetch } from '../hooks/useFetch.js';
 import { authState, canAccess } from '../store/auth.js';
@@ -49,6 +49,11 @@ interface DraftRow extends Record<string, unknown> {
 export default function Dashboard() {
 	useDocumentTitle('Dashboard');
 	const { route } = useLocation();
+	const [githubMissing, setGithubMissing] = useState(false);
+	useEffect(() => {
+		if (canAccess(PAGE_BUILDER_RESOURCE_ID, 'setting')) return;
+		void fetch(`${path}/api/git/config`, { credentials: 'same-origin' }).then((response) => response.json()).then((config: { configured?: boolean }) => setGithubMissing(config.configured === false)).catch(() => undefined);
+	}, []);
 
 	const contentTypesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
 	const { data: contentTypes } = useFetch<ContentTypeDefinition[]>('content-types:list', (ifVersion, signal) =>
@@ -177,6 +182,7 @@ export default function Dashboard() {
 
 	return (
 		<>
+			{githubMissing && <aside class="card warning"><strong>GitHub is not configured.</strong><p>Contact an administrator to enable Page Builder.</p></aside>}
 			<div class="page-header">
 				<div>
 					<h1>Dashboard</h1>

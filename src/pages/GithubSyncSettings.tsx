@@ -28,8 +28,8 @@ interface GithubSyncValue extends Record<string, unknown> {
  * this page never receives the decrypted token back, only whether one is
  * already stored.
  */
-export default function GithubSyncSettings() {
-  useDocumentTitle("GitHub Sync");
+export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignOut }: { setupOnly?: boolean; onSaved?: () => void; onSignOut?: () => void } = {}) {
+  useDocumentTitle("GitHub");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "githubSync"), []);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
@@ -71,7 +71,7 @@ export default function GithubSyncSettings() {
         const entry = await entriesApi.getSingleton();
         const secret = entry?.value.token;
         const loaded: GithubSyncValue = {
-          enabled: entry?.value.enabled === true,
+          enabled: setupOnly ? true : entry?.value.enabled === true,
           repo: typeof entry?.value.repo === "string" ? entry.value.repo : "",
           branch: typeof entry?.value.branch === "string" ? entry.value.branch : "",
           token: "",
@@ -94,6 +94,11 @@ export default function GithubSyncSettings() {
     if (!value) return;
     setSaving(true);
     try {
+      if (value.enabled && (setupOnly || value.token.trim())) {
+        const response = await fetch(`${path}/api/git/validate`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo: value.repo, token: value.token }) });
+        const validation = await response.json().catch(() => ({})) as { valid?: boolean; fieldErrors?: Record<string, string> };
+        if (!validation.valid) { setFieldErrors(validation.fieldErrors ?? {}); return; }
+      }
       // Same "blank secretkey input on an existing entry keeps the stored
       // ciphertext" contract `AiKeyEditor.tsx`'s own save uses.
       const payload = value.token.trim() || !hasExistingToken ? value : { ...value, token: { hasExisting: true } };
@@ -102,6 +107,7 @@ export default function GithubSyncSettings() {
       setInitialSnapshot(JSON.stringify({ ...value, token: "" }));
       setHasExistingToken(hasExistingToken || !!value.token.trim());
       toast.add({ type: "success", title: "GitHub Sync saved." });
+      onSaved?.();
     } catch (error) {
       if (error instanceof ContentEntriesApiError && error.fieldErrors) setFieldErrors(error.fieldErrors);
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
@@ -127,6 +133,11 @@ export default function GithubSyncSettings() {
       if (!response.ok || !result.applied || !result.sourceByPath) {
         throw new Error(result.reason ?? `Reset failed: HTTP ${response.status}`);
       }
+
+      const { resyncWorkingCopy } = await import("../page-components/git/git-repo.js");
+      const configResponse = await fetch(`${path}/api/git/config`, { credentials: "same-origin" });
+      const config = await configResponse.json() as { configured?: boolean; branch?: string };
+      if (config.configured && config.branch) await resyncWorkingCopy({ adminPath: path, branch: config.branch });
 
       // No editor-side cache to refresh anymore (Page Editor's IndexedDB
       // mirror died with it) - Page Builder reads the tree over HTTP on
@@ -154,31 +165,28 @@ export default function GithubSyncSettings() {
     <>
       <div class="page-header">
         <div style={{ flex: 1 }}>
-          <h1>GitHub Sync</h1>
+          <h1>GitHub</h1>
           <p>Pushes a snapshot commit of your pages-source code to a GitHub repo on every Build/Build all - local/R2 storage stays the working copy, GitHub keeps the version history.</p>
         </div>
         <div class="row">
-          {isDirty && (
-            <button type="button" disabled={saving} aria-busy={saving || undefined} onClick={save}>
+          {onSignOut && <button type="button" class="ghost sm" onClick={onSignOut}>Sign out</button>}
+          {(setupOnly || isDirty) && (
+            <button type="button" disabled={saving || !isDirty} aria-busy={saving || undefined} onClick={save}>
               Save
             </button>
           )}
         </div>
       </div>
 
-      <section class="card">
-        <header>
-          <h2>Repository</h2>
-          <p>A GitHub Personal Access Token with Contents: Read and write on the repo below.</p>
-        </header>
-        <div class="under stack">
-          <CheckField
+      <section class={setupOnly ? "stack" : "card"}>
+        <div class={setupOnly ? "stack" : "under stack"}>
+          {!setupOnly && <CheckField
             label="Enabled"
             description="Off skips the GitHub push entirely - no error, no toast - until this is on and every field below is filled in."
             role="switch"
             value={value.enabled}
             onChange={(next) => update("enabled", next)}
-          />
+          />}
           <TextField
             label="Repository"
             required
@@ -209,7 +217,7 @@ export default function GithubSyncSettings() {
         </div>
       </section>
 
-      <section class="card">
+      {!setupOnly && <section class="card">
         <header>
           <h2>Reset pages</h2>
           <p>Clear this browser's page cache, page-source and built objects in storage, and page build state in D1; restore the deployed mock, sync GitHub when available, refresh IndexedDB, then build all pages.</p>
@@ -220,18 +228,18 @@ export default function GithubSyncSettings() {
           </button>
           {isDirty && <p class="hint">Save the GitHub Sync settings before resetting pages.</p>}
         </div>
-      </section>
+      </section>}
 
-      <ConfirmDialog
+      {!setupOnly && <ConfirmDialog
         open={resetOpen}
         title="Reset all pages from mock?"
-        message={`Every current page, component, style and Markdown source file will be replaced. The mock snapshot will be ${value.enabled ? "pushed to GitHub and " : ""}published immediately. This cannot be undone${value.enabled ? " outside GitHub history" : ""}.`}
+        message={`Every current page, component, style and Markdown source file will be replaced, and every unpublished browser change will be lost. The mock snapshot will be ${value.enabled ? "pushed to GitHub and " : ""}published immediately. This cannot be undone${value.enabled ? " outside GitHub history" : ""}.`}
         confirmLabel="Reset All page"
         destructive
         busy={resetting}
         onConfirm={() => void resetAllPages()}
         onCancel={() => setResetOpen(false)}
-      />
+      />}
     </>
   );
 }

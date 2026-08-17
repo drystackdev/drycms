@@ -100,6 +100,25 @@ async function handleCreateFolder(adapter: StorageAdapter, request: Request, fol
 
 export const POST: DryRouteHandler = async (context) => {
   try {
+    if (readSlug(context) === "commit") {
+      const [{ loadGithubSyncConfig }, { commitPagesSourceChanges }] = await Promise.all([
+        import("./pages-source-github-sync.js"),
+        import("../github-source-sync.js"),
+      ]);
+      const loaded = await loadGithubSyncConfig(context);
+      if ("error" in loaded) return jsonResponse({ committed: false, reason: loaded.error }, 412);
+      const body = (await context.request.json()) as {
+        message?: unknown; author?: { name?: unknown; email?: unknown }; files?: Record<string, unknown>;
+      };
+      const files = Object.fromEntries(Object.entries(body.files ?? {}).filter((entry): entry is [string, string | null] => typeof entry[1] === "string" || entry[1] === null));
+      const message = typeof body.message === "string" && body.message.trim() ? body.message.trim() : "Update page source";
+      const author = {
+        name: typeof body.author?.name === "string" && body.author.name.trim() ? body.author.name.trim() : context.session?.name || "drycms",
+        email: typeof body.author?.email === "string" && body.author.email.trim() ? body.author.email.trim() : `${context.session?.id ?? "admin"}@page-builder.drycms`,
+      };
+      const result = await commitPagesSourceChanges(loaded.config, files, message, author);
+      return result.ok ? jsonResponse({ committed: true, commitSha: result.commitSha }) : jsonResponse({ committed: false, reason: result.reason }, 502);
+    }
     const adapter = getStorageAdapter(pagesSourceStorage, context);
     const path = readSlug(context);
     return await handleCreateFolder(adapter, context.request, path);

@@ -33,6 +33,15 @@ import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
 import { publishPagesAffectedBySource } from "../page-components/initial-publish.js";
 import { gitState, refreshGitStatus } from "../page-components/git/git-state.js";
+import { getHistoryFile, getHistoryTree, type HistoryCommit } from "../page-components/git/history-http-api.js";
+import HistoryDialog from "./page-components/page-builder/HistoryDialog.js";
+
+interface ReviewState {
+  commit: HistoryCommit;
+  target: { scope: "file"; path: string } | { scope: "commit" };
+  sourceByPath: Record<string, string>;
+  restore: { write: Record<string, string>; remove: string[] };
+}
 
 interface PersistedBuilderState {
   panelMode: BuilderPanelMode;
@@ -124,6 +133,7 @@ export default function PageBuilder() {
     dirtyPaths,
     pendingCommitPaths,
     markPublished,
+    reload,
     createFile,
     renameFile,
     deleteFile,
@@ -132,6 +142,40 @@ export default function PageBuilder() {
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
   const [origin] = useState(() => window.location.origin);
+  const [historyPath, setHistoryPath] = useState<string | null | undefined>(undefined);
+  const [review, setReview] = useState<ReviewState | null>(null);
+
+  async function reviewFile(commit: HistoryCommit, filePath: string) {
+    const old = await getHistoryFile(path, commit.sha, filePath);
+    const next = { ...(sourceByPath ?? {}) };
+    if (old.missing) delete next[filePath]; else next[filePath] = old.content ?? "";
+    setReview({ commit, target: { scope: "file", path: filePath }, sourceByPath: next, restore: { write: old.missing ? {} : { [filePath]: old.content ?? "" }, remove: old.missing ? [filePath] : [] } });
+    setHistoryPath(undefined);
+    setPanelMode("code");
+  }
+
+  async function reviewCommit(commit: HistoryCommit) {
+    const tree = (await getHistoryTree(path, commit.sha)).sourceByPath;
+    setReview({ commit, target: { scope: "commit" }, sourceByPath: tree, restore: { write: tree, remove: Object.keys(sourceByPath ?? {}).filter((filePath) => !(filePath in tree)) } });
+    setHistoryPath(undefined);
+    setPanelMode("code");
+  }
+
+  async function revertReview() {
+    if (!review) return;
+    const currentPaths = new Set(Object.keys(sourceByPath ?? {}));
+    const overwrite = Object.keys(review.restore.write).filter((filePath) => currentPaths.has(filePath)).length;
+    const create = Object.keys(review.restore.write).length - overwrite;
+    if (review.target.scope === "commit" && !window.confirm(`Restore this commit? Overwrite ${overwrite}, recreate ${create}, delete ${review.restore.remove.length} files.`)) return;
+    for (const [filePath, content] of Object.entries(review.restore.write)) {
+      if (currentPaths.has(filePath)) updateSource(filePath, content);
+      else await createFile(filePath, content);
+    }
+    for (const filePath of review.restore.remove) if (currentPaths.has(filePath)) await deleteFile(filePath);
+    await flushPendingWrites();
+    setReview(null);
+    setSaveDialogOpen(true);
+  }
 
   useEffect(() => {
     if (!canEdit) return;
@@ -165,14 +209,15 @@ export default function PageBuilder() {
    * imports resolve to anything - spurious "cannot find name"/"cannot find
    * module" warnings Page Editor's own Editer never shows, since it always
    * wires this same set up. */
+  const effectiveSource = review?.sourceByPath ?? sourceByPath ?? {};
   const baseExtraFiles = useMemo(() => {
-    const rest = { ...sourceByPath };
+    const rest = { ...effectiveSource };
     for (const key of Object.keys(rest)) {
       if (rootOf(key)?.id === MD_ROOT) delete rest[key];
     }
     if (dryTypes) rest["dry.generated.d.ts"] = dryTypes;
     return rest;
-  }, [sourceByPath, dryTypes]);
+  }, [effectiveSource, dryTypes]);
 
   function extraFilesExcluding(openPath: string): Record<string, string> {
     if (!(openPath in baseExtraFiles)) return baseExtraFiles;
@@ -493,29 +538,24 @@ export default function PageBuilder() {
       // can never describe source that exists nowhere but this tab.
       if (gitState.value.phase !== "unconfigured" && codePaths.length > 0) {
         setSaveProgress({ percent: 68, label: "Committing to git…" });
-        const { commitAll, push } = await import("../page-components/git/git-repo.js");
+        const { commitWorkingCopy, resyncWorkingCopy } = await import("../page-components/git/git-repo.js");
         const author = authState.value.user;
-        const oid = await commitAll({
-          message: commitMessageFor(codePaths, sourceByPath ?? {}),
-          author: {
+        const committed = await commitWorkingCopy(
+          path,
+          commitMessageFor(codePaths, sourceByPath ?? {}),
+          {
             name: author?.name || "drycms",
             // Not a real mailbox on purpose - a tenant's admin account has an
             // email, but publishing it into a public git history is not
             // something this feature should decide for them.
             email: `${author?.id ?? "admin"}@page-builder.drycms`,
           },
-        });
-        if (oid) {
-          setSaveProgress({ percent: 74, label: "Pushing to GitHub…" });
-          const pushed = await push(path, gitState.value.branch);
-          if (!pushed.ok) {
-            throw new Error(
-              pushed.rejected
-                ? `GitHub rejected the push - the branch moved on since this copy was cloned. Reload to fetch the latest, then save again. (${pushed.reason})`
-                : pushed.reason,
-            );
-          }
+        );
+        if (committed.committed) {
+          setSaveProgress({ percent: 74, label: "Refreshing source…" });
+          await resyncWorkingCopy({ adminPath: path, branch: gitState.value.branch });
           await refreshGitStatus();
+          await reload();
         }
       }
 
@@ -566,12 +606,13 @@ export default function PageBuilder() {
   }
 
   return (
-    <div class="page-builder-root">
+    <div class={`page-builder-root${review ? " history-review" : ""}`}>
+      {review && <div class="page-builder-history-banner"><span>Viewing history · {review.commit.sha.slice(0, 7)} · {review.commit.message.split("\n")[0]} · {new Date(review.commit.date).toLocaleString()}</span><span class="row"><button type="button" class="sm" onClick={() => void revertReview()}>Revert</button><button type="button" class="outline sm" onClick={() => setReview(null)}>Exit</button></span></div>}
       <PreviewFrame
         iframeRef={iframeRef}
         pathname={pathname}
         match={match}
-        sourceByPath={sourceByPath}
+        sourceByPath={effectiveSource}
         allTypes={allTypes}
         assetHrefs={assetHrefs}
         origin={origin}
@@ -590,7 +631,7 @@ export default function PageBuilder() {
         veiOverrides={veiOverrides}
       />
 
-      <Toolbar
+      {!review && <Toolbar
         // Back to the public page being previewed - the return leg of
         // `apps/edit-launcher.ts`'s "Edit" button, which is how a signed-in
         // admin gets here from the site in the first place.
@@ -602,7 +643,8 @@ export default function PageBuilder() {
         onSave={() => void openSavePreview()}
         saveDisabled={pendingCommitPaths.length === 0 && saveDrafts.length === 0 && Object.keys(veiOverrides).length === 0}
         saveCount={saveItemCount}
-      />
+        onOpenHistory={gitState.value.phase === "unconfigured" ? undefined : () => setHistoryPath(null)}
+      />}
 
       {bubbleRoot && (
         <BubbleMenu
@@ -630,7 +672,7 @@ export default function PageBuilder() {
       {panelMode === "code" && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
         <CodePanel
           path={match.entryPath}
-          source={sourceByPath[match.entryPath] ?? ""}
+          source={effectiveSource[match.entryPath] ?? ""}
           dirty={isDirty(match.entryPath)}
           canDiscard={canDiscard(match.entryPath)}
           saving={saving}
@@ -643,14 +685,16 @@ export default function PageBuilder() {
           initialWidth={codePanelWidth}
           layoutPaths={match.layoutPaths}
           onOpenLayout={setFileDialogPath}
+          readOnly={review !== null}
+          onOpenHistory={gitState.value.phase === "unconfigured" || review ? undefined : () => setHistoryPath(match.entryPath)}
         />
       )}
 
       {fileDialogPath && (
         <FileDialog
           path={fileDialogPath}
-          source={sourceByPath[fileDialogPath] ?? ""}
-          sourceByPath={sourceByPath}
+          source={effectiveSource[fileDialogPath] ?? ""}
+          sourceByPath={effectiveSource}
           extraFiles={fileDialogExtraFiles}
           dirty={isDirty(fileDialogPath)}
           canDiscard={canDiscard(fileDialogPath)}
@@ -667,6 +711,8 @@ export default function PageBuilder() {
           previewEntryPath={match?.entryPath ?? null}
           previewLayoutPaths={match?.layoutPaths ?? []}
           previewParams={match?.params ?? {}}
+          readOnly={review !== null}
+          onOpenHistory={gitState.value.phase === "unconfigured" || review ? undefined : () => setHistoryPath(fileDialogPath)}
         />
       )}
 
@@ -688,13 +734,15 @@ export default function PageBuilder() {
       {/* The file the chat treats as CONTEXT ("what the admin is looking
           at") - the dialog's file when one is open, otherwise the route's
           own page.tsx. Never a limit on what Magic may write. */}
-      <PageSourceMagicChat
+      {!review && <PageSourceMagicChat
         path={magicPath}
         code={sourceByPath[magicPath] ?? ""}
         projectFiles={projectFiles}
         onCodeChange={handleMagicCodeChange}
         canUse={canEdit}
-      />
+      />}
+
+      {historyPath !== undefined && <HistoryDialog open adminPath={path} filePath={historyPath ?? undefined} onReviewFile={(commit, filePath) => void reviewFile(commit, filePath)} onReviewCommit={(commit) => void reviewCommit(commit)} onClose={() => setHistoryPath(undefined)} />}
 
       <SavePreviewDialog
         open={saveDialogOpen}

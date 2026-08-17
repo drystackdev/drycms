@@ -101,26 +101,18 @@ function writePersistedQueue(queue: PersistedBuildQueue | null): void {
 async function pushWorkingCopy(reason: string): Promise<void> {
   if (gitState.value.phase === "unconfigured") return;
   try {
-    const { commitAll, push, status } = await import("../page-components/git/git-repo.js");
+    const { commitWorkingCopy, resyncWorkingCopy, status } = await import("../page-components/git/git-repo.js");
     const pending = await status();
     if (pending.dirty.length === 0) return;
     const user = authState.value.user;
-    const oid = await commitAll({
-      message: `${reason} - ${pending.dirty.length} ${pending.dirty.length === 1 ? "file" : "files"}`,
-      author: { name: user?.name || "drycms", email: `${user?.id ?? "admin"}@page-builder.drycms` },
-    });
-    if (!oid) return;
-    const pushed = await push(path, gitState.value.branch);
+    const pushed = await commitWorkingCopy(
+      path,
+      `${reason} - ${pending.dirty.length} ${pending.dirty.length === 1 ? "file" : "files"}`,
+      { name: user?.name || "drycms", email: `${user?.id ?? "admin"}@page-builder.drycms` },
+    );
+    if (!pushed.committed) return;
+    await resyncWorkingCopy({ adminPath: path, branch: gitState.value.branch });
     await refreshGitStatus();
-    if (!pushed.ok) {
-      toast.add({
-        type: "default",
-        title: "Built, but the push failed",
-        description: pushed.rejected
-          ? `The branch moved on since this copy was cloned - reload to fetch the latest, then build again. (${pushed.reason})`
-          : pushed.reason,
-      });
-    }
   } catch (error) {
     toast.add({ type: "default", title: "Built, but the push failed", description: error instanceof Error ? error.message : undefined });
   }

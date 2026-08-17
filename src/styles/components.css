@@ -8227,3 +8227,41 @@
     color: var(--dry-destructive);
   }
 }
+/* History snapshots are memory-only; the outline and banner make the
+ * readonly context explicit without shifting the builder layout. */
+.page-builder-root.history-review {
+  outline: 2px solid var(--dry-primary);
+  outline-offset: -2px;
+}
+
+.page-builder-history-banner {
+  position: fixed;
+  z-index: 20;
+  inset: 0 0 auto;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--dry-card);
+  box-shadow: var(--dry-shadow-md);
+}
+
+.auth-single {
+  min-height: 100dvh;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-single > .card {
+  width: min(44rem, 100%);
+}
+
+.page-builder-history-list {
+  max-height: 60vh;
+  overflow: auto;
+  grid-template-columns: minmax(0, 1fr);
+}

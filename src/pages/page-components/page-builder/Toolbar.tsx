@@ -1,5 +1,5 @@
 import Dock from "./Dock.js";
-import { CodeFieldTypeIcon, EditIcon, MenuIcon, SaveIcon } from "../../../components/icons/index.js";
+import { CodeFieldTypeIcon, EditIcon, HistoryIcon, MenuIcon, SaveIcon } from "../../../components/icons/index.js";
 
 export type BuilderPanelMode = "vei" | "code" | null;
 
@@ -21,6 +21,7 @@ export interface ToolbarProps {
   onSave: () => void;
   saveDisabled: boolean;
   saveCount: number;
+  onOpenHistory?: () => void;
 }
 
 export default function Toolbar(props: ToolbarProps) {
@@ -34,6 +35,7 @@ export default function Toolbar(props: ToolbarProps) {
       saveCount={props.saveCount}
       extraActions={
         <>
+          {props.onOpenHistory && <button type="button" class="icon ghost round" aria-label="Page source history" title="History" onClick={props.onOpenHistory}><HistoryIcon /></button>}
           <button type="button" class="icon ghost round" aria-label="Open file menu" title="Page, component, style, MD files" onClick={props.onOpenMenu}>
             <MenuIcon />
           </button>

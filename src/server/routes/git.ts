@@ -76,7 +76,7 @@ function notConfiguredResponse(reason: string): Response {
       error: "git_not_configured",
       message:
         reason === "not-configured"
-          ? "Connect a GitHub repository first: Settings -> GitHub Sync (repository, branch and a personal access token)."
+          ? "Connect a GitHub repository first: Settings -> GitHub (repository, branch and a personal access token)."
           : reason,
     },
     412,
@@ -143,7 +143,7 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
     return jsonResponse(
       {
         error: "git_redirected",
-        message: `GitHub redirected "${repo}" (HTTP ${upstream.status}) - the repository may have been renamed or moved. Update it in Settings -> GitHub Sync.`,
+        message: `GitHub redirected "${repo}" (HTTP ${upstream.status}) - the repository may have been renamed or moved. Update it in Settings -> GitHub.`,
       },
       502,
     );
@@ -174,4 +174,25 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
 
 export const GET: DryRouteHandler = (context) =>
   readSlug(context) === "config" ? configResponse(context) : proxy(context, "GET");
-export const POST: DryRouteHandler = (context) => proxy(context, "POST");
+async function validate(context: DryRouteContext): Promise<Response> {
+  const body = await context.request.json().catch(() => ({})) as { repo?: unknown; token?: unknown };
+  const repo = typeof body.repo === "string" ? body.repo.trim() : "";
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const fieldErrors: Record<string, string> = {};
+  if (!isValidRepoSlug(repo)) fieldErrors.repo = 'Use the "owner/repository" format.';
+  if (!token) fieldErrors.token = "An access token is required.";
+  if (Object.keys(fieldErrors).length) return jsonResponse({ valid: false, fieldErrors }, 400);
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "drycms" };
+  try {
+    const user = await fetch(`https://api.github.com/user`, { headers, redirect: "manual" });
+    if (!user.ok) return jsonResponse({ valid: false, fieldErrors: { token: "GitHub rejected this access token." } }, 400);
+    const repository = await fetch(`https://api.github.com/repos/${repo}`, { headers, redirect: "manual" });
+    if (!repository.ok) return jsonResponse({ valid: false, fieldErrors: { repo: "Repository not found or this token cannot access it." } }, 400);
+    const value = await repository.json() as { permissions?: { push?: boolean } };
+    if (value.permissions?.push !== true) return jsonResponse({ valid: false, fieldErrors: { token: "This token does not have push access to the repository." } }, 400);
+    return jsonResponse({ valid: true });
+  } catch {
+    return jsonResponse({ valid: false, fieldErrors: { token: "GitHub could not be reached. Try again." } }, 502);
+  }
+}
+export const POST: DryRouteHandler = (context) => readSlug(context) === "validate" ? validate(context) : proxy(context, "POST");

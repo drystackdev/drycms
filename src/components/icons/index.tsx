@@ -605,6 +605,15 @@ export function UndoIcon(props: IconProps) {
 	);
 }
 
+/** History clock with a counter-clockwise arrow. */
+export function HistoryIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" {...props}>
+			<path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" />
+		</svg>
+	);
+}
+
 /** `lucide:redo` */
 export function RedoIcon(props: IconProps) {
 	return (
