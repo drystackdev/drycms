@@ -88,23 +88,20 @@ export default function Dock(props: DockProps) {
   return (
     <div class="dock" ref={ref}>
       {props.extraActions}
-      <button type="button" class="icon ghost round" aria-label="Dashboard" title="Dashboard" onClick={props.onDashboard}>
-        <DashboardIcon />
-      </button>
-      <button
-        type="button"
-        class="round dock-save icon"
-        aria-label="Build and publish"
-        title="Build and publish - commits saved changes to git, then rebuilds affected pages"
-        disabled={props.saveDisabled}
-        onClick={props.onSave}
-      >
-        {props.saveIcon}
-        {!!props.saveCount && <span class="badge sm secondary dock-save-badge">{props.saveCount}</span>}
-      </button>
-      <button type="button" class="icon ghost round" aria-label="Close page builder" title="Back to the page" onClick={props.onExit}>
-        <CloseIcon />
-      </button>
+      <span class="dock-action" data-tooltip="Dashboard"><button type="button" class="icon ghost round" aria-label="Dashboard" onClick={props.onDashboard}><DashboardIcon /></button></span>
+      <span class="dock-action" data-tooltip="Build and publish - commits saved changes to git, then rebuilds affected pages" tabIndex={props.saveDisabled ? 0 : undefined}>
+        <button
+          type="button"
+          class="round dock-save icon"
+          aria-label="Build and publish"
+          disabled={props.saveDisabled}
+          onClick={props.onSave}
+        >
+          {props.saveIcon}
+          {!!props.saveCount && <span class="badge sm secondary dock-save-badge">{props.saveCount}</span>}
+        </button>
+      </span>
+      <span class="dock-action" data-tooltip="Back to the page"><button type="button" class="icon ghost round" aria-label="Close page builder" onClick={props.onExit}><CloseIcon /></button></span>
     </div>
   );
 }

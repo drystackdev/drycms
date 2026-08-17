@@ -23,8 +23,26 @@ const pkgVersion = (
 
 const PRISM_LANGUAGE_FILE = /\/node_modules\/prismjs\/components\/prism-[\w-]+\.js$/;
 
-export function isSandboxPreviewModuleRequest(headers: Record<string, string | string[] | undefined>): boolean {
-  return headers.origin === "null" && headers["sec-fetch-dest"] === "script";
+const VITE_MODULE_PATH = /^(?:\/node_modules\/|\/src\/|\/\.dry\/pages-source\/|\/@(?:id|fs|vite)\/)/;
+
+export function isSandboxPreviewModuleRequest(
+  headers: Record<string, string | string[] | undefined>,
+  requestUrl = "",
+): boolean {
+  // These are dev-only Vite module URLs, never API routes or the admin HTML
+  // shell. Mark them independently of Fetch Metadata because Chrome has
+  // emitted different/missing `Sec-Fetch-*` combinations for optimized-dep
+  // imports across versions. This also makes a cached dependency response
+  // safe to reuse inside the opaque-origin preview.
+  if (VITE_MODULE_PATH.test(requestUrl.split("?")[0] ?? "")) return true;
+  if (headers.origin !== "null") return false;
+  // Chrome reports top-level module loads as `script`, but optimized-dep
+  // imports can arrive as a CORS fetch with destination `empty` (notably
+  // `/node_modules/.vite/deps/preact.js`). Both are module-graph requests
+  // from the opaque-origin srcdoc preview. The custom dev server runs API
+  // middleware before Vite, so this Vite-only allowance cannot expose an
+  // authenticated API response to a null-origin caller.
+  return headers["sec-fetch-dest"] === "script" || headers["sec-fetch-mode"] === "cors";
 }
 
 /** Opaque Page Builder previews need CORS for Vite-transformed module
@@ -36,9 +54,27 @@ function sandboxPreviewModuleCorsPlugin(): Plugin {
     enforce: "pre",
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
-        if (isSandboxPreviewModuleRequest(request.headers)) {
+        if (isSandboxPreviewModuleRequest(request.headers, request.url)) {
           response.setHeader("Access-Control-Allow-Origin", "null");
           response.setHeader("Vary", "Origin");
+          // Vite serves optimized deps (`/node_modules/.vite/deps/*.js?v=…`)
+          // with `max-age=31536000, immutable`, and the preview iframe has
+          // its own opaque cache partition. So a copy this middleware cached
+          // WITHOUT the header above - anything fetched before it existed,
+          // or before its match list covered that URL - is replayed inside
+          // the preview for a year, failing every load with "No
+          // 'Access-Control-Allow-Origin' header is present" that no
+          // server-side fix can reach (found live: `preact.js?v=…` imported
+          // by `hydrate-built.ts`'s own dev module graph). Everything this
+          // middleware marks is therefore revalidated instead: dev is
+          // localhost, the ETag makes it a 304, and that 304 comes back
+          // through here with the header attached. `/src/*` already behaves
+          // exactly this way under Vite's own defaults.
+          response.setHeader("Cache-Control", "no-cache");
+          const setHeader = response.setHeader.bind(response);
+          response.setHeader = function keepNoCache(name, value) {
+            return String(name).toLowerCase() === "cache-control" ? response : setHeader(name, value);
+          } as typeof response.setHeader;
         }
         next();
       });

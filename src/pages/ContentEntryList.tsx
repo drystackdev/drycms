@@ -37,6 +37,7 @@ import { useFetch } from "../hooks/useFetch.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import ContentEntryEditor from "./ContentEntryEditor.js";
 import { useDocumentTitle } from "./page-common.js";
+import { backVeiBrowser, isVeiFrame } from "./content-entry-editor/builder-bridge.js";
 
 interface Props {
   typeSlug: string;
@@ -210,6 +211,7 @@ function renderRelationCell(
 
 export default function ContentEntryList({ typeSlug }: Props) {
   const { route } = useLocation();
+  const veiFrame = isVeiFrame();
   const typesApi = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
     [],
@@ -272,6 +274,7 @@ export default function ContentEntryList({ typeSlug }: Props) {
       type={type}
       allTypes={allTypes}
       route={route}
+      veiFrame={veiFrame}
     />
   );
 }
@@ -280,10 +283,12 @@ function ContentEntryListCollection({
   type,
   allTypes,
   route,
+  veiFrame,
 }: {
   type: ContentTypeDefinition;
   allTypes: ContentTypeDefinition[];
   route: (path: string) => void;
+  veiFrame: boolean;
 }) {
   const entriesApi = useMemo(
     () => createContentEntriesApi(`${path}/api/content`, type.name),
@@ -643,11 +648,7 @@ function ContentEntryListCollection({
       <section class="card">
         <header>
           <div class="row">
-            {!isPinned && (
-              <a role="button" href={`${path}/content`} class="icon ghost">
-                <ArrowLeftIcon />
-              </a>
-            )}
+            {veiFrame ? <button type="button" class="icon ghost" aria-label="Back to content types" onClick={backVeiBrowser}><ArrowLeftIcon /></button> : !isPinned && <a role="button" href={`${path}/content`} class="icon ghost"><ArrowLeftIcon /></a>}
             <div style={{ flex: 1 }}>
               <h2>{type.label}</h2>
               <p>{type.description || "Entries in this collection."}</p>
@@ -675,7 +676,7 @@ function ContentEntryListCollection({
             pageSizeOptions={PAGE_SIZE_OPTIONS}
             onPageSizeChange={setPageSize}
             onRowClick={(row) =>
-              route(`${path}/content/${type.name}/${row.id}`)
+              route(`${path}/content/${type.name}/${row.id}${veiFrame ? "?_vei=1" : ""}`)
             }
             columnToggle={{
               storageKey: `contentList:${type.name}:columns`,
@@ -734,7 +735,7 @@ function ContentEntryListCollection({
                 {canCreate && (
                   <button
                     type="button"
-                    onClick={() => route(`${path}/content/${type.name}/new`)}
+                    onClick={() => route(`${path}/content/${type.name}/new${veiFrame ? "?_vei=1" : ""}`)}
                   >
                     <PlusIcon /> Add
                   </button>

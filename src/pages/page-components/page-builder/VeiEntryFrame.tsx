@@ -1,10 +1,13 @@
-import { useEffect, useRef } from "preact/hooks";
-import { EditIcon } from "../../../components/icons/index.js";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { CollectionIcon, EditIcon, SingletonIcon } from "../../../components/icons/index.js";
 import { encodeEntryId } from "../../../lib/id-hash.js";
 import { useResizablePanel } from "../../../lib/useResizablePanel.js";
+import { useOverlayScrollbars } from "../../../hooks/overlayscrollbars.js";
 import { BUILDER_PANEL_WIDTH, clampBuilderPanelWidth } from "./panel-width.js";
 import type { PreviewVeiClickRef } from "../../../page-components/page-preview-engine.js";
 import type { PreviewPatchDetail } from "../../../page-components/vei-preview-patch.js";
+import type { ContentTypeDefinition } from "../../../content-types/types.js";
+import type { FieldFocusEventDetail } from "../../content-entry-editor/field-events.js";
 
 /** The ordinary entry-editor admin route, aimed at one field - the
  * ordinary entry editor, `?_field=`/`?_path=` aimed at the clicked field,
@@ -29,8 +32,11 @@ export interface VeiEntryFrameProps {
   initialWidth: number;
   onWidthChange: (width: number) => void;
   adminPath: string;
+  contentTypes: ContentTypeDefinition[];
+  onBrowse: () => void;
   onClose: () => void;
   onFieldInput: (detail: PreviewPatchDetail) => void;
+  onFieldFocus: (detail: FieldFocusEventDetail) => void;
   onSaved: () => void;
 }
 
@@ -39,12 +45,14 @@ export interface VeiEntryFrameProps {
  * the same right-hand panel as the code editor. Listens for the SAME
  * `vei:*` bridge messages the deleted public-site overlay did
  * (`content-entry-editor/builder-bridge.ts`'s `startVeiBridge`, running
- * inside this iframe), just without that overlay's own
- * hover-highlight/cross-tab-draft-sync/drag-resize polish - "không giống
- * 100% chỉ tương đồng một vài chức năng" (mục 3).
+ * inside this iframe). Its empty state is also the entry point for browsing
+ * every editable Collection/Singleton, so preview markers are a shortcut,
+ * not a limit on which content Visual Editing can reach.
  */
 export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [browseType, setBrowseType] = useState<ContentTypeDefinition | null>(null);
+  const { ref: browserScroll } = useOverlayScrollbars<HTMLDivElement>([!props.target && !browseType]);
   // Same divider as `CodePanel`'s, on the same edge and within the same
   // bounds - pointer capture is what keeps the drag tracking once the cursor
   // crosses onto the preview iframe beside it (`useResizablePanel`'s own doc
@@ -58,9 +66,28 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   });
   const readyRef = useRef(false);
   const currentUrlRef = useRef<string | null>(null);
-  const desiredUrl = props.target ? editorUrl(props.adminPath, props.target) : null;
+  const desiredUrl = props.target
+    ? editorUrl(props.adminPath, props.target)
+    : browseType
+      ? `${props.adminPath}/content/${browseType.name}?_vei=1`
+      : null;
   const desiredUrlRef = useRef<string | null>(desiredUrl);
   desiredUrlRef.current = desiredUrl;
+
+  useEffect(() => {
+    if (props.target) setBrowseType(null);
+  }, [props.target]);
+
+  const groupedTypes = useMemo(() => ({
+    collections: props.contentTypes.filter((type) => type.kind === "collection"),
+    singletons: props.contentTypes.filter((type) => type.kind === "singleton"),
+  }), [props.contentTypes]);
+
+  function showBrowser(): void {
+    setBrowseType(null);
+    currentUrlRef.current = null;
+    props.onBrowse();
+  }
 
   // Keep the same iframe/document alive while the user moves between VEI
   // targets. The editor bridge performs an in-app navigation, matching the
@@ -90,8 +117,12 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
         }
       } else if (message?.type === "vei:input" && message.detail) {
         props.onFieldInput(message.detail as PreviewPatchDetail);
+      } else if (message?.type === "vei:focus" && message.detail) {
+        props.onFieldFocus(message.detail as FieldFocusEventDetail);
       } else if (message?.type === "vei:saved" && message.ok === true) {
         props.onSaved();
+      } else if (message?.type === "vei:back") {
+        showBrowser();
       } else if (message?.type === "vei:close") {
         // Fired by `ContentEntryEditor.tsx`'s own Cancel button (via
         // `content-entry-editor/builder-bridge.ts`'s `closeVeiDialog`) - a real Save leaves
@@ -102,7 +133,7 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [props.onFieldInput, props.onSaved, props.onClose]);
+  }, [props.onFieldInput, props.onFieldFocus, props.onSaved, props.onClose, props.onBrowse]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -123,16 +154,20 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
         <iframe
           ref={iframeRef}
           title="Edit content"
-          aria-hidden={!props.target}
-          style={{ width: "100%", height: "100%", border: "0", display: props.target ? "block" : "none" }}
+          aria-hidden={!desiredUrl}
+          style={{ width: "100%", height: "100%", border: "0", display: desiredUrl ? "block" : "none" }}
         />
-        {!props.target && (
-          <div class="page-builder-vei-empty">
+        {!desiredUrl && (
+          <div ref={browserScroll} class="page-builder-vei-browser"><div class="page-builder-vei-empty">
             <EditIcon />
             <strong>Select content in the preview</strong>
-            <span class="hint">Click a dashed editable area to open its fields here.</span>
+            <span class="hint">Click a marked area in the preview, or select any content below.</span>
+            <div class="page-builder-vei-type-groups">
+              {groupedTypes.collections.length > 0 && <section><h3>Collection</h3><div class="stack">{groupedTypes.collections.map((type) => <button type="button" class="outline page-builder-vei-type" key={type.id} onClick={() => setBrowseType(type)}><CollectionIcon /><span><strong>{type.label}</strong>{type.description && <small>{type.description}</small>}</span></button>)}</div></section>}
+              {groupedTypes.singletons.length > 0 && <section><h3>Singleton</h3><div class="stack">{groupedTypes.singletons.map((type) => <button type="button" class="outline page-builder-vei-type" key={type.id} onClick={() => setBrowseType(type)}><SingletonIcon /><span><strong>{type.label}</strong>{type.description && <small>{type.description}</small>}</span></button>)}</div></section>}
+            </div>
             <button type="button" class="ghost" onClick={props.onClose}>Cancel</button>
-          </div>
+          </div></div>
         )}
       </div>
     </div>

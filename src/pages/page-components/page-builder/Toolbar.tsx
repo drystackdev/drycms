@@ -35,16 +35,10 @@ export default function Toolbar(props: ToolbarProps) {
       saveCount={props.saveCount}
       extraActions={
         <>
-          {props.onOpenHistory && <button type="button" class="icon ghost round" aria-label="Page source history" title="History" onClick={props.onOpenHistory}><HistoryIcon /></button>}
-          <button type="button" class="icon ghost round" aria-label="Open file menu" title="Page, component, style, MD files" onClick={props.onOpenMenu}>
-            <MenuIcon />
-          </button>
-          <button type="button" class="icon ghost round panel-mode" aria-label="Visual editing" aria-pressed={props.panelMode === "vei"} title="Visual editing" onClick={() => props.onTogglePanel("vei")}>
-            <EditIcon />
-          </button>
-          <button type="button" class="icon ghost round panel-mode" aria-label="Code editor" aria-pressed={props.panelMode === "code"} title="Code editor" onClick={() => props.onTogglePanel("code")}>
-            <CodeFieldTypeIcon />
-          </button>
+          {props.onOpenHistory && <span class="dock-action" data-tooltip="History"><button type="button" class="icon ghost round" aria-label="Page source history" onClick={props.onOpenHistory}><HistoryIcon /></button></span>}
+          <span class="dock-action" data-tooltip="Src Code"><button type="button" class="icon ghost round" aria-label="Open file menu" onClick={props.onOpenMenu}><MenuIcon /></button></span>
+          <span class="dock-action" data-tooltip="Visual editing"><button type="button" class="icon ghost round panel-mode" aria-label="Visual editing" aria-pressed={props.panelMode === "vei"} onClick={() => props.onTogglePanel("vei")}><EditIcon /></button></span>
+          <span class="dock-action" data-tooltip="Code editor"><button type="button" class="icon ghost round panel-mode" aria-label="Code editor" aria-pressed={props.panelMode === "code"} onClick={() => props.onTogglePanel("code")}><CodeFieldTypeIcon /></button></span>
         </>
       }
     />

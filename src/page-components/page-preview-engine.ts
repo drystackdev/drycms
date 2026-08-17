@@ -30,6 +30,7 @@ export const PREVIEW_SAVE_MESSAGE = "dry-page-preview-save";
  * the deleted public-site overlay's own `intercept` uses. */
 export const PREVIEW_VEI_CLICK_MESSAGE = "dry-page-preview-vei-click";
 export const PREVIEW_VEI_MODE_MESSAGE = "dry-page-preview-vei-mode";
+export const PREVIEW_VEI_FOCUS_MESSAGE = "dry-page-preview-vei-focus";
 export const PREVIEW_TITLE_MESSAGE = "dry-page-preview-title";
 
 export interface PreviewVeiClickRef {
@@ -46,8 +47,8 @@ export interface PreviewVeiClickRef {
  * the plan's own "Không cần thêm css js thừa riêng cho chế độ VEI phục vụ
  * việc đã đăng nhập" requirement. Deliberately much smaller than
  * the deleted overlay's own `MARKER_STYLES` (no brand-color
- * `--dry-vei-highlight` fetch, no separate focused-field state) - this is
- * the "tương đồng một vài chức năng", not a 1:1 port. */
+ * `--dry-vei-highlight` fetch). The focused-field overlay below reuses the
+ * same highlight box as hover rather than introducing another visual layer. */
 const VEI_PREVIEW_MARKER_CSS = `
 html.dry-vei-enabled [data-dry],
 html.dry-vei-enabled [data-dry-src],
@@ -103,16 +104,19 @@ export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiTo
     ? `function findMarked(node){while(node){if(node.getAttributeNames){var names=node.getAttributeNames();for(var i=0;i<names.length;i++){var n=names[i];if(n==="data-dry"||n.indexOf("data-dry-")===0){var raw=node.getAttribute(n);if(raw)return{el:node,raw:raw};}}}node=node.parentElement;}return null;}`
     : "";
   const highlightSupport = veiEnabled
-    ? `var highlight=document.createElement("div");highlight.className="dry-vei-preview-highlight";(document.body||document.documentElement).appendChild(highlight);function hideHighlight(){highlight.style.display="none";}function showHighlight(el){var rect=el.getBoundingClientRect();highlight.style.left=rect.left+"px";highlight.style.top=rect.top+"px";highlight.style.width=rect.width+"px";highlight.style.height=rect.height+"px";highlight.style.borderRadius=getComputedStyle(el).borderRadius;highlight.style.display="block";}document.addEventListener("mousemove",function(event){if(!veiMode){hideHighlight();return;}var marked=findMarked(event.target);if(marked)showHighlight(marked.el);else hideHighlight();},true);document.addEventListener("mouseleave",hideHighlight,true);document.addEventListener("scroll",hideHighlight,true);`
+    ? `var highlight=document.createElement("div");highlight.className="dry-vei-preview-highlight";(document.body||document.documentElement).appendChild(highlight);function hideHighlight(){highlight.style.display="none";}function showHighlight(el){var rect=el.getBoundingClientRect();highlight.style.left=rect.left+"px";highlight.style.top=rect.top+"px";highlight.style.width=rect.width+"px";highlight.style.height=rect.height+"px";highlight.style.borderRadius=getComputedStyle(el).borderRadius;highlight.style.display="block";}document.addEventListener("mousemove",function(event){if(!veiMode){hideHighlight();return;}if(focusedEl){showHighlight(focusedEl);return;}var marked=findMarked(event.target);if(marked)showHighlight(marked.el);else hideHighlight();},true);document.addEventListener("mouseleave",function(){if(!focusedEl)hideHighlight();},true);document.addEventListener("scroll",function(){if(focusedEl)showHighlight(focusedEl);else hideHighlight();},true);`
     : "";
   const initialMode = veiEnabled && !options?.runtimeVeiToggle;
   const modeListener = options?.runtimeVeiToggle
-    ? `window.addEventListener("message",function(event){if(event.data&&event.data.type===${JSON.stringify(PREVIEW_VEI_MODE_MESSAGE)}){veiMode=event.data.enabled===true;document.documentElement.classList.toggle("dry-vei-enabled",veiMode);if(!veiMode){document.documentElement.classList.remove("dry-vei-shift");${veiEnabled ? "hideHighlight();" : ""}}}});`
+    ? `window.addEventListener("message",function(event){if(event.data&&event.data.type===${JSON.stringify(PREVIEW_VEI_MODE_MESSAGE)}){veiMode=event.data.enabled===true;document.documentElement.classList.toggle("dry-vei-enabled",veiMode);if(!veiMode){${veiEnabled ? "focusedEl=null;" : ""}document.documentElement.classList.remove("dry-vei-shift");${veiEnabled ? "hideHighlight();" : ""}}}});`
+    : "";
+  const focusListener = veiEnabled
+    ? `var focusedEl=null;function findFocusedMarker(detail){if(!detail||!detail.path)return null;var nodes=document.querySelectorAll("[data-dry],[data-dry-src],[data-dry-html]");for(var i=0;i<nodes.length;i++){var names=nodes[i].getAttributeNames();for(var j=0;j<names.length;j++){var name=names[j];if(name!=="data-dry"&&name.indexOf("data-dry-")!==0)continue;var refs=(nodes[i].getAttribute(name)||"").trim().split(/\\s+/);for(var k=0;k<refs.length;k++){var parts=refs[k].split(":");if(parts.length===5&&parts[1]===detail.typeSlug&&parts[3]===detail.path&&(detail.entryId===null||Number(parts[2])===detail.entryId))return nodes[i];}}}return null;}window.addEventListener("message",function(event){if(!event.data||event.data.type!==${JSON.stringify(PREVIEW_VEI_FOCUS_MESSAGE)})return;focusedEl=findFocusedMarker(event.data.detail);if(!focusedEl){hideHighlight();return;}focusedEl.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});showHighlight(focusedEl);});`
     : "";
   const shiftSupport = veiEnabled
     ? `function syncShift(event){document.documentElement.classList.toggle("dry-vei-shift",veiMode&&event.shiftKey===true);}window.addEventListener("keydown",syncShift,true);window.addEventListener("keyup",syncShift,true);window.addEventListener("blur",function(){document.documentElement.classList.remove("dry-vei-shift");hideHighlight();});`
     : "";
-  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${shiftSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
+  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${focusListener}${shiftSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 export interface BuildPreviewSrcdocInput {

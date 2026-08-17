@@ -55,7 +55,7 @@ import {
   scrollToField,
   takeEntrySaveRequest,
 } from "./content-entry-editor/field-events.js";
-import { closeVeiDialog, isVeiFrame } from "./content-entry-editor/builder-bridge.js";
+import { backVeiBrowser, closeVeiDialog, isVeiFrame } from "./content-entry-editor/builder-bridge.js";
 import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
 import { showPublishStatus } from "../store/sync.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
@@ -791,17 +791,14 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
        * dialog keeps its own local header exactly as it always has. */}
       {veiFrame && (
         <div class="page-header">
-          {/* No list to go back to inside the VEI dialog - same reasoning as
-           * the Cancel button below not navigating there either. */}
-          {!isSingleton && !veiFrame && (
-            <button
-              type="button"
-              class="icon ghost"
-              onClick={() => route(backTo)}
-            >
-              <ArrowLeftIcon />
-            </button>
-          )}
+          <button
+            type="button"
+            class="icon ghost"
+            aria-label={isSingleton ? "Back to content types" : "Back to entries"}
+            onClick={() => isSingleton ? backVeiBrowser() : route(`${backTo}?_vei=1`)}
+          >
+            <ArrowLeftIcon />
+          </button>
           <div style={{ flex: 1 }}>
             <h1>{isNew ? `New ${type.label}` : type.label}</h1>
             <p>{type.description || `Edit this ${type.kind}'s content.`}</p>

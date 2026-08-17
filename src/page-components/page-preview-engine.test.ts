@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPreviewBridgeScript, buildPreviewStorageShimScript, PREVIEW_TITLE_MESSAGE, PREVIEW_VEI_MODE_MESSAGE } from "./page-preview-engine.js";
+import { buildPreviewBridgeScript, buildPreviewStorageShimScript, PREVIEW_TITLE_MESSAGE, PREVIEW_VEI_FOCUS_MESSAGE, PREVIEW_VEI_MODE_MESSAGE } from "./page-preview-engine.js";
 
 describe("Page Builder preview bridge", () => {
   it("toggles VEI at runtime and preserves Shift+Click as the page-action escape hatch", () => {
@@ -8,6 +8,9 @@ describe("Page Builder preview bridge", () => {
     expect(script).toContain("veiMode&&!event.shiftKey");
     expect(script).toContain('classList.toggle("dry-vei-enabled",veiMode)');
     expect(script).toContain(PREVIEW_TITLE_MESSAGE);
+    expect(script).toContain(PREVIEW_VEI_FOCUS_MESSAGE);
+    expect(script).toContain('scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"})');
+    expect(script).toContain("return nodes[i]");
   });
 
   it("provides isolated in-memory storage to opaque-origin previews", () => {

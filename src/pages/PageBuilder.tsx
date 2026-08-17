@@ -15,9 +15,10 @@ import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, sta
 import { fetchPreviewEntries } from "../page-components/dynamic-routes.js";
 import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
 import { MD_ROOT, PAGES_ROOT, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
-import type { PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
+import { PREVIEW_VEI_FOCUS_MESSAGE, type PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
-import { encodeEntryId } from "../lib/id-hash.js";
+import { decodeEntryId, encodeEntryId } from "../lib/id-hash.js";
+import type { FieldFocusEventDetail } from "./content-entry-editor/field-events.js";
 import PreviewFrame from "./page-components/page-builder/PreviewFrame.js";
 import Toolbar, { type BuilderPanelMode } from "./page-components/page-builder/Toolbar.js";
 import BubbleMenu from "./page-components/page-builder/BubbleMenu.js";
@@ -418,6 +419,20 @@ export default function PageBuilder() {
   }
 
   const handleVeiClick = useCallback((ref: PreviewVeiClickRef) => setVeiTarget(ref), []);
+  const handleVeiFocus = useCallback((detail: FieldFocusEventDetail) => {
+    const type = allTypes?.find((candidate) => candidate.name === detail.typeSlug);
+    const decodedId = detail.entryId === null ? null : decodeEntryId(detail.entryId);
+    iframeRef.current?.contentWindow?.postMessage({
+      type: PREVIEW_VEI_FOCUS_MESSAGE,
+      detail: {
+        typeSlug: detail.typeSlug,
+        // `null` is a real singleton identity, but for an unsaved collection
+        // entry it means "not on the preview yet" and must match nothing.
+        entryId: type?.kind === "singleton" ? null : (decodedId ?? -1),
+        path: detail.name,
+      },
+    }, "*");
+  }, [allTypes]);
 
   /** Every file that already exists in this project's source tree, for
    * `PageSourceMagicChat`'s own orientation (`PageSourceMagicChatProps.
@@ -722,11 +737,14 @@ export default function PageBuilder() {
           initialWidth={codePanelWidth}
           onWidthChange={setCodePanelWidth}
           adminPath={path}
+          contentTypes={(allTypes ?? []).filter((type) => !type.hidden && type.kind !== "component" && veiContext.canUpdate(type))}
+          onBrowse={() => setVeiTarget(null)}
           onClose={() => {
             setVeiTarget(null);
             setPanelMode(null);
           }}
           onFieldInput={handleFieldInput}
+          onFieldFocus={handleVeiFocus}
           onSaved={handleVeiSaved}
         />
       )}

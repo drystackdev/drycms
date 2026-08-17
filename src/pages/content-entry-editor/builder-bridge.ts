@@ -47,11 +47,16 @@ export interface VeiCloseMessage {
   type: "vei:close";
 }
 
+export interface VeiBackMessage {
+  type: "vei:back";
+}
+
 export type VeiMessage =
   | VeiInputMessage
   | VeiFocusMessage
   | VeiReadyMessage
   | VeiSavedMessage
+  | VeiBackMessage
   | VeiCloseMessage;
 
 /** True when this document is the VEI dialog - `?_vei=1` AND actually
@@ -79,6 +84,11 @@ function post(message: VeiMessage): void {
  * on the other end. */
 export function closeVeiDialog(): void {
   post({ type: "vei:close" });
+}
+
+/** Returns the framed editor/list to Page Builder's content-type chooser. */
+export function backVeiBrowser(): void {
+  post({ type: "vei:back" });
 }
 
 export function startVeiBridge(navigate: (url: string) => void): () => void {
