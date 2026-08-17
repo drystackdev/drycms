@@ -257,5 +257,11 @@ export default defineConfig(({ isSsrBuild, command }) => ({
   optimizeDeps: {
     // Prebundling `preact-iso` embeds a second Preact module in Vite dev.
     exclude: ["preact-iso"],
+    // The git working copy's dependencies (`page-components/git/`) are only
+    // ever reached through a dynamic `import()`, so Vite doesn't discover
+    // them while crawling the entry graph - it meets them mid-session and
+    // re-optimizes, which forces a full page reload right in the middle of a
+    // clone. Naming them here gets them pre-bundled at startup instead.
+    include: ["isomorphic-git", "isomorphic-git/http/web", "buffer", "@zenfs/core", "@zenfs/dom"],
   },
 }));

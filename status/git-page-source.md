@@ -24,9 +24,12 @@ Quyết định user đã chốt:
 - Auto-build chạy **trong tab admin ngay sau push**, không dựng CI.
 - Dev local: `.dry/pages-source` thành clone git thật, Page Builder save thì
   **mirror xuống đĩa** (dev-only) để Vite HMR/live preview/dev SSR giữ nguyên.
-- **PageEditor (`/dry/page-editor`) và PageBuild (`/dry/page-build`) sẽ bị xoá**
-  sau khi Page Builder hoàn thiện -> không tốn công migrate 2 trang đó, chỉ
-  giữ chúng chạy tạm trên R2 mirror cho tới lúc xoá.
+- **PageEditor (`/dry/page-editor`) sẽ bị xoá** sau khi Page Builder hoàn
+  thiện -> không tốn công migrate. ĐÃ XONG 2026-08-17
+  (`status/page-builder-only-surface.md`): Page Editor + VEI public đều đã
+  xoá, Page Builder là surface sửa code duy nhất, mọi thao tác file đã đi qua
+  MỘT seam `use-page-builder-source.ts`. `/dry/page-build` (Build all) giữ
+  lại.
 
 ### Ràng buộc kỹ thuật đã xác minh trong repo
 
@@ -201,9 +204,216 @@ G0 0.5đ · G1 1đ · G2 1.5đ · G3 1.5đ · G4 1đ · G5 1đ · G6 1đ · G7 0
 -> khoảng **8 ngày công**, có thể ship dần theo giai đoạn (sau G4 là đã dùng
 được thật).
 
+---
+
+## Kế hoạch thực hiện (2026-08-17)
+
+Sau khi Phần 1 xong (`status/page-builder-only-surface.md`), đây là thứ tự
+làm CỤ THỂ. Mỗi gói ghi rõ: file đụng tới, cách kiểm chứng, và có cần PAT
+thật hay không.
+
+### Ràng buộc mới xác minh trong repo (ảnh hưởng trực tiếp tới G1)
+
+- `request-limits.ts`: `maxBodyBytesFor` mặc định **2 MiB** cho mọi segment
+  chưa liệt kê -> `git-receive-pack` (push) sẽ bị 413 ngay. **Bắt buộc** thêm
+  nhánh `if (segment === "git") return MAX_GIT_BODY_BYTES` (đề xuất 50 MiB,
+  bằng `MAX_UPLOAD_BODY_BYTES`).
+- `limitRequestBody` đã bọc body bằng `ReadableStream` + `duplex: "half"` ->
+  proxy **stream được**, không phải buffer. Chuyển thẳng
+  `context.request.body` sang `fetch` upstream.
+- CSRF: `lib/native/csrf-fetch.ts` patch `window.fetch` toàn cục cho
+  `/dry/api/*` và tự thêm `X-CSRF-Token` cho POST -> isomorphic-git dùng
+  `http/web` (fetch, body là `Uint8Array` đã gom sẵn, KHÔNG stream) nên
+  **được CSRF miễn phí**, không cần đụng `csrf.ts`.
+- Gate quyền: thêm `if (segment === "git")` cạnh khối `pages-source` trong
+  `handler.ts` (`requirePermission(context, PAGE_BUILDER_RESOURCE_ID,
+  "setting")`).
+- `fetchNoRedirect` ném lỗi khi upstream 3xx. GitHub 301 khi repo bị đổi
+  tên/chuyển chủ -> lỗi sẽ hiện ra là "refused to follow a redirect"; message
+  của proxy phải nói rõ "repo có thể đã đổi tên" thay vì để nguyên.
+- Phiên bản package (đã tra registry): `isomorphic-git@1.41.4` (~4.9 MB
+  unpacked), `@zenfs/core@2.6.3`, `@zenfs/dom@1.2.10`.
+
+### Gói 1 - G0a: spike CLONE, **không cần PAT** (làm trước tiên)
+
+Clone ẩn danh một repo GitHub **public** qua proxy của chính mình trả lời
+được 3/4 câu hỏi rủi ro mà không cần credential nào:
+
+1. `src/server/routes/git.ts` bản tối thiểu: allowlist đúng 3 endpoint
+   (`info/refs?service=git-upload-pack|git-receive-pack`, `git-upload-pack`,
+   `git-receive-pack`), repo lấy từ config server, stream 2 chiều, chưa cần
+   token.
+2. Spec Playwright throwaway (`e2e/tmp-git-spike.spec.ts`, xoá sau) mở một
+   trang admin, dynamic-import `isomorphic-git` + ZenFS, `clone({ depth: 1,
+   singleBranch: true, url: "/dry/api/git" })`.
+3. Đo: thời gian clone, dung lượng IndexedDB (`navigator.storage.estimate()`),
+   kích thước chunk mà Vite build ra cho 3 package đó.
+
+Kết quả ghi vào mục Status của file này. Nếu ZenFS/IndexedDB hoặc bundle
+không ổn -> đổi hướng (ví dụ `LightningFS`) TRƯỚC khi viết tiếp.
+
+### Gói 2 - G1: config + proxy hoàn chỉnh (không cần PAT để viết + test)
+
+- `content-types/seed.ts`: `githubSync` giữ nguyên field, chỉ đổi mô tả
+  `enabled` (giờ nghĩa là "bật git working copy"), + migrate DB live bằng
+  script throwaway như `google-verification-singleton.md` đã làm.
+- `GithubSyncSettings.tsx`: validate thật khi Save (`GET /user`,
+  `GET /repos/{repo}` -> `permissions.push`), lỗi hiện **inline trên field**
+  (rule sẵn có), không toast.
+- `src/server/routes/git.ts` hoàn chỉnh: đọc + `decryptSecret` token, chèn
+  `Authorization`, chặn mọi path ngoài allowlist, không forward cookie admin
+  ra ngoài, 412 + message actionable khi chưa cấu hình.
+- `request-limits.ts` + `handler.ts` như mục ràng buộc ở trên.
+- Test (mock `fetch`, không gọi mạng): `routes/git.test.ts` - allowlist
+  path/method, thiếu config -> 412, thiếu quyền -> 403, token không lọt vào
+  response header, body vượt hạn -> 413.
+
+### Gói 3 - G0b: spike PUSH (**cần repo + PAT thật**)
+
+Trên repo do user cấp: clone `depth:1` -> sửa 1 file -> `commit` -> `push`.
+Câu hỏi phải trả lời: GitHub có nhận push từ shallow clone không. Nếu không:
+fallback `depth: 50`, rồi full clone (cây source toàn text, rất nhẹ).
+
+### Gói 4 - G2: working copy trong browser
+
+- `src/page-components/git/git-fs.ts` (mount ZenFS IndexedDB tại `/repo`, một
+  instance duy nhất, **Web Locks** quanh mọi thao tác ghi).
+- `src/page-components/git/git-repo.ts`: `ensureCloned` / `fetchAndFastForward`
+  / `statusMatrix` / `commitAll` / `push` / `log` / `readAllSource`
+  (trả đúng `Record<path, content>` shape mà `page-build.ts` đang nhận).
+- Tất cả **dynamic import** (kỷ luật `import("./page-build.js")` đang dùng).
+- `routers/App.tsx`: `AuthenticatedApp` gọi `ensureRepoReady()` ngay sau auth,
+  cạnh `needsInitialPublish`; trạng thái (cloning/ahead/behind/dirty) vào một
+  signal dùng chung.
+- Repo/branch trống -> gọi `ensureBranchExists` (đã có) tạo commit đầu từ
+  `mock/`.
+- Test: unit cho `readAllSource`/`statusMatrix` mapping (mock fs), e2e cho
+  luồng clone lúc đăng nhập.
+
+### Gói 5 - G3: Page Builder đọc/ghi ZenFS
+
+Đây là chỗ Phần 1 đã dọn sẵn: chỉ sửa **một** file,
+`use-page-builder-source.ts` (`loadAllPagesSource` -> `readAllSource`;
+`save`/`createFile`/`renameFile`/`deleteFile` -> ghi ZenFS; `dirtyPaths` ->
+`git.statusMatrix`), cộng luồng **Commit & Deploy** trong dock và dialog xử
+lý xung đột khi push bị từ chối. Ở dev thêm mirror PUT xuống
+`/api/pages-source` để Vite HMR không đổi hành vi.
+
+### Gói 6 - G4: auto build + publish sau push
+
+- Diff `oldHead..newHead` (`git.walk`) -> `changedPaths`.
+- Refactor `initial-publish.ts` để `publishPages` nhận **source loader tiêm
+  vào** (hết đọc lại qua HTTP).
+- `lastBuiltCommit` lưu vào system-settings/KV; lúc boot nếu `HEAD !==
+  lastBuiltCommit` thì build phần diff (đây là cách commit từ VS Code/MCP
+  được bù build).
+
+### Gói 7-8 - G5, G6, dọn dẹp
+
+Như mô tả ở Giai đoạn 5/6/7 phía trên.
+
+### Thứ tự & phụ thuộc
+
+```
+Gói 1 (G0a, không PAT) ─┬─> Gói 2 (G1) ──> Gói 4 (G2) ──> Gói 5 (G3) ──> Gói 6 (G4) ──> G5 ──> G6 ──> G7
+                        └─> Gói 3 (G0b, CẦN PAT) ────────^ (chặn G3 vì push là bắt buộc để commit)
+```
+
+Có thể bắt đầu ngay Gói 1 + Gói 2 mà không cần bất cứ thứ gì từ user. Chỉ Gói
+3 trở đi mới cần **repo + PAT thật** (PAT scope: `repo` cho classic, hoặc
+fine-grained với quyền `Contents: Read and write` trên đúng repo đó).
+
 ## Status
 
-Chưa bắt đầu code - mới chốt xong plan + 4 quyết định kiến trúc với user
+**Gói 1 (G0a) + Gói 2 (G1) + Gói 3 (G0b): XONG 2026-08-17.** Mọi rủi ro kỹ
+thuật của plan đã được trả lời bằng thí nghiệm thật. Việc kế tiếp là **Gói 4
+(G2 - working copy trong browser, nối vào `AuthenticatedApp`)**.
+
+### Gói 3 - G0b: spike PUSH trên repo thật (ĐẠT - câu hỏi rủi ro lớn nhất đã tắt)
+
+Repo thật của user (`GITHUB_REPO` trong `.env`), branch `drycms`, chạy trong
+Chromium qua `/dry/api/git`:
+
+| Bước | Kết quả |
+|---|---|
+| Clone `depth:1` repo thật | **2583 ms**, HEAD `b80ecb4…` |
+| Nội dung branch | đã có sẵn `pages/`, `component/`, `README.md` |
+| Commit trong ZenFS | oid `ce02e9d…` |
+| **Push từ shallow clone** | **GitHub CHẤP NHẬN** (1844 ms, `refs/heads/drycms-spike-…` ok) |
+| Dọn dẹp | branch spike đã xoá qua chính proxy đó; `GET /branches` xác nhận repo còn đúng 5 branch như trước |
+| Dung lượng sau clone+commit | 80 KB |
+
+An toàn: spike KHÔNG đụng branch `drycms` - push vào một branch tạm rồi xoá,
+nên lịch sử page-source thật không có commit rác nào.
+
+**Đổi thiết kế theo cấu hình thực tế của user**: PAT được đặt trong `.env`
+(`GITHUB_REPO`/`GITHUB_BRANCH`/`GITHUB_PAT_KEY`), không phải trong DB. Nên
+`loadGitConfig` giờ ưu tiên **env (`context.env` cho Workers -> `process.env`/
+`.env` cho Node) rồi mới tới singleton `githubSync`**. Đây là thay đổi tốt
+hơn plan gốc: PAT không cần nằm trong D1, `wrangler secret put GITHUB_PAT_KEY`
+là đường production, và cấu hình dùng được TRƯỚC khi có admin nào mở Settings.
+
+### Gói 1 - G0a: spike clone qua proxy (ĐẠT)
+
+Clone thật `octocat/Hello-World` (public, không token) qua chính
+`/dry/api/git` trong Chromium, đo bằng spec Playwright throwaway (đã xoá):
+
+| Chỉ số | Kết quả |
+|---|---|
+| Thời gian clone `depth:1` | **1566 ms** |
+| Phase git chạy đủ | Counting → Receiving → Resolving deltas → Analyzing/Updating workdir |
+| Working copy trên ZenFS/IndexedDB | `.git` + `README` đúng như repo |
+| Lần gọi `ensureCloned` thứ 2 | fast-forward, KHÔNG clone lại, cùng HEAD |
+| `statusMatrix` / `log` | chạy đúng (dirty rỗng, log có commit) |
+| Dung lượng origin sau clone | 57 KB / quota 3.2 GB |
+| Bundle `git-repo.ts` (esbuild, minify) | **565 KB raw / 170 KB gzip** - dynamic import, chỉ tải khi mở luồng git |
+
+**3 bug/ràng buộc thật phát hiện khi spike** (đều đã sửa, ghi lại vì không
+tài liệu nào nói trước):
+
+1. **isomorphic-git đòi URL tuyệt đối** - truyền `"/dry/api/git"` thì ném
+   `UrlParseError: Cannot parse remote URL`. Phải dùng
+   `${window.location.origin}${adminPath}/api/git`.
+2. **`Missing Buffer dependency`** - bản ESM của isomorphic-git giả định có
+   global `Buffer`, chết ngay khi parse refs advertisement đầu tiên. Bản UMD
+   có sẵn polyfill NHƯNG `exports` của package không expose file đó, nên
+   phải thêm dependency `buffer` (~50 KB) và gán `globalThis.Buffer` một lần
+   trong `git()`.
+3. **Vite re-optimize giữa chừng** - 3 package này chỉ được với tới qua
+   `import()` động nên Vite không thấy lúc crawl, gặp giữa phiên là
+   re-optimize + **full page reload đúng lúc đang clone**. Sửa bằng
+   `optimizeDeps.include` trong `vite.config.ts`. Lưu ý vận hành: lần chạy
+   e2e ĐẦU TIÊN sau khi đổi danh sách `include` sẽ chậm/flaky (2 test timeout
+   trong lần đó), lần sau cache ấm là 28/28 xanh trong 57s.
+
+### Gói 2 - G1: config + proxy (XONG, trừ phần validate PAT ở Settings)
+
+- `src/server/git-config.ts` mới: `loadGitConfig` (đọc + giải mã singleton
+  `githubSync`, token có thể rỗng = repo public, chỉ đọc) + `isValidRepoSlug`.
+  `loadGithubSyncConfig` cũ giờ gọi lại hàm này rồi mới bắt buộc có token.
+- `src/server/routes/git.ts`: proxy git smart-HTTP. Allowlist đúng 3 endpoint,
+  repo lấy từ config server (không nhận từ client), query rebuild lại từ đầu,
+  chỉ forward 4 header vào và 2 header ra (**không** forward
+  `content-encoding`/`content-length` - runtime đã giải nén, echo lại là
+  hỏng body git đọc), không forward cookie admin, không đi theo redirect
+  (301 = repo đổi tên -> message riêng), 401/403/404 có message phân biệt
+  "có token nhưng bị từ chối" với "chưa có token".
+- `request-limits.ts`: `MAX_GIT_BODY_BYTES = 50 MiB` cho segment `git` (mặc
+  định 2 MiB sẽ 413 ngay lần push đầu).
+- `handler.ts`: đăng ký `git` + gate `PAGE_BUILDER_RESOURCE_ID` chung với
+  `pages-source`.
+- `src/page-components/git/{git-fs,git-repo}.ts`: ZenFS mount IndexedDB +
+  Web Locks; `ensureCloned`/`readAllSource`/`status`/`commitAll`/`push`/`log`/
+  `changedPathsBetween`/`writeFile`/`removeFile`/`movePath`.
+- Test: `routes/git.test.ts` 11 test (mock `fetch`, không chạm mạng).
+  `bun run test` 1420/1420, `typecheck` sạch, `build` + `build:worker` OK,
+  `test:e2e` 28/28.
+
+**Chưa làm trong Gói 2**: validate PAT khi Save trong `GithubSyncSettings.tsx`
+(`GET /user`, `permissions.push`, lỗi inline trên field). Ưu tiên thấp hơn kể
+từ khi PAT đọc từ env - Settings chỉ còn là đường cấu hình phụ.
+
+Ghi chú cũ (giữ nguyên): mới chốt xong plan + 4 quyết định kiến trúc với user
 (2026-08-16). Việc kế tiếp: Giai đoạn 0 (spike clone/commit/push qua proxy).
 
 ## Speed

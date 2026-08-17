@@ -18,6 +18,13 @@ export const MAX_MAGIC_WRITE_BODY_BYTES = 6 * 1024 * 1024;
  * before hitting `ai-page-source-write.ts`'s own 150,000-character content
  * check. */
 export const MAX_PAGE_SOURCE_AI_BODY_BYTES = 4 * 1024 * 1024;
+/** A `git-receive-pack` POST (`routes/git.ts`) carries a whole packfile -
+ * every object the remote doesn't have yet. The generic 2 MiB JSON cap would
+ * 413 the very first push of a real page-source tree, so this matches a
+ * Media upload's ceiling instead. Still bounded: the proxy streams the body
+ * (never buffers it), but an unbounded push would still tie up an upstream
+ * connection for as long as a client cares to keep writing. */
+export const MAX_GIT_BODY_BYTES = 50 * 1024 * 1024;
 
 export class RequestBodyLimitError extends Error {
   constructor() {
@@ -39,6 +46,7 @@ export function maxBodyBytesFor(segment: string, slug?: string): number {
   if (segment === "storage-backup") return MAX_STORAGE_BACKUP_BODY_BYTES;
   if (segment === "ai" && slug === "magic-write") return MAX_MAGIC_WRITE_BODY_BYTES;
   if (segment === "page-source-ai") return MAX_PAGE_SOURCE_AI_BODY_BYTES;
+  if (segment === "git") return MAX_GIT_BODY_BYTES;
   return MAX_JSON_BODY_BYTES;
 }
 

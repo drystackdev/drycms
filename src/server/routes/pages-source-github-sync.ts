@@ -3,9 +3,8 @@ import { pagesSourceStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { jsonResponse } from "../route-helpers.js";
-import { decryptSecret } from "../../lib/secret-crypto.js";
+import { loadGitConfig } from "../git-config.js";
 import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, type GithubSyncConfig } from "../github-source-sync.js";
-import { GITHUB_SYNC_TYPE_ID } from "../../content-types/system-fields.js";
 import { bufferOf } from "../../storage/util.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
 import { SAMPLE_PAGES_SOURCE_FILES } from "../app-router/sample-pages-source.js";
@@ -44,12 +43,6 @@ export async function readPagesSourceTree(context: Pick<DryRouteContext, "env">)
   return Object.fromEntries(entries);
 }
 
-interface GithubSyncSingletonValue {
-  enabled?: boolean;
-  repo?: string;
-  branch?: string;
-}
-
 /**
  * Loads+decrypts the `githubSync` singleton into a ready-to-use
  * `GithubSyncConfig`, or an `{error}` reason when it's missing/disabled/
@@ -58,25 +51,13 @@ interface GithubSyncSingletonValue {
  * reset), so the enabled+repo+branch+token validation only lives once.
  */
 export async function loadGithubSyncConfig(context: DryRouteContext): Promise<{ config: GithubSyncConfig } | { error: string }> {
-  const { schema, entries } = getContentAdapters(context);
-  const allTypes = await schema.listContentTypes();
-  const type = allTypes.find((candidate) => candidate.id === GITHUB_SYNC_TYPE_ID);
-  if (!type) return { error: "not-configured" };
-
-  const row = await entries.getSingletonEntry(type, allTypes);
-  const value = (row?.value ?? {}) as GithubSyncSingletonValue;
-  if (!row || !value.enabled || !value.repo || !value.branch) return { error: "not-configured" };
-
-  const raw = await entries.getRawEntry(type, row.id);
-  const encryptedToken = typeof raw?.token === "string" ? raw.token : "";
-  if (!encryptedToken) return { error: "not-configured" };
-
-  try {
-    const token = await decryptSecret(encryptedToken);
-    return { config: { repo: value.repo, branch: value.branch, token } };
-  } catch {
-    return { error: "The stored GitHub token cannot be decrypted with the current DRYCMS_SECRET_KEY." };
-  }
+  const loaded = await loadGitConfig(context);
+  if ("error" in loaded) return loaded;
+  // Unlike the git proxy (`routes/git.ts`, which can talk to a public repo
+  // anonymously), every call on this side is a WRITE through the REST API -
+  // no token means nothing to do.
+  if (!loaded.config.token) return { error: "not-configured" };
+  return { config: loaded.config };
 }
 
 /**

@@ -28,6 +28,7 @@ import * as pagesSourceRoute from "./routes/pages-source.js";
 import * as pageSourceAiRoute from "./routes/ai-page-source-write.js";
 import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.js";
 import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
+import * as gitRoute from "./routes/git.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import * as backupRoute from "./routes/backup.js";
@@ -97,6 +98,10 @@ const API_ROUTES: Record<string, RouteModule> = {
   "page-source-ai": pageSourceAiRoute,
   "github-sync": pagesSourceGithubSyncRoute,
   "github-restore": pagesSourceGithubRestoreRoute,
+  // The git smart-HTTP proxy the browser working copy talks to
+  // (`routes/git.ts`) - same permission as `pages-source` below, since a
+  // clone through it IS a read of that same executable tenant source.
+  git: gitRoute,
   "built-assets": builtAssetsRoute,
   "asset-hrefs": assetHrefsRoute,
   // No dispatcher-level gate below for `backup` - unlike `github-sync`/
@@ -272,7 +277,7 @@ export async function handleApiRequest(
   // Page source is executable tenant code, so reads and writes share the
   // same Page Builder grant. A content-only session must not be able to
   // download code merely because it knows this endpoint.
-  if (segment === "pages-source") {
+  if (segment === "pages-source" || segment === "git") {
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }

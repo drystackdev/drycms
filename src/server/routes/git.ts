@@ -1,0 +1,163 @@
+import type { DryRouteContext, DryRouteHandler } from "../context.js";
+import { jsonResponse, readSlug } from "../route-helpers.js";
+import { isValidRepoSlug, loadGitConfig } from "../git-config.js";
+
+/**
+ * Git smart-HTTP proxy - the one thing that makes a real git working copy
+ * possible in the browser (`page-components/git/`, `status/git-page-source.md`).
+ *
+ * Why it has to exist: github.com's git endpoints send no CORS headers, so a
+ * browser can never talk to them directly; isomorphic-git's usual answer is a
+ * third-party CORS proxy (`cors.isomorphic-git.org`). This is that proxy,
+ * same-origin and owned by us, which also makes it the right place to inject
+ * the PAT - the browser never sees the token, and the repo it talks to is
+ * fixed by THIS server's config rather than anything the client sends.
+ *
+ * Hard rules, all enforced below:
+ * - Exactly three upstream paths are reachable (`info/refs` for either
+ *   service, `git-upload-pack`, `git-receive-pack`). Nothing else about
+ *   github.com is proxyable through here.
+ * - `repo` comes from the `githubSync` singleton, never from the request -
+ *   the client cannot name a host, a path, or another repo (SSRF).
+ * - The admin's cookies never leave this origin, and the upstream's
+ *   `Set-Cookie`/`WWW-Authenticate` never come back.
+ * - Bodies stream both ways. A pack can be tens of MiB and neither runtime
+ *   should hold one in memory (`request-limits.ts`'s `git` branch raises the
+ *   generic 2 MiB JSON cap for exactly this route, and its wrapper already
+ *   hands us a `duplex: "half"` stream).
+ *
+ * Gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`, same as
+ * `pages-source` - a git clone through here IS a read of that same
+ * executable tenant source.
+ */
+const GITHUB_GIT_BASE = "https://github.com";
+const UPLOAD_PACK = "git-upload-pack";
+const RECEIVE_PACK = "git-receive-pack";
+
+/** Headers worth forwarding upstream. Everything else (Cookie above all) is
+ * dropped rather than filtered, so a new client header can never leak by
+ * default. */
+const FORWARD_REQUEST_HEADERS = ["accept", "content-type", "git-protocol", "accept-encoding"];
+/** `content-encoding`/`content-length` are deliberately NOT copied back: the
+ * runtime's own fetch already decoded the body we are re-streaming, so
+ * echoing them would describe bytes that no longer exist and corrupt the
+ * response git reads. */
+const FORWARD_RESPONSE_HEADERS = ["content-type", "cache-control"];
+
+interface ResolvedTarget {
+  url: string;
+  /** `git-upload-pack` = read (clone/fetch), `git-receive-pack` = write
+   * (push). Kept even though both are allowed, so a future "read-only
+   * viewer" role has one obvious place to branch on. */
+  service: typeof UPLOAD_PACK | typeof RECEIVE_PACK;
+}
+
+/**
+ * The allowlist. `slug` is whatever followed `{path}/api/git/`; the query
+ * string is re-built from scratch rather than forwarded, so nothing but
+ * `service` can ever reach github.com.
+ */
+export function resolveGitTarget(repo: string, slug: string, method: string, search: URLSearchParams): ResolvedTarget | null {
+  const base = `${GITHUB_GIT_BASE}/${repo}.git`;
+  if (method === "GET" && slug === "info/refs") {
+    const service = search.get("service");
+    if (service !== UPLOAD_PACK && service !== RECEIVE_PACK) return null;
+    return { url: `${base}/info/refs?service=${service}`, service };
+  }
+  if (method === "POST" && (slug === UPLOAD_PACK || slug === RECEIVE_PACK)) {
+    return { url: `${base}/${slug}`, service: slug };
+  }
+  return null;
+}
+
+function notConfiguredResponse(reason: string): Response {
+  return jsonResponse(
+    {
+      error: "git_not_configured",
+      message:
+        reason === "not-configured"
+          ? "Connect a GitHub repository first: Settings -> GitHub Sync (repository, branch and a personal access token)."
+          : reason,
+    },
+    412,
+  );
+}
+
+async function proxy(context: DryRouteContext, method: string): Promise<Response> {
+  const loaded = await loadGitConfig(context);
+  if ("error" in loaded) return notConfiguredResponse(loaded.error);
+  const { repo, token } = loaded.config;
+  if (!isValidRepoSlug(repo)) {
+    return notConfiguredResponse(`"${repo}" is not a valid "owner/name" repository.`);
+  }
+
+  const target = resolveGitTarget(repo, readSlug(context), method, context.url.searchParams);
+  if (!target) return jsonResponse({ error: "not_found", message: "Not a git smart-HTTP endpoint." }, 404);
+
+  const headers = new Headers();
+  for (const name of FORWARD_REQUEST_HEADERS) {
+    const value = context.request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  headers.set("User-Agent", "git/drycms");
+  // GitHub's git-over-HTTPS takes the PAT as HTTP Basic (username is
+  // ignored, by GitHub's own convention `x-access-token`), NOT the `Bearer`
+  // shape its REST API uses.
+  if (token) headers.set("Authorization", `Basic ${btoa(`x-access-token:${token}`)}`);
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(target.url, {
+      method,
+      headers,
+      body: method === "POST" ? context.request.body : undefined,
+      // Node needs this to send a streaming request body at all; workerd
+      // accepts and ignores it.
+      ...(method === "POST" ? ({ duplex: "half" } as RequestInit) : {}),
+      redirect: "manual",
+    });
+  } catch (error) {
+    return jsonResponse(
+      { error: "git_upstream_unreachable", message: error instanceof Error ? error.message : "GitHub could not be reached." },
+      502,
+    );
+  }
+
+  if (upstream.status >= 300 && upstream.status < 400) {
+    // Never follow it: the redirect target is chosen by the upstream, not by
+    // our own validated config. In practice this means the repo was renamed,
+    // moved, or is a redirect to a login page.
+    return jsonResponse(
+      {
+        error: "git_redirected",
+        message: `GitHub redirected "${repo}" (HTTP ${upstream.status}) - the repository may have been renamed or moved. Update it in Settings -> GitHub Sync.`,
+      },
+      502,
+    );
+  }
+  if (upstream.status === 401 || upstream.status === 403) {
+    return jsonResponse(
+      {
+        error: "git_unauthorized",
+        message: token
+          ? `GitHub rejected the stored token for "${repo}" (HTTP ${upstream.status}). Check that it is still valid and has push access.`
+          : `"${repo}" needs a personal access token. Add one in Settings -> GitHub Sync.`,
+      },
+      upstream.status,
+    );
+  }
+  if (upstream.status === 404) {
+    return jsonResponse({ error: "git_not_found", message: `GitHub has no repository "${repo}" (or the token cannot see it).` }, 404);
+  }
+
+  const responseHeaders = new Headers();
+  for (const name of FORWARD_RESPONSE_HEADERS) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
+  responseHeaders.set("Cache-Control", "private, no-store");
+  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+}
+
+export const GET: DryRouteHandler = (context) => proxy(context, "GET");
+export const POST: DryRouteHandler = (context) => proxy(context, "POST");
