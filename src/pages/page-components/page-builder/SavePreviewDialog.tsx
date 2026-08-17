@@ -63,8 +63,8 @@ export default function SavePreviewDialog(props: {
     <dialog ref={dialogRef} class="lg page-builder-save-dialog" aria-label="Preview changes before saving">
       <header>
         <div>
-          <strong class="dialog-title">Save and publish</strong>
-          <p class="hint">Review code and content changes before publishing affected pages.</p>
+          <strong class="dialog-title">Build &amp; publish</strong>
+          <p class="hint">Commits the saved changes to git, then rebuilds and publishes every affected page.</p>
         </div>
       </header>
       <div class="under page-builder-save-dialog-body">
@@ -112,7 +112,7 @@ export default function SavePreviewDialog(props: {
       </div>
       <footer>
         <button type="button" class="outline" disabled={props.progress !== null} onClick={props.onClose}>Cancel</button>
-        <button type="button" disabled={!hasChanges || props.progress !== null} onClick={props.onConfirm}>Save and publish</button>
+        <button type="button" disabled={!hasChanges || props.progress !== null} onClick={props.onConfirm}>Build &amp; publish</button>
       </footer>
       <EntryPreviewDialog
         open={draftPreview !== null}

@@ -325,9 +325,153 @@ fine-grained với quyền `Contents: Read and write` trên đúng repo đó).
 
 ## Status
 
-**Gói 1 (G0a) + Gói 2 (G1) + Gói 3 (G0b): XONG 2026-08-17.** Mọi rủi ro kỹ
-thuật của plan đã được trả lời bằng thí nghiệm thật. Việc kế tiếp là **Gói 4
-(G2 - working copy trong browser, nối vào `AuthenticatedApp`)**.
+**Gói 1 (G0a) + Gói 2 (G1) + Gói 3 (G0b) + Gói 4 (G2) + Gói 5 (G3): XONG
+2026-08-17.** Page Builder đã đọc/ghi từ git working copy và Save đã là
+commit + push thật. Việc kế tiếp là **Gói 6 (G4 - build bù theo
+`lastBuiltCommit`)** và luồng xử lý xung đột khi push bị từ chối.
+
+### Gói 5 - G3: Page Builder chạy trên working copy (XONG, verify trên repo thật)
+
+- `use-page-builder-source.ts` (đúng như dự đoán: chỉ MỘT file phải đổi
+  backend): `reload` gọi `ensureRepoReady` rồi `readAllSource()` từ ZenFS;
+  3 hàm `writeThrough`/`moveThrough`/`removeThrough` là chỗ duy nhất mọi thao
+  tác ghi đi qua. Ở dev còn **mirror xuống `.dry/pages-source`** để Vite
+  HMR/live preview/dev SSR giữ nguyên hành vi; polling HMR cũ tắt khi dùng
+  git (nếu không sẽ đánh nhau với working copy).
+- **Fallback HTTP giữ nguyên** khi chưa cấu hình repo (`phase:
+  "unconfigured"`) - đó là đường của tenant chưa dùng git và của toàn bộ e2e
+  (harness blank `GITHUB_*`). Sẽ bỏ ở Giai đoạn 5-6.
+- `saveAndPublish`: ghi buffer -> **commit** (author = user đang đăng nhập,
+  email `<id>@page-builder.drycms` - không đẩy email thật của admin lên
+  lịch sử public) -> **push** -> mới build. Push bị từ chối
+  (non-fast-forward) báo lỗi rõ "branch đã đổi, reload rồi save lại".
+- **Bug thật bắt được lúc verify**: file tạo/xoá qua file menu ghi thẳng
+  working copy nên KHÔNG nằm trong dirty-buffer -> nút Save không có gì để
+  commit, thay đổi kẹt lại trong IndexedDB. Sửa bằng `pendingCommitPaths` =
+  hợp của dirty-buffer và `git.statusMatrix`; dock badge + Save dialog +
+  commit đều dùng danh sách này.
+- Commit message tự sinh theo thao tác (`Update x` / `Delete x` /
+  `Update N page source files`).
+
+Verify thật (repo user, branch `drycms`, chạy UI Chromium):
+
+| Bước | Kết quả |
+|---|---|
+| Seed branch từ cây local | 1 commit, branch 3 -> 17 file (giữ nguyên file cũ nhờ `base_tree`) |
+| Page Builder đọc từ git | 16-17 file, đúng cây (pages/component/styles/md) |
+| Tạo file qua file menu -> badge Save | **1** (trước khi sửa bug là 0) |
+| Bấm Save -> dialog liệt kê | `md/ui-save-check.md` |
+| Sau khi confirm | commit `9927e44c` "Update md/ui-save-check.md", **author `Admin`**, file đã có trên GitHub |
+| Xoá file qua UI + Save | commit mới, file biến mất khỏi branch, branch về đúng 17 file |
+
+Bundle sau build: `isomorphic-git` 229 KB (68.6 KB gzip) + `git-repo`
+288 KB (81.4 KB gzip), đều là chunk riêng tải theo `import()`, không nằm
+trong chunk `PageBuilder` (458 KB).
+
+### Sửa theo yêu cầu user 2026-08-17: TÁCH Save khỏi Build
+
+User chốt: **Save chỉ ghi ZenFS, chỉ Build/Publish mới push lên git.** Trước
+đó Save làm hết một lượt (ghi + commit + push + build) - đã sửa:
+
+| Hành động | Sau khi sửa |
+|---|---|
+| Save trong CodePanel / FileDialog / Ctrl+S trong preview | Chỉ ghi ZenFS (+ mirror đĩa ở dev). Không mạng, không commit. |
+| Nút dock (đổi nhãn **Build & publish**) | Dialog review -> commit -> push -> build + publish |
+| **Build all** ở `/dry/page-build` | Sau khi publish xong: commit + push working copy (`pushWorkingCopy`) |
+| Nút **Build** từng trang ở `/dry/page-build` | Cũng push - publish 1 trang vẫn làm source đó lên live, không được để live chạy code chỉ tồn tại trong IndexedDB của 1 browser |
+
+Đồng thời:
+- `/dry/page-build` giờ **build từ working copy** (`readAllSource`) thay vì
+  `loadAllPagesSource` (mirror HTTP) - nếu không sẽ build ra HTML từ bản cũ
+  trên R2 trong khi người dùng đã sửa trong git.
+- Gỡ hẳn `triggerGithubSync` + `page-components/github-sync-http-api.ts`:
+  đường push snapshot CŨ đọc `pagesSourceStorage` (giờ chỉ là mirror derived)
+  nên có thể đẩy bytes cũ đè lên commit mới. Route `/api/github-sync` giữ lại
+  vì `PUT` (reset from mock) vẫn dùng.
+
+Verify thật (UI Chromium, repo user):
+
+| Bước | HEAD trên GitHub |
+|---|---|
+| Trước | `d0715320` |
+| Sau khi **Save** (tạo file qua file menu) | `d0715320` - **không đổi**, dirty=`["md/save-vs-build.md"]`, badge dock = 1 |
+| Sau khi bấm **Build & publish** | `7aa8846c` "Update md/save-vs-build.md" - **đã push** |
+| Sau khi xoá file + Build & publish | `a0d8e34e` "Delete md/save-vs-build.md" |
+
+### Bỏ luôn nút Save - edit tự lưu (user chốt 2026-08-17)
+
+Lý do user đưa ra: "không cần nút save vì khi edit đã có draft rồi". Đúng -
+working copy nằm ngay trong browser nên một lần ghi chỉ là IndexedDB, không
+phải round trip mạng; giữ nút Save chỉ là thói quen từ thời phải PUT lên
+server.
+
+- `updateSource` giờ **tự ghi xuống working copy**, debounce 400ms/path (cùng
+  kiểu keyed-Map `entry-draft-store.ts` dùng cho content draft).
+  `flushPendingWrites()` để Build & publish gom nốt phần đang debounce trước
+  khi commit; Ctrl+S trong preview giờ chỉ nghĩa là "flush ngay".
+- Bỏ nút **Save** khỏi `CodePanel` và `FileDialog`. Thay bằng:
+  - nhãn trạng thái `Saving… / Not published / Saved`,
+  - nút **Discard** = `restoreFromHead()` (git checkout file đó từ HEAD; file
+    chưa từng commit thì bị xoá) - undo duy nhất còn lại khi không còn khái
+    niệm "chưa lưu".
+- Nút duy nhất đẩy đi xa vẫn là **Build & publish** ở dock.
+
+**2 bug thật bắt được khi drive UI thật** (đều đã sửa):
+
+1. Nút **Discard bị disable ngay sau khi autosave xong** - `isDirty` đang so
+   buffer với working copy, mà autosave làm 2 cái đó bằng nhau sau ~400ms.
+   Sửa: `isDirty` so với **HEAD** (`gitState.dirty`), tức là "có thay đổi chưa
+   publish", không phải "có thay đổi chưa ghi".
+2. (đã ghi ở mục trên) file tạo/xoá qua file menu không vào danh sách commit.
+
+Verify thật (UI Chromium):
+
+| Bước | Kết quả |
+|---|---|
+| Gõ trong CodePanel, không bấm gì | `Not published` -> `Saved` trong ~1s, badge dock = 1 |
+| Reload trang | badge vẫn 1, **nội dung vừa gõ vẫn còn trong editor**, dialog Build liệt kê đúng `pages/page.tsx` |
+| Bấm **Discard** | nội dung về đúng bản HEAD, badge biến mất, trạng thái `Saved` |
+| HEAD trên GitHub trong suốt quá trình | không đổi (chỉ Build & publish mới push) |
+
+Hệ quả cần biết: file đã gõ nhưng chưa Build chỉ nằm trong IndexedDB của đúng
+browser đó. Ngoài ra 2 TAB admin cùng mở mỗi tab có một ZenFS instance với
+cache riêng - Web Locks chống ghi đè lẫn nhau, nhưng tab B phải reload mới
+thấy thay đổi của tab A.
+
+### Gói 4 - G2: working copy tự sẵn sàng khi vào admin (XONG)
+
+- `src/page-components/git/git-state.ts`: signal `gitState`
+  (`unconfigured|idle|cloning|ready|diverged|error` + branch/repo/head/dirty/
+  progress), `ensureRepoReady()` (coalesce trong 1 tab, Web Lock lo phần
+  nhiều tab), `refreshGitStatus()`. Module này KHÔNG kéo isomorphic-git/ZenFS
+  - mọi thao tác `import()` `git-repo.js` khi cần.
+- `GET {path}/api/git/config` mới: trả `{configured, repo, branch, hasToken}`
+  - browser cần biết branch để clone; **không bao giờ trả token**, chỉ trả
+  "có token hay không". Chưa cấu hình -> `configured:false` (200, không phải
+  412) để client hiện màn hình setup thay vì lỗi.
+- `routers/App.tsx`: `AuthenticatedApp` gọi `ensureRepoReady(path)` một lần
+  sau auth, gate đúng `PAGE_BUILDER_RESOURCE_ID` (session chỉ có quyền
+  content không kéo ~170 KB git về vô ích).
+- `ensureCloned` xử lý thêm case **đổi branch dưới chân working copy**
+  (đổi `GITHUB_BRANCH`): clone `depth:1` của branch cũ không có object của
+  branch mới -> xoá working copy và clone lại, TRỪ khi đang có thay đổi chưa
+  commit (lúc đó báo `diverged`, không bao giờ tự xoá bài của người dùng).
+- `scripts/e2e-server.mjs` blank `GITHUB_*` -> e2e không bao giờ clone/push
+  repo thật của dev và không phụ thuộc mạng.
+
+Đo thật trên dev server (repo user, branch `main`):
+
+| Chỉ số | Kết quả |
+|---|---|
+| Đăng nhập -> `gitState.phase === "ready"` | **~3.2 s** (clone lần đầu, đã gồm cả đổi branch `drycms` -> `main` nên phải clone lại) |
+| Load lại trang | **82 ms** (fast-forward, không clone lại) |
+| HEAD | `0672644…`, dirty rỗng |
+
+**Cần user chốt trước khi làm Gói 5**: branch `main` của
+`khancoder282/test-filestorage` hiện chỉ có `README.md` - KHÔNG có
+`pages/`/`component/`/`styles/`/`md/`, nên `readAllSource()` trả 0 file
+(branch `drycms` thì có `pages/` + `component/`). Phải chốt: dùng branch nào,
+hay để `ensureBranchExists`/seed từ `mock/` tự tạo 4 root trên `main`.
 
 ### Gói 3 - G0b: spike PUSH trên repo thật (ĐẠT - câu hỏi rủi ro lớn nhất đã tắt)
 

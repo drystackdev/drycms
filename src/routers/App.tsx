@@ -15,6 +15,7 @@ import Toaster, { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
+import { ensureRepoReady } from "../page-components/git/git-state.js";
 import OAuthConsent from "../pages/OAuthConsent.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
@@ -170,6 +171,24 @@ function AuthenticatedApp() {
       await publishAllPages(path, allTypes, (message) => toast.add({ type: "default", title: message }));
       authState.value = { ...authState.value, needsInitialPublish: false };
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The browser git working copy (`status/git-page-source.md`): clone on the
+  // first authenticated load, fast-forward on every later one, so Page
+  // Builder and the build/publish pipeline have real source to work from the
+  // moment they are opened rather than starting a clone then. Fire-and-
+  // forget by design - it never blocks a paint, reports through `gitState`,
+  // and swallows its own failures (`ensureRepoReady`'s own doc comment).
+  // Gated on the same permission Page Builder itself needs, so a
+  // content-only session never pulls a megabyte of git into a tab that has
+  // no use for it.
+  const ranRepoReady = useRef(false);
+  useEffect(() => {
+    if (ranRepoReady.current) return;
+    if (!canAccess(PAGE_BUILDER_RESOURCE_ID, "setting")) return;
+    ranRepoReady.current = true;
+    void ensureRepoReady(path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

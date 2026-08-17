@@ -83,6 +83,19 @@ function notConfiguredResponse(reason: string): Response {
   );
 }
 
+/**
+ * `GET {path}/api/git/config` - what the browser needs before it can clone:
+ * which branch, and whether a repository is connected at all. Deliberately
+ * reports only whether a token EXISTS, never any part of it - the token's
+ * whole point is that it stays on this side.
+ */
+async function configResponse(context: DryRouteContext): Promise<Response> {
+  const loaded = await loadGitConfig(context);
+  if ("error" in loaded) return jsonResponse({ configured: false, repo: "", branch: "", hasToken: false });
+  const { repo, branch, token } = loaded.config;
+  return jsonResponse({ configured: isValidRepoSlug(repo), repo, branch, hasToken: token.length > 0 });
+}
+
 async function proxy(context: DryRouteContext, method: string): Promise<Response> {
   const loaded = await loadGitConfig(context);
   if ("error" in loaded) return notConfiguredResponse(loaded.error);
@@ -159,5 +172,6 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 }
 
-export const GET: DryRouteHandler = (context) => proxy(context, "GET");
+export const GET: DryRouteHandler = (context) =>
+  readSlug(context) === "config" ? configResponse(context) : proxy(context, "GET");
 export const POST: DryRouteHandler = (context) => proxy(context, "POST");

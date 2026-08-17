@@ -94,8 +94,8 @@ export default function Dock(props: DockProps) {
       <button
         type="button"
         class="round dock-save icon"
-        aria-label="Save and publish"
-        title="Save and publish"
+        aria-label="Build and publish"
+        title="Build and publish - commits saved changes to git, then rebuilds affected pages"
         disabled={props.saveDisabled}
         onClick={props.onSave}
       >

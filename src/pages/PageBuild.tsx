@@ -4,7 +4,7 @@ import DataTable, { type DataTableColumn } from "../components/DataTable.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { canAccess } from "../store/auth.js";
+import { authState, canAccess } from "../store/auth.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -21,7 +21,7 @@ import {
   type PublishOptions,
   type UnmatchedTemplate,
 } from "../page-components/page-build.js";
-import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
+import { ensureRepoReady, gitState, refreshGitStatus } from "../page-components/git/git-state.js";
 import { fetchJson, loadAllPagesSource, type AssetHrefs } from "../page-components/pages-source-http.js";
 
 /**
@@ -84,6 +84,48 @@ function writePersistedQueue(queue: PersistedBuildQueue | null): void {
   else localStorage.setItem(BUILD_QUEUE_STORAGE_KEY, JSON.stringify(queue));
 }
 
+/**
+ * Commits + pushes everything sitting in the browser working copy, right
+ * after a build has published (`status/git-page-source.md`). This is the ONLY
+ * thing that puts page source on GitHub now - a Save writes to the working
+ * copy alone, so a build is where local work becomes shared work.
+ *
+ * Replaces the old server-side snapshot push (`/api/github-sync`), which read
+ * `pagesSourceStorage` instead: that store is a derived mirror now, so
+ * pushing FROM it could overwrite a newer commit with older bytes.
+ *
+ * Best-effort, exactly like the snapshot push it replaces: the pages are
+ * already published by the time this runs, so a GitHub failure gets its own
+ * non-blocking toast rather than turning a successful build into an error.
+ */
+async function pushWorkingCopy(reason: string): Promise<void> {
+  if (gitState.value.phase === "unconfigured") return;
+  try {
+    const { commitAll, push, status } = await import("../page-components/git/git-repo.js");
+    const pending = await status();
+    if (pending.dirty.length === 0) return;
+    const user = authState.value.user;
+    const oid = await commitAll({
+      message: `${reason} - ${pending.dirty.length} ${pending.dirty.length === 1 ? "file" : "files"}`,
+      author: { name: user?.name || "drycms", email: `${user?.id ?? "admin"}@page-builder.drycms` },
+    });
+    if (!oid) return;
+    const pushed = await push(path, gitState.value.branch);
+    await refreshGitStatus();
+    if (!pushed.ok) {
+      toast.add({
+        type: "default",
+        title: "Built, but the push failed",
+        description: pushed.rejected
+          ? `The branch moved on since this copy was cloned - reload to fetch the latest, then build again. (${pushed.reason})`
+          : pushed.reason,
+      });
+    }
+  } catch (error) {
+    toast.add({ type: "default", title: "Built, but the push failed", description: error instanceof Error ? error.message : undefined });
+  }
+}
+
 export default function PageBuild() {
   useDocumentTitle("Page Build");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
@@ -128,9 +170,21 @@ export default function PageBuild() {
     if (!canBuild) return;
     void (async () => {
       try {
+        // Same source the editor edits, not the HTTP mirror: once a
+        // repository is connected, the browser working copy is where a Save
+        // lands, and building from anywhere else would publish bytes nobody
+        // has seen. Falls back to the HTTP store when no repository is
+        // configured (`use-page-builder-source.ts` makes the same choice).
+        const loadSource = async () => {
+          await ensureRepoReady(path);
+          const phase = gitState.value.phase;
+          if (phase === "unconfigured") return loadAllPagesSource(path);
+          if (phase === "ready" || phase === "diverged") return (await import("../page-components/git/git-repo.js")).readAllSource();
+          throw new Error(gitState.value.error ?? "The git working copy is not ready yet.");
+        };
         const [types, sources, hrefs] = await Promise.all([
           listCached(typesApi),
-          loadAllPagesSource(path),
+          loadSource(),
           fetchJson<AssetHrefs>(`${path}/api/asset-hrefs`),
         ]);
         setAllTypes(types);
@@ -223,6 +277,10 @@ export default function PageBuild() {
       if (compiled.kind === "skipped") return true;
       await publishBuiltPage(compiled.result, compiled.options);
       toast.add({ type: "success", title: `Built "${pathname}"` });
+      // Publishing one page still makes the working copy's source live, so it
+      // pushes too - otherwise the site would serve code that exists only in
+      // one browser's IndexedDB.
+      await pushWorkingCopy(`Build ${pathname}`);
       await reloadStatus();
       return true;
     } catch (error) {
@@ -324,16 +382,7 @@ export default function PageBuild() {
             ? `Built ${builtCount} ${builtCount === 1 ? "page" : "pages"} (${skippedCount} already up to date)`
             : `Built ${total} ${total === 1 ? "page" : "pages"}`,
       });
-      // Snapshot-commits the WHOLE pages-source tree to GitHub exactly ONCE,
-      // after the whole queue (a fresh run or a resume) is fully done - not
-      // per batch, so a resumed/interrupted run still produces a single
-      // coherent commit rather than several partial ones. Best-effort, same
-      // as `PageBuilder.tsx`'s own `reportGithubSync`: a real failure gets its
-      // own separate, non-blocking toast, "not configured" stays silent.
-      const githubSync = await triggerGithubSync(`${path}/api/github-sync`, `Build all: ${total} pages - ${new Date().toISOString()}`);
-      if (!githubSync.pushed && githubSync.reason && githubSync.reason !== "not-configured") {
-        toast.add({ type: "default", title: "Built, but GitHub sync failed", description: githubSync.reason });
-      }
+      await pushWorkingCopy(`Build all: ${total} ${total === 1 ? "page" : "pages"}`);
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Publishing failed.";
       toast.add({ type: "error", title: "Build all interrupted", description: `${message} - click "Build all" again to resume.` });

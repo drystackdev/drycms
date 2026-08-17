@@ -37,7 +37,8 @@ export interface FileDialogProps {
   dirty: boolean;
   saving: boolean;
   onChange: (code: string) => void;
-  onSave: () => void;
+  /** A debounced write is in flight - shows "Saving…" instead of "Saved". */
+  autosaving: boolean;
   onReset: () => void;
   onClose: () => void;
   allTypes: ContentTypeDefinition[];
@@ -138,8 +139,10 @@ export default function FileDialog(props: FileDialogProps) {
       <header class="page-builder-file-dialog-header">
         <strong class="page-builder-file-dialog-title">{props.path}</strong>
         <span class="spacer" />
-        <button type="button" class="outline sm" disabled={!props.dirty || props.saving} onClick={props.onReset}>Reset</button>
-        <button type="button" class="sm" disabled={!props.dirty || props.saving} aria-busy={props.saving} onClick={props.onSave}>Save</button>
+        {/* See `CodePanel.tsx` - editing writes itself through, so there is
+            nothing for a Save button to do here either. */}
+        <span class="hint">{props.autosaving ? "Saving…" : props.dirty ? "Not published" : "Saved"}</span>
+        <button type="button" class="outline sm" disabled={!props.dirty || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">Discard</button>
         <button type="button" class="ghost sm" onClick={props.onClose}>Close</button>
       </header>
       <div class={hasPreview ? "page-builder-file-dialog-body split" : "page-builder-file-dialog-body"}>

@@ -16,5 +16,12 @@ process.env.DRYCMS_BOOTSTRAP_TOKEN = process.env.E2E_BOOTSTRAP_TOKEN ?? "drycms-
 // isolated test database first and make the deterministic test login fail.
 process.env.EMAIL_ADMIN = "";
 process.env.PASSWORD_ADMIN = "";
+// Same isolation for the git working copy (`server/git-config.ts` reads these
+// from `.env` when `process.env` has none): a developer's real repository and
+// PAT must never be cloned - let alone pushed to - by a test run, and the
+// suite would otherwise depend on GitHub being reachable.
+process.env.GITHUB_REPO = "";
+process.env.GITHUB_BRANCH = "";
+process.env.GITHUB_PAT_KEY = "";
 
 await import("./dev-server.mjs");

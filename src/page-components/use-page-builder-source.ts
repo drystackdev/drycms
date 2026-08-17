@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createPagesSourceApi } from "./pages-source-http-api.js";
 import { rewriteImportsAfterMove } from "./import-rewrite.js";
+import { ensureRepoReady, gitState, refreshGitStatus } from "./git/git-state.js";
 import { loadAllPagesSource } from "./pages-source-http.js";
 
 const PAGES_SOURCE_BROWSER_EVENT = "dry:pages-source-change";
+
+/** Long enough that a fast typist writes once per pause rather than per
+ * word, short enough that closing a panel (or the tab) right after typing
+ * has already persisted. */
+const AUTOSAVE_DELAY_MS = 400;
 
 function sameSourceSnapshot(left: Record<string, string>, right: Record<string, string>): boolean {
   const leftKeys = Object.keys(left);
@@ -59,10 +65,20 @@ export interface UsePageBuilderSourceResult {
   updateSource: (path: string, code: string) => void;
   /** `true` when `path`'s in-memory content differs from what's on storage. */
   isDirty: (path: string) => boolean;
-  save: (path: string) => Promise<void>;
-  reset: (path: string) => void;
+  /** Writes any debounced edit out immediately - Build & publish awaits this
+   * before committing. */
+  flushPendingWrites: () => Promise<void>;
+  /** Discards a file's changes: back to HEAD under git. */
+  reset: (path: string) => Promise<void>;
   saving: boolean;
+  /** A debounced write is in flight - drives the "Saving…/Saved" hint. */
+  autosaving: boolean;
+  /** Unsaved editor buffers. */
   dirtyPaths: string[];
+  /** Buffers PLUS working-copy changes already written through (file
+   * create/rename/delete) - what Save must commit. Equals `dirtyPaths` when
+   * no repository is connected. */
+  pendingCommitPaths: string[];
   /** Writes an empty (or templated) file straight to storage and adds it to
    * the tree - unlike `updateSource`, a brand-new file has nothing to be
    * dirty against, so this is immediate rather than deferred to Save. */
@@ -89,8 +105,37 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   // the local buffer is deliberately preserved, so it cannot also serve as
   // the optimistic-concurrency base for that buffer.
   const editBaseByPathRef = useRef<Record<string, string>>({});
+  /** Debounced writes still in flight, keyed by path (see `updateSource`). */
+  const pendingWritesRef = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; code: string; done: Promise<void> }>());
+  const [autosaving, setAutosaving] = useState(false);
 
   const api = useMemo(() => createPagesSourceApi(`${adminPath}/api/pages-source`), [adminPath]);
+
+  /**
+   * Which store this session reads and writes: the browser git working copy
+   * when a repository is connected, the `/api/pages-source` HTTP store when
+   * one isn't.
+   *
+   * The HTTP path is not legacy cruft - it is what a tenant that has never
+   * configured git (and every e2e run, where `scripts/e2e-server.mjs` blanks
+   * `GITHUB_*` on purpose) still uses. It goes away with Giai đoạn 5-6, once
+   * the server-side writers (MCP, Magic Chat) commit too.
+   */
+  const gitPhase = gitState.value.phase;
+  const usingGit = gitPhase !== "unconfigured";
+
+  /** In dev the Vite server renders the site straight off `.dry/pages-source`
+   * (`DevPagesSource`), so a save that only landed in IndexedDB would leave
+   * live preview and HMR showing yesterday's file. Mirroring the same bytes
+   * through the HTTP store keeps that whole path working untouched. Never in
+   * production, where nothing reads that store to render a page. */
+  const mirrorToDisk = useCallback(
+    async (filePath: string, code: string) => {
+      if (!import.meta.env.DEV || !usingGit) return;
+      await api.save(filePath, code).catch(() => undefined);
+    },
+    [api, usingGit],
+  );
 
   const reload = useCallback(async () => {
     if (!enabled) {
@@ -100,7 +145,16 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     setLoading(true);
     setError(null);
     try {
-      const source = await loadAllPagesSource(adminPath);
+      await ensureRepoReady(adminPath);
+      const phase = gitState.value.phase;
+      let source: Record<string, string>;
+      if (phase === "unconfigured") {
+        source = await loadAllPagesSource(adminPath);
+      } else if (phase === "ready" || phase === "diverged") {
+        source = await (await import("./git/git-repo.js")).readAllSource();
+      } else {
+        throw new Error(gitState.value.error ?? "The git working copy is not ready yet.");
+      }
       setSourceByPath(source);
       setSavedByPath(source);
     } catch (err) {
@@ -116,7 +170,13 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   }, [adminPath, enabled]);
 
   useEffect(() => {
-    if (!enabled || !import.meta.env.DEV) return;
+    // Dev-only mirror of EXTERNAL edits (a VS Code save into
+    // `.dry/pages-source`). Skipped once git is the working copy: the same
+    // saves also land there through `mirrorToDisk`, so polling the HTTP
+    // store back in would fight the copy git is tracking. Picking up a real
+    // outside-the-browser edit under git is a `fetch`/pull concern, not a
+    // poll - see `status/git-page-source.md`.
+    if (!enabled || !import.meta.env.DEV || usingGit) return;
     let refreshing = false;
     const refreshExternalChange = () => {
       if (refreshing) return;
@@ -151,28 +211,137 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       window.removeEventListener(PAGES_SOURCE_BROWSER_EVENT, refreshExternalChange);
       window.clearInterval(timer);
     };
-  }, [adminPath, enabled, locallyEditedPaths]);
+  }, [adminPath, enabled, locallyEditedPaths, usingGit]);
 
+  /**
+   * Typing persists itself - there is no Save button anywhere in Page
+   * Builder, because with the working copy in this browser there is nothing
+   * a Save could add: `writeThrough` below is a local IndexedDB write, not a
+   * network round trip, so the honest model is "edits are drafts, and drafts
+   * live in the working copy". Publishing them is Build & publish's job.
+   *
+   * Debounced per path rather than per keystroke, the same 400ms/keyed-Map
+   * shape `entry-draft-store.ts` uses for content drafts - keyed, not a
+   * single timer, so switching files mid-debounce still flushes the first
+   * one instead of cancelling it.
+   */
   const updateSource = useCallback((filePath: string, code: string) => {
     setSourceByPath((prev) => (prev && prev[filePath] === code ? prev : { ...prev, [filePath]: code }));
     setLocallyEditedPaths((previous) => {
-      const shouldBeDirty = code !== savedByPath[filePath];
-      if (previous.has(filePath) === shouldBeDirty) return previous;
-      const next = new Set(previous);
-      if (shouldBeDirty) {
-        editBaseByPathRef.current[filePath] = savedByPath[filePath] ?? "";
-        next.add(filePath);
-      } else {
-        delete editBaseByPathRef.current[filePath];
-        next.delete(filePath);
-      }
-      return next;
+      if (previous.has(filePath)) return previous;
+      editBaseByPathRef.current[filePath] = savedByPath[filePath] ?? "";
+      return new Set(previous).add(filePath);
     });
+
+    const pending = pendingWritesRef.current;
+    const existing = pending.get(filePath);
+    if (existing) clearTimeout(existing.timer);
+    const write = () => {
+      pending.delete(filePath);
+      return writeThroughRef.current(filePath, code, editBaseByPathRef.current[filePath]).then(() => {
+        setSavedByPath((prev) => (prev[filePath] === code ? prev : { ...prev, [filePath]: code }));
+      });
+    };
+    let resolveDone: () => void;
+    const done = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+    const timer = setTimeout(() => {
+      setAutosaving(true);
+      void write()
+        .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to write the file."))
+        .finally(() => {
+          setAutosaving(false);
+          resolveDone();
+        });
+    }, AUTOSAVE_DELAY_MS);
+    pending.set(filePath, { timer, code, done: done.then(() => undefined) });
   }, [savedByPath]);
 
+  /**
+   * Waits for every debounced write to have landed - what Build & publish
+   * calls before committing, so the last few keystrokes before the click are
+   * part of the commit rather than the next one. Flushes immediately instead
+   * of waiting out the remaining debounce.
+   */
+  const flushPendingWrites = useCallback(async () => {
+    const pending = [...pendingWritesRef.current.entries()];
+    for (const [filePath, entry] of pending) {
+      clearTimeout(entry.timer);
+      pendingWritesRef.current.delete(filePath);
+      try {
+        await writeThroughRef.current(filePath, entry.code, editBaseByPathRef.current[filePath]);
+        setSavedByPath((prev) => ({ ...prev, [filePath]: entry.code }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to write the file.");
+      }
+    }
+  }, []);
+
+  /** One place every write goes through, whichever store is active - the
+   * whole point of keeping file operations behind this hook (see its own doc
+   * comment): swapping the backend touched exactly these three functions. */
+  const writeThrough = useCallback(
+    async (filePath: string, code: string, baseSource?: string) => {
+      if (usingGit) {
+        await (await import("./git/git-repo.js")).writeFile(filePath, code);
+        await mirrorToDisk(filePath, code);
+        await refreshGitStatus();
+        return;
+      }
+      await api.save(filePath, code, baseSource);
+    },
+    [api, usingGit, mirrorToDisk],
+  );
+
+  const moveThrough = useCallback(
+    async (from: string, to: string) => {
+      if (usingGit) {
+        await (await import("./git/git-repo.js")).movePath(from, to);
+        if (import.meta.env.DEV) await api.move(from, to).catch(() => undefined);
+        await refreshGitStatus();
+        return;
+      }
+      await api.move(from, to);
+    },
+    [api, usingGit],
+  );
+
+  /** `updateSource`'s debounced timer fires long after the render that
+   * scheduled it, and `writeThrough` is a fresh closure each render - the ref
+   * is what keeps a pending write pointed at the CURRENT one (and lets
+   * `updateSource` be declared before it without reordering the file). */
+  const writeThroughRef = useRef(writeThrough);
+  writeThroughRef.current = writeThrough;
+
+  const removeThrough = useCallback(
+    async (filePath: string) => {
+      if (usingGit) {
+        await (await import("./git/git-repo.js")).removeFile(filePath);
+        if (import.meta.env.DEV) await api.remove(filePath).catch(() => undefined);
+        await refreshGitStatus();
+        return;
+      }
+      await api.remove(filePath);
+    },
+    [api, usingGit],
+  );
+
+  /**
+   * "Has unpublished changes", NOT "has unwritten buffer" - with autosave
+   * those are different questions and only the first one is useful: a
+   * keystroke is in the working copy a few hundred ms later, so a
+   * buffer-vs-working-copy comparison goes false almost immediately and would
+   * leave Discard disabled on a file the admin has very much changed.
+   * Against HEAD (`git.statusMatrix`, via `gitState`) it stays true until the
+   * change is actually published.
+   */
   const isDirty = useCallback(
-    (filePath: string) => !!sourceByPath && sourceByPath[filePath] !== savedByPath[filePath],
-    [sourceByPath, savedByPath],
+    (filePath: string) => {
+      if (usingGit && gitState.value.dirty.includes(filePath)) return true;
+      return !!sourceByPath && sourceByPath[filePath] !== savedByPath[filePath];
+    },
+    [sourceByPath, savedByPath, usingGit, gitState.value.dirty],
   );
 
   const save = useCallback(
@@ -182,7 +351,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       if (code === savedByPath[filePath]) return;
       setSaving(true);
       try {
-        await api.save(filePath, code, editBaseByPathRef.current[filePath] ?? savedByPath[filePath] ?? "");
+        await writeThrough(filePath, code, editBaseByPathRef.current[filePath] ?? savedByPath[filePath] ?? "");
         setSavedByPath((prev) => ({ ...prev, [filePath]: code }));
         delete editBaseByPathRef.current[filePath];
         setLocallyEditedPaths((previous) => {
@@ -195,12 +364,39 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         setSaving(false);
       }
     },
-    [api, sourceByPath, savedByPath],
+    [writeThrough, sourceByPath, savedByPath],
   );
 
+  /**
+   * Throws this file's changes away. With no Save button there is no
+   * "last saved" state to return to any more, so under git this restores the
+   * file from HEAD - the last thing that was actually published - and drops
+   * whatever the working copy held. Without git it falls back to the last
+   * value read from the HTTP store, the old behavior.
+   */
   const reset = useCallback(
-    (filePath: string) => {
-      setSourceByPath((prev) => (prev ? { ...prev, [filePath]: savedByPath[filePath] ?? "" } : prev));
+    async (filePath: string) => {
+      const pendingWrite = pendingWritesRef.current.get(filePath);
+      if (pendingWrite) {
+        clearTimeout(pendingWrite.timer);
+        pendingWritesRef.current.delete(filePath);
+      }
+      let restored = savedByPath[filePath] ?? "";
+      if (usingGit) {
+        setSaving(true);
+        try {
+          restored = await (await import("./git/git-repo.js")).restoreFromHead(filePath);
+          await mirrorToDisk(filePath, restored);
+          await refreshGitStatus();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to discard the changes.");
+          return;
+        } finally {
+          setSaving(false);
+        }
+      }
+      setSourceByPath((prev) => (prev ? { ...prev, [filePath]: restored } : prev));
+      setSavedByPath((prev) => ({ ...prev, [filePath]: restored }));
       delete editBaseByPathRef.current[filePath];
       setLocallyEditedPaths((previous) => {
         if (!previous.has(filePath)) return previous;
@@ -209,26 +405,41 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         return next;
       });
     },
-    [savedByPath],
+    [savedByPath, usingGit, mirrorToDisk],
   );
 
+  /** Unsaved EDITOR BUFFERS - what Reset acts on and what a Save has to
+   * write out first. */
   const dirtyPaths = useMemo(
     () => (sourceByPath ? [...locallyEditedPaths].filter((filePath) => sourceByPath[filePath] !== savedByPath[filePath]) : []),
     [sourceByPath, savedByPath, locallyEditedPaths],
+  );
+
+  /**
+   * Everything the next commit would carry: unsaved buffers PLUS whatever
+   * already differs from HEAD in the working copy. The second half matters -
+   * creating, renaming or deleting a file writes straight through (there is
+   * no buffer for it), so without this the dock would offer nothing to save
+   * after a file operation and the change would sit in IndexedDB forever,
+   * invisible to everyone but this tab.
+   */
+  const pendingCommitPaths = useMemo(
+    () => [...new Set([...dirtyPaths, ...(usingGit ? gitState.value.dirty : [])])],
+    [dirtyPaths, usingGit, gitState.value.dirty],
   );
 
   const createFile = useCallback(
     async (filePath: string, code = "") => {
       setSaving(true);
       try {
-        await api.save(filePath, code);
+        await writeThrough(filePath, code);
         setSavedByPath((prev) => ({ ...prev, [filePath]: code }));
         setSourceByPath((prev) => ({ ...prev, [filePath]: code }));
       } finally {
         setSaving(false);
       }
     },
-    [api],
+    [writeThrough],
   );
 
   const renameFile = useCallback(
@@ -236,7 +447,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       if (!sourceByPath || from === to) return;
       setSaving(true);
       try {
-        await api.move(from, to);
+        await moveThrough(from, to);
         // The move itself only relocates bytes; every relative specifier
         // that pointed at `from` (and the moved file's own, now resolved
         // from a different directory) still has to be rewritten and saved,
@@ -247,7 +458,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         const updates = rewriteImportsAfterMove(sourceByPath, from, to);
         for (const [updatedPath, updatedCode] of Object.entries(updates)) {
           moved[updatedPath] = updatedCode;
-          await api.save(updatedPath, updatedCode);
+          await writeThrough(updatedPath, updatedCode);
         }
         setSourceByPath(moved);
         setSavedByPath((prev) => {
@@ -269,14 +480,14 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         setSaving(false);
       }
     },
-    [api, sourceByPath],
+    [moveThrough, writeThrough, sourceByPath],
   );
 
   const deleteFile = useCallback(
     async (filePath: string) => {
       setSaving(true);
       try {
-        await api.remove(filePath);
+        await removeThrough(filePath);
         const drop = (map: Record<string, string>) => {
           const next = { ...map };
           for (const key of Object.keys(next)) {
@@ -297,8 +508,24 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         setSaving(false);
       }
     },
-    [api],
+    [removeThrough],
   );
 
-  return { sourceByPath, loading, error, updateSource, isDirty, save, reset, saving, dirtyPaths, reload, createFile, renameFile, deleteFile };
+  return {
+    sourceByPath,
+    loading,
+    error,
+    updateSource,
+    isDirty,
+    flushPendingWrites,
+    reset,
+    saving,
+    autosaving,
+    dirtyPaths,
+    pendingCommitPaths,
+    reload,
+    createFile,
+    renameFile,
+    deleteFile,
+  };
 }

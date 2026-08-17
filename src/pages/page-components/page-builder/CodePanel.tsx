@@ -12,9 +12,10 @@ export interface CodePanelProps {
   source: string;
   dirty: boolean;
   saving: boolean;
+  /** A debounced write is in flight - shows "Saving…" instead of "Saved". */
+  autosaving: boolean;
   extraFiles: Record<string, string>;
   onChange: (code: string) => void;
-  onSave: () => void;
   onReset: () => void;
   onClose: () => void;
   onWidthChange: (width: number) => void;
@@ -30,6 +31,8 @@ export interface CodePanelProps {
  * ONE file's worth of Save/Reset (the currently-previewed `page.tsx`), not
  * `PageBuilder.tsx`'s whole-tree save-everything-dirty behavior - Page
  * Builder edits one file at a time by design (mục 10's sanctioned cut).
+ *
+ * Has no Save button: edits persist themselves into the git working copy.
  */
 export default function CodePanel(props: CodePanelProps) {
   const panel = useResizablePanel({
@@ -58,14 +61,18 @@ export default function CodePanel(props: CodePanelProps) {
       <div class="page-builder-code-panel-handle" {...panel.handleProps} />
       <div class="page-builder-code-panel-header">
         <strong class="page-builder-code-panel-path">{props.path}</strong>
-        <button type="button" class="outline sm" disabled={!props.dirty || props.saving} onClick={props.onReset}>
-          Reset
-        </button>
-        <button type="button" class="sm page-builder-code-panel-save" disabled={!props.dirty || props.saving} aria-busy={props.saving} onClick={props.onSave}>
-          Save
+        {/* No Save button by design: an edit is written to the working copy
+            on its own (`use-page-builder-source.ts`'s `updateSource`), so
+            the only states worth showing are "writing" and "not yet
+            published". Publishing is the dock's Build & publish. */}
+        <span class="hint page-builder-code-panel-status">
+          {props.autosaving ? "Saving…" : props.dirty ? "Not published" : "Saved"}
+        </span>
+        <button type="button" class="outline sm" disabled={!props.dirty || props.saving} onClick={props.onReset} title="Restore this file from the last published commit">
+          Discard
         </button>
         <button type="button" class="ghost sm" onClick={props.onClose}>
-          Cancel
+          Close
         </button>
       </div>
       <div class="page-builder-code-panel-body">

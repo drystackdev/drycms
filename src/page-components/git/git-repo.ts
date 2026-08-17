@@ -79,6 +79,24 @@ export async function ensureCloned(options: EnsureClonedOptions): Promise<{ head
   const fs = await gitFs();
 
   return withGitLock(async () => {
+    // The configured branch can change under an existing working copy (an
+    // admin edits `GITHUB_BRANCH`, or a tenant is re-pointed). A `depth: 1`
+    // clone of the OLD branch has none of the new branch's objects, so
+    // fetching into it fails in a confusing way - the working copy is a
+    // cache, so throw it away and clone fresh instead. Never when it holds
+    // uncommitted work, though: that is the one thing here that exists
+    // nowhere else.
+    if (await isCloned()) {
+      const checkedOut = await api.currentBranch({ fs, dir: REPO_DIR, fullname: false }).catch(() => null);
+      if (checkedOut && checkedOut !== branch) {
+        const dirty = (await api.statusMatrix({ fs, dir: REPO_DIR })).some(([, head, workdir]) => head !== workdir);
+        if (dirty) {
+          return { head: await api.resolveRef({ fs, dir: REPO_DIR, ref: "HEAD" }), cloned: false, diverged: true };
+        }
+        await fs.promises.rm(REPO_DIR, { recursive: true, force: true });
+      }
+    }
+
     if (!(await isCloned())) {
       await api.clone({
         fs,
@@ -174,6 +192,36 @@ export async function movePath(from: string, to: string): Promise<void> {
     const target = `${REPO_DIR}/${to}`;
     await fs.promises.mkdir(target.slice(0, target.lastIndexOf("/")), { recursive: true });
     await fs.promises.rename(`${REPO_DIR}/${from}`, target);
+  });
+}
+
+/**
+ * Restores one file to what HEAD has, dropping the working copy's version -
+ * "discard my changes" for a file, and the only undo left now that editing
+ * writes straight through. Returns the restored content so the caller can
+ * put it back in the editor buffer without a second read. A file that HEAD
+ * doesn't have (created and not yet committed) is simply removed, and comes
+ * back as `""`.
+ */
+export async function restoreFromHead(path: string): Promise<string> {
+  const api = await git();
+  const fs = await gitFs();
+  return withGitLock(async () => {
+    let content: string | null = null;
+    try {
+      const { blob } = await api.readBlob({ fs, dir: REPO_DIR, oid: await api.resolveRef({ fs, dir: REPO_DIR, ref: "HEAD" }), filepath: path });
+      content = new TextDecoder().decode(blob);
+    } catch {
+      content = null;
+    }
+    const absolute = `${REPO_DIR}/${path}`;
+    if (content === null) {
+      await fs.promises.rm(absolute, { force: true });
+      return "";
+    }
+    await fs.promises.mkdir(absolute.slice(0, absolute.lastIndexOf("/")), { recursive: true });
+    await fs.promises.writeFile(absolute, content, "utf8");
+    return content;
   });
 }
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 const { path } = window.__DRY_CONFIG__;
 import { useParam } from "../hooks/useParam.js";
 import { useDocumentTitle } from "./page-common.js";
-import { canAccess } from "../store/auth.js";
+import { authState, canAccess } from "../store/auth.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
 import { dryVeiOverrideKey, type DryVeiOverrideMap } from "../content-types/dry-reader-http.js";
@@ -32,6 +32,7 @@ import { discardEntryDraft } from "../content-types/entry-draft-store.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
 import { publishPagesAffectedBySource } from "../page-components/initial-publish.js";
+import { gitState, refreshGitStatus } from "../page-components/git/git-state.js";
 
 interface PersistedBuilderState {
   panelMode: BuilderPanelMode;
@@ -41,6 +42,19 @@ interface PersistedBuilderState {
 }
 
 const BUILDER_STATE_KEY = "drycms:page-builder-state";
+
+/** A commit message that says what changed without putting a dialog in the
+ * way - Save is one button, and a page/component path is already the most
+ * useful summary there is. A path no longer present in the loaded tree was
+ * deleted, so the verb follows the actual change rather than always reading
+ * "Update". Long lists collapse to a count. */
+function commitMessageFor(paths: string[], sourceByPath: Record<string, string>): string {
+  const removed = paths.filter((filePath) => !(filePath in sourceByPath));
+  const verb = removed.length === paths.length ? "Delete" : "Update";
+  if (paths.length === 1) return `${verb} ${paths[0]}`;
+  if (paths.length <= 3) return `${verb} ${paths.join(", ")}`;
+  return `${verb} ${paths.length} page source files`;
+}
 
 function readBuilderState(): PersistedBuilderState {
   const fallback: PersistedBuilderState = { panelMode: "code", panelWidth: 480, fileDialogPath: null, veiTarget: null };
@@ -80,8 +94,22 @@ export default function PageBuilder() {
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
 
-  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving, dirtyPaths, createFile, renameFile, deleteFile } =
-    usePageBuilderSource(path, canEdit);
+  const {
+    sourceByPath,
+    loading,
+    error: loadError,
+    updateSource,
+    isDirty,
+    flushPendingWrites,
+    reset,
+    saving,
+    autosaving,
+    dirtyPaths,
+    pendingCommitPaths,
+    createFile,
+    renameFile,
+    deleteFile,
+  } = usePageBuilderSource(path, canEdit);
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
@@ -204,7 +232,7 @@ export default function PageBuilder() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const veiEnabled = panelMode === "vei";
   const sidePanelOpen = panelMode !== null;
-  const saveItemCount = dirtyPaths.length + new Set([
+  const saveItemCount = pendingCommitPaths.length + new Set([
     ...saveDrafts.map((draft) => dryVeiOverrideKey(draft.typeSlug, draft.entryId)),
     ...Object.keys(veiOverrides),
   ]).size;
@@ -400,18 +428,18 @@ export default function PageBuilder() {
   async function saveAndPublish() {
     if (!allTypes) return;
     const types = allTypes;
-    const codePaths = [...dirtyPaths];
+    // Editing already wrote itself through; only a debounce still in flight
+    // could be missing, so flush that and then commit EVERY working-copy
+    // change - including files created or deleted from the file menu, which
+    // never had a buffer of their own.
+    await flushPendingWrites();
+    const codePaths = [...pendingCommitPaths];
     const drafts = [...saveDrafts];
     const resources = new Set<string>();
-    const totalWrites = codePaths.length + drafts.length;
+    const totalWrites = drafts.length;
     let completedWrites = 0;
     setSaveProgress({ percent: 0, label: "Preparing changes…" });
     try {
-      for (const filePath of codePaths) {
-        setSaveProgress({ percent: Math.round((completedWrites / Math.max(totalWrites, 1)) * 65), label: `Saving ${filePath}` });
-        await save(filePath);
-        completedWrites += 1;
-      }
       for (const draft of drafts) {
         const type = types.find((candidate) => candidate.name === draft.typeSlug);
         if (!type || type.kind === "component") continue;
@@ -425,7 +453,39 @@ export default function PageBuilder() {
         completedWrites += 1;
       }
 
-      setSaveProgress({ percent: 70, label: "Resolving affected pages…" });
+      // Code changes are only really saved once they are a commit on the
+      // branch - the working copy lives in this browser's IndexedDB, which
+      // nothing else can read. Push BEFORE building so the published pages
+      // can never describe source that exists nowhere but this tab.
+      if (gitState.value.phase !== "unconfigured" && codePaths.length > 0) {
+        setSaveProgress({ percent: 68, label: "Committing to git…" });
+        const { commitAll, push } = await import("../page-components/git/git-repo.js");
+        const author = authState.value.user;
+        const oid = await commitAll({
+          message: commitMessageFor(codePaths, sourceByPath ?? {}),
+          author: {
+            name: author?.name || "drycms",
+            // Not a real mailbox on purpose - a tenant's admin account has an
+            // email, but publishing it into a public git history is not
+            // something this feature should decide for them.
+            email: `${author?.id ?? "admin"}@page-builder.drycms`,
+          },
+        });
+        if (oid) {
+          setSaveProgress({ percent: 74, label: "Pushing to GitHub…" });
+          const pushed = await push(path, gitState.value.branch);
+          if (!pushed.ok) {
+            throw new Error(
+              pushed.rejected
+                ? `GitHub rejected the push - the branch moved on since this copy was cloned. Reload to fetch the latest, then save again. (${pushed.reason})`
+                : pushed.reason,
+            );
+          }
+          await refreshGitStatus();
+        }
+      }
+
+      setSaveProgress({ percent: 78, label: "Resolving affected pages…" });
       if (codePaths.length > 0) {
         // Source dependencies can fan out through layouts, components and
         // styles. The publish pipeline computes the real target graph; until
@@ -442,7 +502,7 @@ export default function PageBuilder() {
           await rebuildAffectedPages(path, typeName, types, (message) => setSaveProgress({ percent, label: message }));
         }
       }
-      setSaveProgress({ percent: 100, label: "Saved and published" });
+      setSaveProgress({ percent: 100, label: "Built and published" });
       setVeiOverrides({});
       setContentRevision((revision) => revision + 1);
       setSaveDrafts([]);
@@ -481,7 +541,10 @@ export default function PageBuilder() {
         veiEnabled={veiEnabled}
         veiContext={veiContext}
         onNavigate={setPathname}
-        onSave={() => void openSavePreview()}
+        // Ctrl+S inside the preview: edits already persist themselves, so the
+        // only thing left for the familiar shortcut to mean is "flush what is
+        // still debounced right now".
+        onSave={() => void flushPendingWrites()}
         onVeiClick={handleVeiClick}
         onTitleChange={setPreviewTitle}
         codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
@@ -499,7 +562,7 @@ export default function PageBuilder() {
         panelMode={panelMode}
         onTogglePanel={togglePanel}
         onSave={() => void openSavePreview()}
-        saveDisabled={dirtyPaths.length === 0 && saveDrafts.length === 0 && Object.keys(veiOverrides).length === 0}
+        saveDisabled={pendingCommitPaths.length === 0 && saveDrafts.length === 0 && Object.keys(veiOverrides).length === 0}
         saveCount={saveItemCount}
       />
 
@@ -534,8 +597,8 @@ export default function PageBuilder() {
           saving={saving}
           extraFiles={codePanelExtraFiles}
           onChange={(code) => updateSource(match.entryPath, code)}
-          onSave={() => void openSavePreview()}
-          onReset={() => reset(match.entryPath)}
+          autosaving={autosaving}
+          onReset={() => void reset(match.entryPath)}
           onClose={() => setPanelMode(null)}
           onWidthChange={setCodePanelWidth}
           initialWidth={codePanelWidth}
@@ -553,8 +616,8 @@ export default function PageBuilder() {
           dirty={isDirty(fileDialogPath)}
           saving={saving}
           onChange={(code) => updateSource(fileDialogPath, code)}
-          onSave={() => void save(fileDialogPath)}
-          onReset={() => reset(fileDialogPath)}
+          autosaving={autosaving}
+          onReset={() => void reset(fileDialogPath)}
           onClose={() => setFileDialogPath(null)}
           allTypes={allTypes}
           assetHrefs={assetHrefs}
@@ -594,13 +657,13 @@ export default function PageBuilder() {
 
       <SavePreviewDialog
         open={saveDialogOpen}
-        dirtyPaths={dirtyPaths}
+        dirtyPaths={pendingCommitPaths}
         drafts={saveDrafts}
         allTypes={allTypes}
         progress={saveProgress}
         adminPath={path}
         onPreviewCode={(filePath) => void previewChangedCode(filePath)}
-        onRevertCode={reset}
+        onRevertCode={(filePath) => void reset(filePath)}
         onRevertDraft={(draft) => void revertEntryDraft(draft)}
         onUpdateDraft={(draft, value) => void updateEntryDraft(draft, value)}
         onConfirm={() => void saveAndPublish()}

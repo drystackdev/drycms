@@ -142,6 +142,25 @@ describe("git proxy route", () => {
     expect((await withoutToken.json()).message).toContain("needs a personal access token");
   });
 
+  it("GET config reports the branch and whether a token exists, never the token", async () => {
+    configBox.result = { config: { repo: "acme/site", branch: "release", token: "ghp_secret" } };
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await GET(context("https://site.test/dry/api/git/config", {}, "config"));
+    const body = await response.json();
+    expect(body).toEqual({ configured: true, repo: "acme/site", branch: "release", hasToken: true });
+    expect(JSON.stringify(body)).not.toContain("ghp_secret");
+    // Purely local - config must never cost a GitHub round trip.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("GET config reports unconfigured (rather than 412) so the client can show a setup state", async () => {
+    configBox.result = { error: "not-configured" };
+    const response = await GET(context("https://site.test/dry/api/git/config", {}, "config"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ configured: false, repo: "", branch: "", hasToken: false });
+  });
+
   it("reports an unreachable upstream as 502 instead of throwing", async () => {
     configBox.result = { config: { repo: "acme/site", branch: "main", token: "t" } };
     vi.stubGlobal("fetch", vi.fn(async () => {

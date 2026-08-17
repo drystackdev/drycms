@@ -7762,6 +7762,17 @@
       font-weight: 600;
     }
 
+    /* "Saving…/Not published/Saved" (`CodePanel.tsx`) - there is no Save
+       button to speak for the file's state any more, so this small label is
+       what tells the admin their typing is safe. Fixed-ish width so the
+       Discard/Close buttons beside it don't shuffle as the text changes. */
+    .page-builder-code-panel-status {
+      flex: none;
+      min-width: 6.5rem;
+      text-align: end;
+      font-variant-numeric: tabular-nums;
+    }
+
     .page-builder-code-panel-body {
       flex: 1;
       min-height: 0;
