@@ -2,10 +2,13 @@ import type { DryRouteContext } from "./context.js";
 import { getContentAdapters } from "./content-adapters.js";
 import { decryptSecret } from "../lib/secret-crypto.js";
 import { GITHUB_SYNC_TYPE_ID } from "../content-types/system-fields.js";
+import { parseGitRepositorySetting, type GitProvider } from "../lib/git-provider.js";
 
 export interface GitRepoConfig {
   /** `"owner/name"`. */
   repo: string;
+  provider: GitProvider;
+  url: string;
   branch: string;
   /** `""` when no token is stored. The git proxy then talks to GitHub
    * anonymously, which only ever works for a PUBLIC repo - deliberately not
@@ -20,7 +23,7 @@ export interface GitRepoConfig {
  * The one place the `githubSync` singleton (repo/branch/encrypted PAT) is
  * read and decrypted - shared by the git smart-HTTP proxy (`routes/git.ts`)
  * and the older snapshot push/restore routes (`github-source-sync.ts`'s
- * callers), so the enabled+repo+branch validation only lives once.
+ * callers), so the repo+branch validation only lives once.
  *
  * Never throws: every failure comes back as `{ error }` with a message the
  * caller can show verbatim, since "GitHub isn't configured yet" is an
@@ -36,17 +39,18 @@ export async function loadGitConfig(context: DryRouteContext): Promise<{ config:
   if (!type) return { error: "not-configured" };
 
   const row = await entries.getSingletonEntry(type, allTypes);
-  const value = (row?.value ?? {}) as { enabled?: boolean; repo?: string; branch?: string };
-  if (!row || !value.enabled || !value.repo || !value.branch) return { error: "not-configured" };
+  const value = (row?.value ?? {}) as { repo?: string; branch?: string };
+  if (!row || !value.repo || !value.branch) return { error: "not-configured" };
 
   const raw = await entries.getRawEntry(type, row.id);
   const encryptedToken = typeof raw?.token === "string" ? raw.token : "";
-  if (!encryptedToken) return { config: { repo: value.repo, branch: value.branch, token: "" } };
+  const repository = parseGitRepositorySetting(value.repo);
+  if (!encryptedToken) return { config: { ...repository, branch: value.branch, token: "" } };
 
   try {
-    return { config: { repo: value.repo, branch: value.branch, token: await decryptSecret(encryptedToken) } };
+    return { config: { ...repository, branch: value.branch, token: await decryptSecret(encryptedToken) } };
   } catch {
-    return { error: "The stored GitHub token cannot be decrypted with the current DRYCMS_SECRET_KEY." };
+    return { error: "The stored Git token cannot be decrypted with the current DRYCMS_SECRET_KEY." };
   }
 }
 
@@ -54,6 +58,8 @@ export async function loadGitConfig(context: DryRouteContext): Promise<{ config:
  * The repo comes from this server's own config (never the request), so this
  * is defence in depth against a bad value being saved, not the primary
  * guard. */
-export function isValidRepoSlug(repo: string): boolean {
-  return /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo) && !repo.includes("..");
+export function isValidRepoSlug(repo: string, provider: GitProvider = "github"): boolean {
+  const segment = "[A-Za-z0-9._-]+";
+  const pattern = provider === "gitlab" ? new RegExp(`^${segment}(?:/${segment})+$`) : new RegExp(`^${segment}/${segment}$`);
+  return pattern.test(repo) && !repo.includes("..");
 }

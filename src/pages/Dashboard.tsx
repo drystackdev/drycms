@@ -182,7 +182,7 @@ export default function Dashboard() {
 
 	return (
 		<>
-			{githubMissing && <aside class="card warning"><strong>GitHub is not configured.</strong><p>Contact an administrator to enable Page Builder.</p></aside>}
+			{githubMissing && <aside class="card warning"><strong>Git repository is not configured.</strong><p>Contact an administrator to enable Page Builder.</p></aside>}
 			<div class="page-header">
 				<div>
 					<h1>Dashboard</h1>

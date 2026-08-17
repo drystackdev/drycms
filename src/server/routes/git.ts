@@ -1,6 +1,7 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse, readSlug } from "../route-helpers.js";
 import { isValidRepoSlug, loadGitConfig } from "../git-config.js";
+import { validateOutboundUrlForRequest } from "../outbound-url.js";
 
 /**
  * Git smart-HTTP proxy - the one thing that makes a real git working copy
@@ -57,8 +58,8 @@ interface ResolvedTarget {
  * string is re-built from scratch rather than forwarded, so nothing but
  * `service` can ever reach github.com.
  */
-export function resolveGitTarget(repo: string, slug: string, method: string, search: URLSearchParams): ResolvedTarget | null {
-  const base = `${GITHUB_GIT_BASE}/${repo}.git`;
+export function resolveGitTarget(repo: string, slug: string, method: string, search: URLSearchParams, providerBase = GITHUB_GIT_BASE): ResolvedTarget | null {
+  const base = `${providerBase}/${repo}.git`;
   if (method === "GET" && slug === "info/refs") {
     const service = search.get("service");
     if (service !== UPLOAD_PACK && service !== RECEIVE_PACK) return null;
@@ -92,19 +93,25 @@ function notConfiguredResponse(reason: string): Response {
 async function configResponse(context: DryRouteContext): Promise<Response> {
   const loaded = await loadGitConfig(context);
   if ("error" in loaded) return jsonResponse({ configured: false, repo: "", branch: "", hasToken: false });
-  const { repo, branch, token } = loaded.config;
-  return jsonResponse({ configured: isValidRepoSlug(repo), repo, branch, hasToken: token.length > 0 });
+  const { repo, branch, token, provider = "github", url = "" } = loaded.config;
+  return jsonResponse({ configured: isValidRepoSlug(repo, provider), provider, url, repo, branch, hasToken: token.length > 0 });
 }
 
 async function proxy(context: DryRouteContext, method: string): Promise<Response> {
   const loaded = await loadGitConfig(context);
   if ("error" in loaded) return notConfiguredResponse(loaded.error);
-  const { repo, token } = loaded.config;
-  if (!isValidRepoSlug(repo)) {
+  const { repo, token, provider = "github", url = "" } = loaded.config;
+  if (!isValidRepoSlug(repo, provider)) {
     return notConfiguredResponse(`"${repo}" is not a valid "owner/name" repository.`);
   }
 
-  const target = resolveGitTarget(repo, readSlug(context), method, context.url.searchParams);
+  let providerBase = GITHUB_GIT_BASE;
+  try {
+    if (provider === "gitlab") providerBase = await validateOutboundUrlForRequest(url, "GitLab URL");
+  } catch (error) {
+    return notConfiguredResponse(error instanceof Error ? error.message : "The GitLab URL is invalid.");
+  }
+  const target = resolveGitTarget(repo, readSlug(context), method, context.url.searchParams, providerBase);
   if (!target) return jsonResponse({ error: "not_found", message: "Not a git smart-HTTP endpoint." }, 404);
 
   const headers = new Headers();
@@ -113,10 +120,7 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
     if (value) headers.set(name, value);
   }
   headers.set("User-Agent", "git/drycms");
-  // GitHub's git-over-HTTPS takes the PAT as HTTP Basic (username is
-  // ignored, by GitHub's own convention `x-access-token`), NOT the `Bearer`
-  // shape its REST API uses.
-  if (token) headers.set("Authorization", `Basic ${btoa(`x-access-token:${token}`)}`);
+  if (token) headers.set("Authorization", `Basic ${btoa(`${provider === "gitlab" ? "oauth2" : "x-access-token"}:${token}`)}`);
 
   let upstream: Response;
   try {
@@ -131,7 +135,7 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
     });
   } catch (error) {
     return jsonResponse(
-      { error: "git_upstream_unreachable", message: error instanceof Error ? error.message : "GitHub could not be reached." },
+      { error: "git_upstream_unreachable", message: error instanceof Error ? error.message : `${provider === "gitlab" ? "GitLab" : "GitHub"} could not be reached.` },
       502,
     );
   }
@@ -143,7 +147,7 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
     return jsonResponse(
       {
         error: "git_redirected",
-        message: `GitHub redirected "${repo}" (HTTP ${upstream.status}) - the repository may have been renamed or moved. Update it in Settings -> GitHub.`,
+        message: `${provider === "gitlab" ? "GitLab" : "GitHub"} redirected "${repo}" (HTTP ${upstream.status}) - the repository may have been renamed or moved. Update the Git settings.`,
       },
       502,
     );
@@ -153,14 +157,14 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
       {
         error: "git_unauthorized",
         message: token
-          ? `GitHub rejected the stored token for "${repo}" (HTTP ${upstream.status}). Check that it is still valid and has push access.`
-          : `"${repo}" needs a personal access token. Add one in Settings -> GitHub Sync.`,
+          ? `${provider === "gitlab" ? "GitLab" : "GitHub"} rejected the stored token for "${repo}" (HTTP ${upstream.status}). Check that it is still valid and has push access.`
+          : `"${repo}" needs a personal access token. Add one in Git settings.`,
       },
       upstream.status,
     );
   }
   if (upstream.status === 404) {
-    return jsonResponse({ error: "git_not_found", message: `GitHub has no repository "${repo}" (or the token cannot see it).` }, 404);
+    return jsonResponse({ error: "git_not_found", message: `${provider === "gitlab" ? "GitLab" : "GitHub"} has no repository "${repo}" (or the token cannot see it).` }, 404);
   }
 
   const responseHeaders = new Headers();
@@ -175,24 +179,52 @@ async function proxy(context: DryRouteContext, method: string): Promise<Response
 export const GET: DryRouteHandler = (context) =>
   readSlug(context) === "config" ? configResponse(context) : proxy(context, "GET");
 async function validate(context: DryRouteContext): Promise<Response> {
-  const body = await context.request.json().catch(() => ({})) as { repo?: unknown; token?: unknown };
+  const body = await context.request.json().catch(() => ({})) as { provider?: unknown; url?: unknown; repo?: unknown; token?: unknown };
+  const provider = body.provider === "gitlab" ? "gitlab" : "github";
+  const providerName = provider === "gitlab" ? "GitLab" : "GitHub";
   const repo = typeof body.repo === "string" ? body.repo.trim() : "";
   const token = typeof body.token === "string" ? body.token.trim() : "";
   const fieldErrors: Record<string, string> = {};
-  if (!isValidRepoSlug(repo)) fieldErrors.repo = 'Use the "owner/repository" format.';
+  if (!isValidRepoSlug(repo, provider)) fieldErrors.repo = provider === "gitlab" ? 'Use the "group/repository" format.' : 'Use the "owner/repository" format.';
   if (!token) fieldErrors.token = "An access token is required.";
   if (Object.keys(fieldErrors).length) return jsonResponse({ valid: false, fieldErrors }, 400);
-  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "drycms" };
+  let apiBase = "https://api.github.com";
   try {
-    const user = await fetch(`https://api.github.com/user`, { headers, redirect: "manual" });
-    if (!user.ok) return jsonResponse({ valid: false, fieldErrors: { token: "GitHub rejected this access token." } }, 400);
-    const repository = await fetch(`https://api.github.com/repos/${repo}`, { headers, redirect: "manual" });
+    if (provider === "gitlab") apiBase = `${await validateOutboundUrlForRequest(typeof body.url === "string" ? body.url : "", "GitLab URL")}/api/v4`;
+  } catch (error) {
+    return jsonResponse({ valid: false, fieldErrors: { url: error instanceof Error ? error.message : "GitLab URL is invalid." } }, 400);
+  }
+  const headers = new Headers({ Accept: provider === "gitlab" ? "application/json" : "application/vnd.github+json", "User-Agent": "drycms" });
+  if (provider === "gitlab") headers.set("PRIVATE-TOKEN", token);
+  else {
+    headers.set("Authorization", `Bearer ${token}`);
+    headers.set("X-GitHub-Api-Version", "2022-11-28");
+  }
+  try {
+    const user = await fetch(`${apiBase}/user`, { headers, redirect: "manual" });
+    if (!user.ok) {
+      const error = await user.json().catch(() => ({})) as { error?: string };
+      const message = provider === "gitlab" && user.status === 403 && error.error === "insufficient_scope"
+        ? "This GitLab token requires the api scope."
+        : `${providerName} rejected this access token.`;
+      return jsonResponse({ valid: false, fieldErrors: { token: message } }, 400);
+    }
+    const repository = await fetch(provider === "gitlab" ? `${apiBase}/projects/${encodeURIComponent(repo)}` : `${apiBase}/repos/${repo}`, { headers, redirect: "manual" });
     if (!repository.ok) return jsonResponse({ valid: false, fieldErrors: { repo: "Repository not found or this token cannot access it." } }, 400);
-    const value = await repository.json() as { permissions?: { push?: boolean } };
-    if (value.permissions?.push !== true) return jsonResponse({ valid: false, fieldErrors: { token: "This token does not have push access to the repository." } }, 400);
+    const value = await repository.json() as { empty_repo?: boolean; permissions?: { push?: boolean; project_access?: { access_level?: number }; group_access?: { access_level?: number } } };
+    if (provider === "gitlab" && value.empty_repo === true) return jsonResponse({ valid: false, fieldErrors: { repo: "Initialize this GitLab repository with a default branch first." } }, 400);
+    const gitlabAccessLevel = Math.max(value.permissions?.project_access?.access_level ?? 0, value.permissions?.group_access?.access_level ?? 0);
+    const canPush = provider === "gitlab" ? gitlabAccessLevel >= 30 : value.permissions?.push === true;
+    if (!canPush) {
+      const gitlabRole = ({ 10: "Guest", 15: "Planner", 20: "Reporter", 30: "Developer", 40: "Maintainer", 50: "Owner" } as Record<number, string>)[gitlabAccessLevel] ?? "no project role";
+      return jsonResponse({
+        valid: false,
+        fieldErrors: { token: provider === "gitlab" ? `This GitLab token has the ${gitlabRole} role. Create one with Developer or Maintainer access.` : "This token does not have push access to the repository." },
+      }, 400);
+    }
     return jsonResponse({ valid: true });
   } catch {
-    return jsonResponse({ valid: false, fieldErrors: { token: "GitHub could not be reached. Try again." } }, 502);
+    return jsonResponse({ valid: false, fieldErrors: { token: `${providerName} could not be reached. Try again.` } }, 502);
   }
 }
 export const POST: DryRouteHandler = (context) => readSlug(context) === "validate" ? validate(context) : proxy(context, "POST");

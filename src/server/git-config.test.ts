@@ -37,10 +37,19 @@ describe("loadGitConfig", () => {
 
   it("loads repository, branch and encrypted token from the githubSync singleton", async () => {
     box.types = [{ id: GITHUB_SYNC_TYPE_ID }];
-    box.row = { id: 7, value: { enabled: true, repo: "db-owner/db-repo", branch: "main" } };
+    box.row = { id: 7, value: { repo: "db-owner/db-repo", branch: "main" } };
     box.raw = { token: "ciphertext" };
     await expect(loadGitConfig(context)).resolves.toEqual({
-      config: { repo: "db-owner/db-repo", branch: "main", token: "decrypted:ciphertext" },
+      config: { provider: "github", url: "", repo: "db-owner/db-repo", branch: "main", token: "decrypted:ciphertext" },
+    });
+  });
+
+  it("loads a GitLab provider and custom URL from the backward-compatible repository field", async () => {
+    box.types = [{ id: GITHUB_SYNC_TYPE_ID }];
+    box.row = { id: 7, value: { repo: "gitlab|https%3A%2F%2Fgitlab.example.com|db-owner/db-repo", branch: "main" } };
+    box.raw = { token: "ciphertext" };
+    await expect(loadGitConfig(context)).resolves.toEqual({
+      config: { provider: "gitlab", url: "https://gitlab.example.com", repo: "db-owner/db-repo", branch: "main", token: "decrypted:ciphertext" },
     });
   });
 });

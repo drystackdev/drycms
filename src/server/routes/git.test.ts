@@ -20,6 +20,12 @@ describe("resolveGitTarget", () => {
     );
   });
 
+  it("builds GitLab smart-HTTP targets from the configured base URL", () => {
+    expect(resolveGitTarget(repo, "git-upload-pack", "POST", new URLSearchParams(), "https://gitlab.com")?.url).toBe(
+      "https://gitlab.com/acme/site.git/git-upload-pack",
+    );
+  });
+
   it("rejects everything else: unknown paths, wrong method, missing/unknown service", () => {
     expect(resolveGitTarget(repo, "info/refs", "GET", new URLSearchParams())).toBeNull();
     expect(resolveGitTarget(repo, "info/refs", "GET", new URLSearchParams({ service: "git-shell" }))).toBeNull();
@@ -41,6 +47,7 @@ vi.mock("../git-config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../git-config.js")>();
   return { ...actual, loadGitConfig: async () => configBox.result };
 });
+vi.mock("../outbound-url.js", () => ({ validateOutboundUrlForRequest: async (url: string) => url.replace(/\/+$/, "") }));
 
 const { GET, POST } = await import("./git.js");
 
@@ -54,6 +61,31 @@ afterEach(() => {
 });
 
 describe("git proxy route", () => {
+  it("explains when a GitLab token is valid but lacks the api scope", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "insufficient_scope" }), { status: 403 })));
+    const response = await POST(context("https://site.test/dry/api/git/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "gitlab", url: "https://gitlab.com", repo: "acme/site", token: "glpat-token" }),
+    }, "validate"));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ valid: false, fieldErrors: { token: "This GitLab token requires the api scope." } });
+  });
+
+  it("reports the GitLab project role when it cannot push", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 1 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ permissions: { project_access: { access_level: 10 } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(context("https://site.test/dry/api/git/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "gitlab", url: "https://gitlab.com", repo: "acme/site", token: "glpat-token" }),
+    }, "validate"));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ valid: false, fieldErrors: { token: "This GitLab token has the Guest role. Create one with Developer or Maintainer access." } });
+  });
+
   it("412s with an actionable message when no repository is connected", async () => {
     configBox.result = { error: "not-configured" };
     const response = await GET(context("https://site.test/dry/api/git/info/refs?service=git-upload-pack"));
@@ -148,7 +180,7 @@ describe("git proxy route", () => {
     vi.stubGlobal("fetch", fetchMock);
     const response = await GET(context("https://site.test/dry/api/git/config", {}, "config"));
     const body = await response.json();
-    expect(body).toEqual({ configured: true, repo: "acme/site", branch: "release", hasToken: true });
+    expect(body).toEqual({ configured: true, provider: "github", url: "", repo: "acme/site", branch: "release", hasToken: true });
     expect(JSON.stringify(body)).not.toContain("ghp_secret");
     // Purely local - config must never cost a GitHub round trip.
     expect(fetchMock).not.toHaveBeenCalled();

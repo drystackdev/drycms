@@ -292,6 +292,7 @@ describe("defaultContentTypeDefinitions", () => {
   });
 });
 
+
 describe("pendingSeedStatements", () => {
   it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/memory/seoDefaults/systemSettings/googleVerification/githubSync tables plus 12 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());

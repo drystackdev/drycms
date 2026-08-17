@@ -50,7 +50,6 @@ const IDS = {
   googleVerificationName: "system-google-verification-name",
   googleVerificationContent: "system-google-verification-content",
   githubSync: "system-github-sync-singleton",
-  githubSyncEnabled: "system-github-sync-enabled",
   githubSyncRepo: "system-github-sync-repo",
   githubSyncBranch: "system-github-sync-branch",
   githubSyncToken: "system-github-sync-token",
@@ -633,9 +632,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     id: GITHUB_SYNC_TYPE_ID,
     kind: "singleton",
     name: "githubSync",
-    label: "GitHub Sync",
-    description: "Pushes a snapshot commit of the pages-source tree to a GitHub repo on every Build/Build all - version history for what pagesSourceStorage otherwise only keeps as a working copy.",
-    // Reached via its own "GitHub Sync" sub-item under the "Settings" nav
+    label: "Git Sync",
+    description: "Pushes page-source commits to the configured GitHub or GitLab repository.",
+    // Reached via its own "Git Sync" sub-item under the "Settings" nav
     // group (`DryLayout.tsx`), same treatment as `googleVerification` above -
     // a dedicated small form (`GithubSyncSettings.tsx`) replaces the generic
     // singleton editor.
@@ -644,17 +643,6 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     frozen: true,
     fields: [
       {
-        id: IDS.githubSyncEnabled,
-        name: "enabled",
-        label: "Enabled",
-        type: "boolean",
-        description: "Off by default - Build/Build all skip the GitHub push entirely (no error, no toast) until this is turned on and repo/token below are filled in.",
-        config: {},
-        validation: {},
-        default: false,
-        order: 0,
-      },
-      {
         id: IDS.githubSyncRepo,
         name: "repo",
         label: "Repository",
@@ -662,7 +650,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         description: "owner/name of the GitHub repo the snapshot commit is pushed to.",
         config: { placeholder: "your-org/your-site" },
         validation: { required: true },
-        order: 1,
+        order: 0,
       },
       {
         id: IDS.githubSyncBranch,
@@ -673,7 +661,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: { placeholder: "main" },
         validation: { required: true },
         default: "main",
-        order: 2,
+        order: 1,
       },
       {
         id: IDS.githubSyncToken,
@@ -683,7 +671,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         description: "A GitHub Personal Access Token (classic or fine-grained) with Contents: Read and write on the repo above.",
         config: {},
         validation: { required: true },
-        order: 3,
+        order: 2,
       },
     ],
     version: 0,

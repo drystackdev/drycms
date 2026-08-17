@@ -4,7 +4,8 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { jsonResponse } from "../route-helpers.js";
 import { loadGitConfig } from "../git-config.js";
-import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, resetBranchToSnapshot, type GithubSyncConfig } from "../github-source-sync.js";
+import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, resetBranchToSnapshot } from "../git-source-sync.js";
+import type { GitRepoConfig } from "../git-config.js";
 import { bufferOf } from "../../storage/util.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
 import { SAMPLE_PAGES_SOURCE_FILES } from "../app-router/sample-pages-source.js";
@@ -45,12 +46,12 @@ export async function readPagesSourceTree(context: Pick<DryRouteContext, "env">)
 
 /**
  * Loads+decrypts the `githubSync` singleton into a ready-to-use
- * `GithubSyncConfig`, or an `{error}` reason when it's missing/disabled/
+ * `GitRepoConfig`, or an `{error}` reason when it's missing/
  * unconfigured/undecryptable - shared by this route's own `POST` (push) and
  * `pages-source-github-restore.ts`'s `GET`/`POST` (list history / pull+
- * reset), so the enabled+repo+branch+token validation only lives once.
+ * reset), so the repo+branch+token validation only lives once.
  */
-export async function loadGithubSyncConfig(context: DryRouteContext): Promise<{ config: GithubSyncConfig } | { error: string }> {
+export async function loadGithubSyncConfig(context: DryRouteContext): Promise<{ config: GitRepoConfig } | { error: string }> {
   const loaded = await loadGitConfig(context);
   if ("error" in loaded) return loaded;
   // Unlike the git proxy (`routes/git.ts`, which can talk to a public repo

@@ -1,6 +1,6 @@
 import type { DryRouteHandler } from "../context.js";
 import { jsonResponse } from "../route-helpers.js";
-import { getCommitDetail, listSnapshotCommits, pullPagesSourceSnapshot, readFileAtCommit } from "../github-source-sync.js";
+import { getCommitDetail, listSnapshotCommits, pullPagesSourceSnapshot, readFileAtCommit } from "../git-source-sync.js";
 import { loadGithubSyncConfig } from "./pages-source-github-sync.js";
 
 export const GET: DryRouteHandler = async (context) => {

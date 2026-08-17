@@ -4,16 +4,18 @@ import { createContentTypesApi, listCached } from "../content-types/http-api.js"
 import { createContentEntriesApi, ContentEntriesApiError } from "../content-types/entries-http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import TextField from "../components/fields/TextField.js";
+import SelectField from "../components/fields/SelectField.js";
 import SecretKeyField from "../components/fields/SecretKeyField.js";
-import CheckField from "../components/fields/CheckField.js";
 import { toast } from "../components/Toast.js";
 import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
+import { DEFAULT_GITLAB_URL, parseGitRepositorySetting, serializeGitRepositorySetting, type GitProvider } from "../lib/git-provider.js";
 
 interface GithubSyncValue extends Record<string, unknown> {
-  enabled: boolean;
+  provider: GitProvider;
+  url: string;
   repo: string;
   branch: string;
   token: string;
@@ -29,7 +31,7 @@ interface GithubSyncValue extends Record<string, unknown> {
  * already stored.
  */
 export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignOut }: { setupOnly?: boolean; onSaved?: () => void; onSignOut?: () => void } = {}) {
-  useDocumentTitle("GitHub");
+  useDocumentTitle("Git Sync");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "githubSync"), []);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
@@ -59,7 +61,7 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
         setAllTypes(definitions);
         setType(found);
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load GitHub Sync settings.");
+        setLoadError(error instanceof Error ? error.message : "Failed to load Git Sync settings.");
       }
     })();
   }, [typesApi]);
@@ -70,9 +72,11 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
       try {
         const entry = await entriesApi.getSingleton();
         const secret = entry?.value.token;
+        const repository = parseGitRepositorySetting(typeof entry?.value.repo === "string" ? entry.value.repo : "");
         const loaded: GithubSyncValue = {
-          enabled: setupOnly ? true : entry?.value.enabled === true,
-          repo: typeof entry?.value.repo === "string" ? entry.value.repo : "",
+          provider: repository.provider,
+          url: repository.url || DEFAULT_GITLAB_URL,
+          repo: repository.repo,
           branch: typeof entry?.value.branch === "string" ? entry.value.branch : "",
           token: "",
         };
@@ -80,33 +84,35 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
         setValue(loaded);
         setInitialSnapshot(JSON.stringify(loaded));
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load GitHub Sync settings.");
+        setLoadError(error instanceof Error ? error.message : "Failed to load Git Sync settings.");
       }
     })();
   }, [type, entriesApi]);
 
   function update<K extends keyof GithubSyncValue>(key: K, next: GithubSyncValue[K]) {
     setValue((current) => (current ? { ...current, [key]: next } : current));
-    setFieldErrors((current) => ({ ...current, [key]: "" }));
+    setFieldErrors((current) => key === "provider" ? {} : { ...current, [key]: "" });
   }
 
   async function save() {
     if (!value) return;
+    setFieldErrors({});
     setSaving(true);
     try {
-      if (value.enabled && (setupOnly || value.token.trim())) {
-        const response = await fetch(`${path}/api/git/validate`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo: value.repo, token: value.token }) });
+      if (setupOnly || value.token.trim()) {
+        const response = await fetch(`${path}/api/git/validate`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: value.provider, url: value.url, repo: value.repo, token: value.token }) });
         const validation = await response.json().catch(() => ({})) as { valid?: boolean; fieldErrors?: Record<string, string> };
         if (!validation.valid) { setFieldErrors(validation.fieldErrors ?? {}); return; }
       }
       // Same "blank secretkey input on an existing entry keeps the stored
       // ciphertext" contract `AiKeyEditor.tsx`'s own save uses.
-      const payload = value.token.trim() || !hasExistingToken ? value : { ...value, token: { hasExisting: true } };
+      const storedValue = { repo: serializeGitRepositorySetting(value), branch: value.branch, token: value.token };
+      const payload = value.token.trim() || !hasExistingToken ? storedValue : { ...storedValue, token: { hasExisting: true } };
       await entriesApi.saveSingleton(payload);
       setValue({ ...value, token: "" });
       setInitialSnapshot(JSON.stringify({ ...value, token: "" }));
       setHasExistingToken(hasExistingToken || !!value.token.trim());
-      toast.add({ type: "success", title: "GitHub Sync saved." });
+      toast.add({ type: "success", title: "Git Sync saved." });
       onSaved?.();
     } catch (error) {
       if (error instanceof ContentEntriesApiError && error.fieldErrors) setFieldErrors(error.fieldErrors);
@@ -159,14 +165,14 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
 
   if (loadError) return <span class="error">{loadError}</span>;
   if (!type || !value) return <span class="hint">Loading…</span>;
-  if (!canEdit) return <span class="error">You don't have permission to manage GitHub Sync.</span>;
+  if (!canEdit) return <span class="error">You don't have permission to manage Git Sync.</span>;
 
   return (
     <>
       <div class="page-header">
         <div style={{ flex: 1 }}>
-          <h1>GitHub</h1>
-          <p>Pushes a snapshot commit of your pages-source code to a GitHub repo on every Build/Build all - local/R2 storage stays the working copy, GitHub keeps the version history.</p>
+          <h1>Git Sync</h1>
+          <p>Pushes a snapshot commit of your pages-source code to a GitHub or GitLab repository on every Build/Build all.</p>
         </div>
         <div class="row">
           {onSignOut && <button type="button" class="ghost sm" onClick={onSignOut}>Sign out</button>}
@@ -180,12 +186,21 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
 
       <section class={setupOnly ? "stack" : "card"}>
         <div class={setupOnly ? "stack" : "under stack"}>
-          {!setupOnly && <CheckField
-            label="Enabled"
-            description="Off skips the GitHub push entirely - no error, no toast - until this is on and every field below is filled in."
-            role="switch"
-            value={value.enabled}
-            onChange={(next) => update("enabled", next)}
+          <SelectField
+            label="Platform"
+            required
+            value={value.provider === "github" ? "GitHub" : "GitLab"}
+            config={{ options: ["GitHub", "GitLab"], multiple: false }}
+            onChange={(next) => update("provider", next === "GitLab" ? "gitlab" : "github")}
+          />
+          {value.provider === "gitlab" && <TextField
+            label="GitLab URL"
+            required
+            placeholder={DEFAULT_GITLAB_URL}
+            value={value.url}
+            error={!!fieldErrors.url}
+            helperText={fieldErrors.url}
+            onChange={(next) => update("url", next)}
           />}
           <TextField
             label="Repository"
@@ -226,14 +241,14 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
           <button type="button" class="destructive" disabled={saving || isDirty || resetting} aria-busy={resetting || undefined} onClick={() => setResetOpen(true)}>
             Reset All page
           </button>
-          {isDirty && <p class="hint">Save the GitHub Sync settings before resetting pages.</p>}
+          {isDirty && <p class="hint">Save the Git Sync settings before resetting pages.</p>}
         </div>
       </section>}
 
       {!setupOnly && <ConfirmDialog
         open={resetOpen}
         title="Reset all pages from mock?"
-        message={`Every current page, component, style and Markdown source file will be replaced, and every unpublished browser change will be lost. The mock snapshot will be ${value.enabled ? "pushed to GitHub and " : ""}published immediately. This cannot be undone${value.enabled ? " outside GitHub history" : ""}.`}
+        message="Every current page, component, style and Markdown source file will be replaced, and every unpublished browser change will be lost. The mock snapshot will be pushed to the configured Git repository and published immediately. This cannot be undone outside Git history."
         confirmLabel="Reset All page"
         destructive
         busy={resetting}

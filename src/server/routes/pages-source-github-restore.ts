@@ -2,7 +2,7 @@ import type { DryRouteHandler } from "../context.js";
 import { pagesSourceStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { jsonResponse, errorResponse } from "../route-helpers.js";
-import { ensureBranchExists, listSnapshotCommits, PAGE_SOURCE_FILE_PATTERN, pullPagesSourceSnapshot } from "../github-source-sync.js";
+import { ensureBranchExists, listSnapshotCommits, PAGE_SOURCE_FILE_PATTERN, pullPagesSourceSnapshot } from "../git-source-sync.js";
 import { loadGithubSyncConfig, readPagesSourceTree } from "./pages-source-github-sync.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
 

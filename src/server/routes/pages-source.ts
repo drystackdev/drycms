@@ -103,7 +103,7 @@ export const POST: DryRouteHandler = async (context) => {
     if (readSlug(context) === "commit") {
       const [{ loadGithubSyncConfig }, { commitPagesSourceChanges }] = await Promise.all([
         import("./pages-source-github-sync.js"),
-        import("../github-source-sync.js"),
+        import("../git-source-sync.js"),
       ]);
       const loaded = await loadGithubSyncConfig(context);
       if ("error" in loaded) return jsonResponse({ committed: false, reason: loaded.error }, 412);
