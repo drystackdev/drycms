@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "preact/hooks";
 import { EditIcon } from "../../../components/icons/index.js";
 import { encodeEntryId } from "../../../lib/id-hash.js";
+import { useResizablePanel } from "../../../lib/useResizablePanel.js";
+import { BUILDER_PANEL_WIDTH, clampBuilderPanelWidth } from "./panel-width.js";
 import type { PreviewVeiClickRef } from "../../../page-components/page-preview-engine.js";
 import type { PreviewPatchDetail } from "../../../page-components/vei-preview-patch.js";
 
@@ -21,7 +23,11 @@ export interface VeiEntryFrameProps {
   // refs on a function component (silently dropped, never reaches props)
   // unless the component is wrapped in `forwardRef`, which this isn't.
   target: PreviewVeiClickRef | null;
-  panelWidth: number;
+  /** Seeds this panel's own drag state - the docked panel is the same
+   * footprint the code panel uses, so both modes start from the one width
+   * `PageBuilder.tsx` persists. */
+  initialWidth: number;
+  onWidthChange: (width: number) => void;
   adminPath: string;
   onClose: () => void;
   onFieldInput: (detail: PreviewPatchDetail) => void;
@@ -39,6 +45,17 @@ export interface VeiEntryFrameProps {
  */
 export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // Same divider as `CodePanel`'s, on the same edge and within the same
+  // bounds - pointer capture is what keeps the drag tracking once the cursor
+  // crosses onto the preview iframe beside it (`useResizablePanel`'s own doc
+  // comment), which is most of the drag here.
+  const panel = useResizablePanel({
+    ...BUILDER_PANEL_WIDTH,
+    initial: clampBuilderPanelWidth(props.initialWidth),
+    axis: "x",
+    invert: true,
+    onSizeChange: props.onWidthChange,
+  });
   const readyRef = useRef(false);
   const currentUrlRef = useRef<string | null>(null);
   const desiredUrl = props.target ? editorUrl(props.adminPath, props.target) : null;
@@ -98,9 +115,10 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   return (
     <div
       class="page-builder-vei-sheet docked"
-      style={{ width: `${props.panelWidth}px` }}
+      style={{ width: `${panel.size}px` }}
       onClick={(event) => { if (event.target === event.currentTarget) props.onClose(); }}
     >
+      <div class="page-builder-vei-sheet-handle" {...panel.handleProps} />
       <div class="page-builder-vei-panel">
         <iframe
           ref={iframeRef}

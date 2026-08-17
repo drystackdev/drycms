@@ -7733,7 +7733,12 @@
       box-shadow: var(--dry-shadow-lg);
     }
 
-    .page-builder-code-panel-handle {
+    /* The docked panel's own drag divider, on its inner edge. Both right-hand
+       modes get the same one: `CodePanel.tsx` and `VeiEntryFrame.tsx` are the
+       same footprint driving the same width (`panel-width.ts`), so "edit
+       content" resizes exactly like "code" does. */
+    .page-builder-code-panel-handle,
+    .page-builder-vei-sheet-handle {
       position: absolute;
       inset-block: 0;
       inset-inline-start: -3px;
@@ -8081,7 +8086,8 @@
         animation: page-builder-drawer-in 160ms ease;
       }
 
-      .page-builder-code-panel-handle {
+      .page-builder-code-panel-handle,
+      .page-builder-vei-sheet-handle {
         display: none;
       }
 

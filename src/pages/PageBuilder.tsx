@@ -633,7 +633,8 @@ export default function PageBuilder() {
       {panelMode === "vei" && (
         <VeiEntryFrame
           target={veiTarget}
-          panelWidth={codePanelWidth}
+          initialWidth={codePanelWidth}
+          onWidthChange={setCodePanelWidth}
           adminPath={path}
           onClose={() => {
             setVeiTarget(null);

@@ -3,8 +3,8 @@ import Editer from "../../../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../../../components/Editer/types.js";
 import { useResizablePanel } from "../../../lib/useResizablePanel.js";
 import { ArrowRightIcon } from "../../../components/icons/index.js";
+import { BUILDER_PANEL_WIDTH, clampBuilderPanelWidth } from "./panel-width.js";
 
-const PANEL_WIDTH = { initial: 480, min: 320, max: 900 };
 const DIAGNOSTICS_HEIGHT = { initial: 160, min: 80, max: 360 };
 
 export interface CodePanelProps {
@@ -36,8 +36,8 @@ export interface CodePanelProps {
  */
 export default function CodePanel(props: CodePanelProps) {
   const panel = useResizablePanel({
-    ...PANEL_WIDTH,
-    initial: Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, props.initialWidth)),
+    ...BUILDER_PANEL_WIDTH,
+    initial: clampBuilderPanelWidth(props.initialWidth),
     axis: "x",
     invert: true,
     onSizeChange: props.onWidthChange,
