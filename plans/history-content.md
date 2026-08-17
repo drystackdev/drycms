@@ -181,8 +181,11 @@ local + push như ý tưởng gốc, mà commit thẳng qua REST API:
 - Chưa có test tự động cho luồng git hiện tại (không tìm thấy spec nào) —
   Playwright e2e cho tính năng này là việc follow-up, không chặn bản đầu.
 
-# Việc cần làm tiếp theo
+# Trạng thái
 
-Khi bắt đầu implement, theo dõi tiến độ trong `status/history-content.md`
-(3 mục Plan/Status/Speed) theo convention của CLAUDE.md — chưa tạo, vì phần
-implement chưa bắt đầu.
+**Đã implement xong** (2026-08-18) — chi tiết đầy đủ + 2 bug thật phát hiện
+qua e2e + 1 vấn đề hạ tầng có sẵn không liên quan (gate GitHub Setup bắt
+buộc chặn e2e, và `dev-server.mjs` kill nhầm dev server khác cổng) xem
+`status/history-content.md`. `bun run typecheck` sạch;
+`e2e/content-history.spec.ts` pass, bao phủ cả luồng retry→reset dialog
+thật (không chỉ nhánh "chưa cấu hình git").

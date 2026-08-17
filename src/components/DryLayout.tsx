@@ -7,6 +7,7 @@ import {
 } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
+import ConfirmDialog from "./ConfirmDialog.js";
 import Icon from "./Icon.js";
 import { LogOutIcon, UserIcon, type IconProps } from "./icons/index.js";
 import Popover from "./Popover.js";
@@ -44,6 +45,10 @@ import {
   hydrateContentTypeDraftIndex,
   watchContentTypeDraftIndex,
 } from "../content-types/draft-store.js";
+import {
+  pendingContentSyncs,
+  resolvePendingContentSync,
+} from "../content-types/entry-git-sync.js";
 
 /** The MCP mark (two interlocking chain links) - not part of the generated
  * `icons/index.tsx` set (`scripts/build-icons.mjs` only pulls from Solar/
@@ -390,6 +395,7 @@ export default function DryLayout({ children }: Props) {
     useOverlayScrollbars<HTMLDivElement>();
   const [sidebarTransitionEnabled, setSidebarTransitionEnabled] =
     useState(false);
+  const [resolvingPendingSync, setResolvingPendingSync] = useState(false);
 
   const toggleCollapsed = () => {
     setSidebarTransitionEnabled(true);
@@ -522,6 +528,23 @@ export default function DryLayout({ children }: Props) {
   // page. Reading the signal here (not inside the map below) keeps this
   // component subscribed to it on every render path.
   const contentTypeDraftCount = Object.keys(drafts.value).length;
+
+  // Entry saves whose git commit kept failing after every retry
+  // (`entry-git-sync.ts`, `plans/history-content.md` decision #1) - shown
+  // one at a time regardless of which page triggered the save, since the
+  // editor that did has very likely already navigated away by the time a
+  // background sync this slow finishes. `DryLayout` never remounts, so this
+  // dialog stays reachable no matter where the admin goes next.
+  const pendingSync = pendingContentSyncs.value[0] ?? null;
+  const handleResolvePendingSync = async (action: "reset" | "dismiss") => {
+    if (!pendingSync) return;
+    setResolvingPendingSync(true);
+    try {
+      await resolvePendingContentSync(pendingSync, path, action);
+    } finally {
+      setResolvingPendingSync(false);
+    }
+  };
 
   const shellClass = [
     "shell",
@@ -781,6 +804,25 @@ export default function DryLayout({ children }: Props) {
       </div>
 
       <Toaster />
+      {pendingSync && (
+        <ConfirmDialog
+          open
+          title="Content sync failed"
+          message={
+            <p>
+              Saving <strong>{pendingSync.typeLabel}</strong> to the database succeeded, but
+              syncing it to git failed after 3 attempts. Reset it back to its value from before
+              this save? Your edit stays as a draft either way, so you can retry later.
+            </p>
+          }
+          confirmLabel="Reset"
+          cancelLabel="Keep as-is"
+          destructive
+          busy={resolvingPendingSync}
+          onConfirm={() => void handleResolvePendingSync("reset")}
+          onCancel={() => void handleResolvePendingSync("dismiss")}
+        />
+      )}
     </div>
   );
 }

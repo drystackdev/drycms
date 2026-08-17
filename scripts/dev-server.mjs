@@ -6,24 +6,32 @@ import { join, relative, sep } from "node:path";
 import { createServer as createViteServer } from "vite";
 
 /**
- * Closes a previous `bun run dev` still running (matched by command line,
- * `pgrep`/`kill` - macOS/Linux only; an unsupported platform or missing
- * `pgrep` just no-ops) before this instance touches any port. Has to run
- * BEFORE `createViteServer()` below, not just around this file's own
- * `server.listen()`: Vite binds its HMR WebSocket port independently of the
- * main HTTP port as part of that call, so a leftover old process still
+ * Closes a previous `bun run dev` still holding THIS instance's own port
+ * (matched by the port itself via `lsof`, macOS/Linux only; an unsupported
+ * platform or missing `lsof` just no-ops) before this instance touches it.
+ * Has to run BEFORE `createViteServer()` below, not just around this file's
+ * own `server.listen()`: Vite binds its HMR WebSocket port independently of
+ * the main HTTP port as part of that call, so a leftover old process still
  * holding it would otherwise fail that bind with no retry.
+ *
+ * Matched by PORT, not by command line: this same file also backs the e2e
+ * server (`scripts/e2e-server.mjs`, a different port, `PORT=4173`) - an
+ * earlier `pgrep -f ".../dev-server\.mjs"` matched every instance of this
+ * script regardless of which port it bound, so starting the e2e server
+ * while a normal `bun run dev` was up silently killed that unrelated,
+ * still-wanted session. Confirmed live: an e2e run took down a concurrent
+ * `bun run dev` on :5173 this way.
  */
-function closeExistingDevServer() {
+function closeExistingDevServer(port) {
   let output;
   try {
-    output = execSync('pgrep -f "node .*scripts/dev-server\\.mjs"', { encoding: "utf8" });
+    output = execSync(`lsof -ti :${port}`, { encoding: "utf8" });
   } catch {
-    return; // No previous instance found, or `pgrep` isn't available.
+    return; // Nothing bound to this port yet, or `lsof` isn't available.
   }
   const pids = output.trim().split("\n").filter((pid) => pid && Number(pid) !== process.pid);
   if (pids.length === 0) return;
-  console.log(`[drycms] closing previous dev server (pid ${pids.join(", ")})...`);
+  console.log(`[drycms] closing previous dev server on port ${port} (pid ${pids.join(", ")})...`);
   for (const pid of pids) {
     try {
       process.kill(Number(pid), "SIGTERM");
@@ -33,7 +41,7 @@ function closeExistingDevServer() {
   }
   execSync("sleep 0.5");
 }
-closeExistingDevServer();
+closeExistingDevServer(Number(process.env.PORT) || 5173);
 
 /**
  * Dev entry - deliberately plain JS (not TypeScript): this is the one file

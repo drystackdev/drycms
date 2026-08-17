@@ -6,9 +6,12 @@ import { toast } from "../components/Toast.js";
 import {
   ArrowLeftIcon,
   EraserIcon,
+  HistoryIcon,
   PreviewIcon,
   TrashIcon,
 } from "../components/icons/index.js";
+import ContentHistoryDialog from "../components/ContentHistoryDialog.js";
+import type { ContentHistoryTarget } from "../content-types/content-history-http-api.js";
 import MagicChat from "./content-entry-editor/MagicChat.js";
 import { useAiKeySelection } from "../components/AiKeyPicker.js";
 import { RichTextRewriteContext } from "../components/RichTextField/ai-rewrite-context.js";
@@ -44,6 +47,8 @@ import {
   loadEntryDraft,
   saveEntryDraft,
 } from "../content-types/entry-draft-store.js";
+import { isGitMirrorEligible } from "../content-types/git-mirror.js";
+import { syncEntryDraftToGit } from "../content-types/entry-git-sync.js";
 import EntryPreviewDialog from "./content-entry-editor/EntryPreviewDialog.js";
 import {
   dispatchEntrySaved,
@@ -130,6 +135,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showResetAllConfirm, setShowResetAllConfirm] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   // Magic (status/magic-chat.md, formerly Magic Write): the top-level field
   // name currently being streamed into, or `null` when no run is active -
   // `renderFieldNodes` disables that one field's `<fieldset>` while it's set.
@@ -250,6 +256,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // page it's rendering into would break that page's layout with no undo.
   const canDelete =
     !!type && !isSingleton && !isNew && !veiFrame && canAccess(type.id, "delete");
+  // `id` (the URL param, known synchronously) rather than `entryId` (only
+  // set once the async load effect resolves) for a collection entry - a
+  // brand-new entry (`isNew`) has no history to show yet, and a type
+  // `git-mirror.ts` excludes was never synced in the first place.
+  const historyTarget: ContentHistoryTarget | null =
+    !type || isNew || !isGitMirrorEligible(type)
+      ? null
+      : isSingleton
+        ? { type: type.name }
+        : { type: type.name, entryId: id ?? entryId ?? undefined };
   const showLoading = useDelayedLoading(!type || value === null);
 
   useEffect(() => {
@@ -376,6 +392,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             onClick={() => route(`${path}/content/${type.name}`)}
           >
             Cancel
+          </button>
+        )}
+        {historyTarget && (
+          <button
+            type="button"
+            class="outline"
+            onClick={() => setShowHistory(true)}
+          >
+            <HistoryIcon /> History
           </button>
         )}
         {!isNew && isDirty && (
@@ -605,23 +630,70 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             }
           : current;
 
+      // A type `git-mirror.ts` excludes (`role`/`user`/`githubSync`/...)
+      // never syncs - the draft discards immediately, same as before this
+      // feature existed. Otherwise the draft is kept (not discarded) until
+      // the git commit itself confirms - see `syncEntryDraftToGit`'s own
+      // doc comment (`plans/history-content.md` decision #1). `priorValue`
+      // is read from `originalValue` (this render's closure, unaffected by
+      // this function's own later `setInitialSnapshot` calls) - what a
+      // "reset" rolls back TO if the sync never confirms.
+      const gitEligible = isGitMirrorEligible(type);
+      const priorValue = originalValue as EntryValue;
+
       if (isSingleton) {
         const entry = await entriesApi.saveSingleton(payload);
         setValue(entry.value);
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
-        await discardEntryDraft(typeSlug, draftEntryId);
+        if (gitEligible) {
+          syncEntryDraftToGit({
+            adminPath: path,
+            typeSlug,
+            typeLabel: type.label || type.name,
+            draftEntryId,
+            entryId: entry.id,
+            op: "update",
+            rollback: { kind: "restore", value: priorValue },
+          });
+        } else {
+          await discardEntryDraft(typeSlug, draftEntryId);
+        }
         toast.add({ type: "success", title: `Saved "${type.label}".` });
       } else if (isNew) {
-        await entriesApi.create(payload);
-        await discardEntryDraft(typeSlug, draftEntryId);
+        const entry = await entriesApi.create(payload);
+        if (gitEligible) {
+          syncEntryDraftToGit({
+            adminPath: path,
+            typeSlug,
+            typeLabel: type.label || type.name,
+            draftEntryId,
+            entryId: entry.id,
+            op: "create",
+            rollback: { kind: "remove" },
+          });
+        } else {
+          await discardEntryDraft(typeSlug, draftEntryId);
+        }
         toast.add({ type: "success", title: `Created "${type.label}" entry.` });
         route(`${path}/content/${type.name}`);
       } else if (entryId) {
         const entry = await entriesApi.update(entryId, payload);
         setValue(entry.value);
         setInitialSnapshot(JSON.stringify(entry.value));
-        await discardEntryDraft(typeSlug, draftEntryId);
+        if (gitEligible) {
+          syncEntryDraftToGit({
+            adminPath: path,
+            typeSlug,
+            typeLabel: type.label || type.name,
+            draftEntryId,
+            entryId,
+            op: "update",
+            rollback: { kind: "restore", value: priorValue },
+          });
+        } else {
+          await discardEntryDraft(typeSlug, draftEntryId);
+        }
         toast.add({ type: "success", title: `Saved "${type.label}" entry.` });
         // Inside the VEI dialog there's no list to go back to - the frame is
         // about to be reused for the next entry (or closed).
@@ -732,12 +804,27 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     if (!type || !entriesApi || !entryId) return;
     setDeleting(true);
     try {
+      const priorValue = originalValue;
       await entriesApi.remove(entryId);
       setShowDeleteConfirm(false);
       // The entry is gone server-side - a lingering unsaved draft for it
       // would otherwise resurface on next load (same reasoning as
-      // `handleResetAll`'s own `discardEntryDraft` call above).
-      void discardEntryDraft(typeSlug, draftEntryId);
+      // `handleResetAll`'s own `discardEntryDraft` call above). Git-eligible
+      // types still mirror the deletion (fire-and-forget, same as a save -
+      // `plans/history-content.md` decision #1) before discarding.
+      if (isGitMirrorEligible(type) && priorValue) {
+        syncEntryDraftToGit({
+          adminPath: path,
+          typeSlug,
+          typeLabel: type.label || type.name,
+          draftEntryId,
+          entryId,
+          op: "delete",
+          rollback: { kind: "recreate", value: priorValue },
+        });
+      } else {
+        void discardEntryDraft(typeSlug, draftEntryId);
+      }
       toast.add({ type: "success", title: `Deleted "${type.label}" entry.` });
       route(`${path}/content/${type.name}`);
     } catch (error) {
@@ -816,6 +903,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 onClick={() => (veiFrame ? closeVeiDialog() : route(backTo))}
               >
                 Cancel
+              </button>
+            )}
+            {historyTarget && (
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setShowHistory(true)}
+              >
+                <HistoryIcon /> History
               </button>
             )}
             {!isNew && isDirty && (
@@ -945,6 +1041,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         onResetField={handleResetField}
         onRequestResetAll={() => setShowResetAllConfirm(true)}
       />
+
+      {historyTarget && (
+        <ContentHistoryDialog
+          open={showHistory}
+          adminPath={path}
+          target={historyTarget}
+          label={type ? (isSingleton ? type.label : `${type.label} #${id ?? entryId}`) : ""}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
 
       <MagicChat
         typeSlug={typeSlug}

@@ -38,6 +38,10 @@ async function gitlabTextRequest(config: GitLabConfig, path: string): Promise<st
 
 const projectPath = (config: GitLabConfig) => `/projects/${encodeURIComponent(config.repo)}`;
 const isPageSourcePath = (path: string) => PAGES_SOURCE_ROOTS.some((root) => path.startsWith(`${root.id}/`)) && PAGE_SOURCE_FILE_PATTERN.test(path);
+/** Same `content/` root as `github-source-sync.ts`'s `isContentPath` -
+ * git-mirrored content history (`plans/history-content.md`). */
+const CONTENT_ROOT = "content/";
+const isContentPath = (path: string) => path.startsWith(CONTENT_ROOT) && /\.json$/i.test(path);
 
 interface GitLabTreeEntry { path: string; type: "blob" | "tree" }
 interface GitLabCommit { id: string; title?: string; message: string; author_name: string; authored_date: string; parent_ids?: string[] }
@@ -109,16 +113,36 @@ export async function ensureBranchExists(config: GitLabConfig, source: () => Pro
   } catch (error) { return { ok: false as const, reason: error instanceof Error ? error.message : "Failed to check the GitLab branch." }; }
 }
 
-export async function commitPagesSourceChanges(config: GitLabConfig, files: Record<string, string | null>, message: string, author: { name: string; email: string }): Promise<GithubPatchResult> {
-  if (Object.keys(files).some((path) => !isPageSourcePath(path))) return { ok: false, reason: "A path is outside page source." };
+/** Shared core for `commitPagesSourceChanges` (page source) and
+ * `commitContentChanges` (`content/` JSON snapshots,
+ * `plans/history-content.md`) - only the path validator and wording differ. */
+async function commitFiles(
+  config: GitLabConfig,
+  files: Record<string, string | null>,
+  message: string,
+  author: { name: string; email: string },
+  isValidPath: (path: string) => boolean,
+  noChangesReason: string,
+  invalidPathReason: string,
+): Promise<GithubPatchResult> {
+  if (Object.keys(files).some((path) => !isValidPath(path))) return { ok: false, reason: invalidPathReason };
   try {
     const existing = new Set((await listTree(config, config.branch)).filter((entry) => entry.type === "blob").map((entry) => entry.path));
     const actions = Object.entries(files).flatMap(([file_path, content]) => content === null
       ? (existing.has(file_path) ? [{ action: "delete", file_path }] : [])
       : [{ action: existing.has(file_path) ? "update" : "create", file_path, content, encoding: "text" }]);
-    if (!actions.length) return { ok: false, reason: "No page-source changes to commit." };
+    if (!actions.length) return { ok: false, reason: noChangesReason };
     return { ok: true, commitSha: await createCommit(config, message, actions, author) };
   } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : "GitLab commit failed." }; }
+}
+
+export async function commitPagesSourceChanges(config: GitLabConfig, files: Record<string, string | null>, message: string, author: { name: string; email: string }): Promise<GithubPatchResult> {
+  return commitFiles(config, files, message, author, isPageSourcePath, "No page-source changes to commit.", "A path is outside page source.");
+}
+
+/** Same as `commitPagesSourceChanges`, but for the `content/` root. */
+export async function commitContentChanges(config: GitLabConfig, files: Record<string, string | null>, message: string, author: { name: string; email: string }): Promise<GithubPatchResult> {
+  return commitFiles(config, files, message, author, isContentPath, "No content changes to commit.", "A path is outside the content root.");
 }
 
 export async function listSnapshotCommits(config: GitLabConfig, limit: number, options: { path?: string; page?: number } = {}): Promise<GithubHistoryResult> {
@@ -130,8 +154,8 @@ export async function listSnapshotCommits(config: GitLabConfig, limit: number, o
   } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : "Failed to list GitLab commits." }; }
 }
 
-export async function readFileAtCommit(config: GitLabConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
-  if (!isPageSourcePath(path)) return { ok: false, reason: "The path is outside page source." };
+async function fileAtCommit(config: GitLabConfig, sha: string, path: string, isValidPath: (path: string) => boolean): Promise<GithubFileAtCommitResult> {
+  if (!isValidPath(path)) return { ok: false, reason: "The path is outside the allowed root." };
   try {
     const content = await gitlabTextRequest(config, `${projectPath(config)}/repository/files/${encodeURIComponent(path)}/raw?ref=${encodeURIComponent(sha)}`);
     return { ok: true, content };
@@ -139,6 +163,15 @@ export async function readFileAtCommit(config: GitLabConfig, sha: string, path: 
     if (error instanceof GitLabApiError && error.status === 404) return { ok: true, missing: true };
     return { ok: false, reason: error instanceof Error ? error.message : "Failed to read the file from GitLab." };
   }
+}
+
+export async function readFileAtCommit(config: GitLabConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  return fileAtCommit(config, sha, path, isPageSourcePath);
+}
+
+/** Same as `readFileAtCommit`, scoped to the `content/` root. */
+export async function readContentFileAtCommit(config: GitLabConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  return fileAtCommit(config, sha, path, isContentPath);
 }
 
 export async function pullPagesSourceSnapshot(config: GitLabConfig, sha?: string): Promise<GithubPullResult> {
@@ -155,26 +188,35 @@ export async function pullPagesSourceSnapshot(config: GitLabConfig, sha?: string
   } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : "Failed to pull from GitLab." }; }
 }
 
-export async function getCommitDetail(config: GitLabConfig, sha: string): Promise<GithubCommitDetailResult> {
+async function commitDetail(config: GitLabConfig, sha: string, isValidPath: (path: string) => boolean): Promise<GithubCommitDetailResult> {
   try {
     const [commit, diffs] = await Promise.all([
       gitlabRequest<GitLabCommit>(config, `${projectPath(config)}/repository/commits/${encodeURIComponent(sha)}`),
       gitlabRequest<GitLabDiff[]>(config, `${projectPath(config)}/repository/commits/${encodeURIComponent(sha)}/diff`),
     ]);
-    const files = await Promise.all(diffs.filter((diff) => isPageSourcePath(diff.new_path || diff.old_path)).map(async (diff) => {
+    const files = await Promise.all(diffs.filter((diff) => isValidPath(diff.new_path || diff.old_path)).map(async (diff) => {
       const path = diff.deleted_file ? diff.old_path : diff.new_path;
       let counts = diffLineCounts(diff.diff);
       if (diff.diff === "" && diff.new_file) {
-        const file = await readFileAtCommit(config, commit.id, path);
+        const file = await fileAtCommit(config, commit.id, path, isValidPath);
         if ("content" in file) counts = { additions: contentLineCount(file.content), deletions: 0 };
       } else if (diff.diff === "" && diff.deleted_file && commit.parent_ids?.[0]) {
-        const file = await readFileAtCommit(config, commit.parent_ids[0], path);
+        const file = await fileAtCommit(config, commit.parent_ids[0], path, isValidPath);
         if ("content" in file) counts = { additions: 0, deletions: contentLineCount(file.content) };
       }
       return { path, status: diff.new_file ? "added" : diff.deleted_file ? "removed" : "modified", ...counts, patch: diff.diff };
     }));
     return { ok: true, sha: commit.id, message: commit.message, authorName: commit.author_name, date: commit.authored_date, files };
   } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : "Failed to read the GitLab commit." }; }
+}
+
+export async function getCommitDetail(config: GitLabConfig, sha: string): Promise<GithubCommitDetailResult> {
+  return commitDetail(config, sha, isPageSourcePath);
+}
+
+/** Same as `getCommitDetail`, scoped to the `content/` root. */
+export async function getContentCommitDetail(config: GitLabConfig, sha: string): Promise<GithubCommitDetailResult> {
+  return commitDetail(config, sha, isContentPath);
 }
 
 export async function resetBranchToSnapshot(config: GitLabConfig, sourceByPath: Record<string, string>, messages: { clear: string; restore: string }): Promise<GithubPatchResult> {

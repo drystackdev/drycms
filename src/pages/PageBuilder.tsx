@@ -7,6 +7,7 @@ import { isVeiEditableType, PAGE_BUILDER_RESOURCE_ID } from "../content-types/pe
 import type { DryVeiContext } from "../content-types/dry-context.js";
 import { dryVeiOverrideKey, type DryVeiOverrideMap } from "../content-types/dry-reader-http.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import type { EntryValue } from "../content-types/engine/entry-codec.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { fetchJson, type AssetHrefs } from "../page-components/pages-source-http.js";
@@ -31,6 +32,8 @@ import { CORE_STYLE_FILES } from "./page-components/core-styles/registry.js";
 import { getAllEntryDraftRecords, putEntryDraftRecord, type EntryDraftRecord } from "../content-types/entry-draft-db.js";
 import { discardEntryDraft } from "../content-types/entry-draft-store.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
+import { isGitMirrorEligible } from "../content-types/git-mirror.js";
+import { syncEntryDraftToGit } from "../content-types/entry-git-sync.js";
 import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
 import { publishPagesAffectedBySource } from "../page-components/initial-publish.js";
 import { gitState, refreshGitStatus } from "../page-components/git/git-state.js";
@@ -75,13 +78,17 @@ const BUILDER_STATE_KEY = "drycms:page-builder-state";
  * way - Save is one button, and a page/component path is already the most
  * useful summary there is. A path no longer present in the loaded tree was
  * deleted, so the verb follows the actual change rather than always reading
- * "Update". Long lists collapse to a count. */
+ * "Update". Long lists collapse to a count. `[CODE] ` prefixed so
+ * `HistoryDialog.tsx`'s Code/Content tabs can bucket commits by message
+ * (`plans/history-content.md`) - a commit from before this feature existed
+ * carries no prefix at all, which the dialog buckets as Code too (only code
+ * was ever tracked before). */
 function commitMessageFor(paths: string[], sourceByPath: Record<string, string>): string {
   const removed = paths.filter((filePath) => !(filePath in sourceByPath));
   const verb = removed.length === paths.length ? "Delete" : "Update";
-  if (paths.length === 1) return `${verb} ${paths[0]}`;
-  if (paths.length <= 3) return `${verb} ${paths.join(", ")}`;
-  return `${verb} ${paths.length} page source files`;
+  if (paths.length === 1) return `[CODE] ${verb} ${paths[0]}`;
+  if (paths.length <= 3) return `[CODE] ${verb} ${paths.join(", ")}`;
+  return `[CODE] ${verb} ${paths.length} page source files`;
 }
 
 /**
@@ -595,10 +602,41 @@ export default function PageBuilder() {
         if (!type || type.kind === "component") continue;
         setSaveProgress({ percent: Math.round((completedWrites / Math.max(totalWrites, 1)) * 65), label: `Saving ${type.label}` });
         const api = createContentEntriesApi(`${path}/api/content`, type.name);
-        if (type.kind === "singleton") await api.saveSingleton(draft.value);
-        else if (draft.entryId === null) await api.create(draft.value);
-        else await api.update(draft.entryId, draft.value);
-        await discardEntryDraft(draft.typeSlug, draft.entryId);
+        const gitEligible = isGitMirrorEligible(type);
+        const isCreate = type.kind !== "singleton" && draft.entryId === null;
+        // Fetched BEFORE the write, only when it'll actually be used for a
+        // rollback - what "reset" (`entry-git-sync.ts`) restores an update or
+        // singleton save back to if its git commit never confirms. A create
+        // has nothing to restore (rollback removes the row instead), so it's
+        // skipped there.
+        let priorValue: EntryValue | null = null;
+        if (gitEligible && !isCreate) {
+          try {
+            const existing = type.kind === "singleton" ? await api.getSingleton() : await api.get(draft.entryId as string);
+            priorValue = existing?.value ?? null;
+          } catch {
+            priorValue = null;
+          }
+        }
+
+        let savedEntryId: string;
+        if (type.kind === "singleton") savedEntryId = (await api.saveSingleton(draft.value)).id;
+        else if (isCreate) savedEntryId = (await api.create(draft.value)).id;
+        else savedEntryId = (await api.update(draft.entryId as string, draft.value)).id;
+
+        if (gitEligible) {
+          syncEntryDraftToGit({
+            adminPath: path,
+            typeSlug: draft.typeSlug,
+            typeLabel: type.label || type.name,
+            draftEntryId: draft.entryId,
+            entryId: savedEntryId,
+            op: type.kind === "singleton" ? "update" : isCreate ? "create" : "update",
+            rollback: isCreate ? { kind: "remove" } : { kind: "restore", value: priorValue ?? draft.value },
+          });
+        } else {
+          await discardEntryDraft(draft.typeSlug, draft.entryId);
+        }
         resources.add(type.name);
         completedWrites += 1;
       }

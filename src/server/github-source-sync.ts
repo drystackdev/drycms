@@ -281,7 +281,18 @@ function isPageSourcePath(path: string): boolean {
   return PAGES_SOURCE_ROOTS.some((root) => path.startsWith(`${root.id}/`)) && PAGE_SOURCE_FILE_PATTERN.test(path);
 }
 
-export async function getCommitDetail(config: GithubSyncConfig, sha: string): Promise<GithubCommitDetailResult> {
+/** The `content/` JSON-snapshot root git-mirrored content history writes to
+ * (`plans/history-content.md`) - a sibling of `PAGES_SOURCE_ROOTS`, but never
+ * added to that list: it isn't part of `pagesSourceStorage` (D1 stays the
+ * real store for entries/schema; this is a one-way mirror), so it must not
+ * be reachable through any page-source read/write path. */
+const CONTENT_ROOT = "content/";
+const CONTENT_FILE_PATTERN = /\.json$/i;
+function isContentPath(path: string): boolean {
+  return path.startsWith(CONTENT_ROOT) && CONTENT_FILE_PATTERN.test(path);
+}
+
+async function commitDetail(config: GithubSyncConfig, sha: string, isValidPath: (path: string) => boolean): Promise<GithubCommitDetailResult> {
   try {
     const entry = await githubRequest<GithubCommitDetailResponse>(`/repos/${config.repo}/commits/${encodeURIComponent(sha)}`, config.token);
     return {
@@ -290,7 +301,7 @@ export async function getCommitDetail(config: GithubSyncConfig, sha: string): Pr
       message: entry.commit.message,
       authorName: entry.commit.author?.name ?? entry.commit.committer?.name ?? "unknown",
       date: entry.commit.author?.date ?? entry.commit.committer?.date ?? "",
-      files: (entry.files ?? []).filter((file) => isPageSourcePath(file.filename)).map((file) => ({
+      files: (entry.files ?? []).filter((file) => isValidPath(file.filename)).map((file) => ({
         path: file.filename, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.patch,
       })),
     };
@@ -299,10 +310,20 @@ export async function getCommitDetail(config: GithubSyncConfig, sha: string): Pr
   }
 }
 
+export async function getCommitDetail(config: GithubSyncConfig, sha: string): Promise<GithubCommitDetailResult> {
+  return commitDetail(config, sha, isPageSourcePath);
+}
+
+/** Same as `getCommitDetail`, scoped to the `content/` root instead of page
+ * source - backs the Content tab of History (`plans/history-content.md`). */
+export async function getContentCommitDetail(config: GithubSyncConfig, sha: string): Promise<GithubCommitDetailResult> {
+  return commitDetail(config, sha, isContentPath);
+}
+
 export type GithubFileAtCommitResult = { ok: true; content: string } | { ok: true; missing: true } | { ok: false; reason: string };
 
-export async function readFileAtCommit(config: GithubSyncConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
-  if (!isPageSourcePath(path)) return { ok: false, reason: "The path is outside page source." };
+async function fileAtCommit(config: GithubSyncConfig, sha: string, path: string, isValidPath: (path: string) => boolean): Promise<GithubFileAtCommitResult> {
+  if (!isValidPath(path)) return { ok: false, reason: "The path is outside the allowed root." };
   try {
     const file = await githubRequest<GithubContentResponse>(
       `/repos/${config.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(sha)}`,
@@ -315,19 +336,34 @@ export async function readFileAtCommit(config: GithubSyncConfig, sha: string, pa
   }
 }
 
+export async function readFileAtCommit(config: GithubSyncConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  return fileAtCommit(config, sha, path, isPageSourcePath);
+}
+
+/** Same as `readFileAtCommit`, scoped to the `content/` root. */
+export async function readContentFileAtCommit(config: GithubSyncConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  return fileAtCommit(config, sha, path, isContentPath);
+}
+
 export type GithubPatchResult = { ok: true; commitSha: string } | { ok: false; reason: string };
 
 /** Applies only the caller's paths on top of the latest remote tree. A ref
- * race is retried from the new HEAD, preserving unrelated concurrent work. */
-export async function commitPagesSourceChanges(
+ * race is retried from the new HEAD, preserving unrelated concurrent work.
+ * Shared core for `commitPagesSourceChanges` (page source) and
+ * `commitContentChanges` (`content/` JSON snapshots,
+ * `plans/history-content.md`) - only the path validator and wording differ. */
+async function commitFiles(
   config: GithubSyncConfig,
   files: Record<string, string | null>,
   message: string,
   author: { name: string; email: string },
+  isValidPath: (path: string) => boolean,
+  noChangesReason: string,
+  invalidPathReason: string,
 ): Promise<GithubPatchResult> {
   const entries = Object.entries(files);
-  if (entries.length === 0) return { ok: false, reason: "No page-source changes to commit." };
-  if (entries.some(([path]) => !isPageSourcePath(path))) return { ok: false, reason: "A path is outside page source." };
+  if (entries.length === 0) return { ok: false, reason: noChangesReason };
+  if (entries.some(([path]) => !isValidPath(path))) return { ok: false, reason: invalidPathReason };
   try {
     const blobs = new Map<string, string>();
     await Promise.all(entries.filter(([, content]) => content !== null).map(async ([path, content]) => {
@@ -363,6 +399,27 @@ export async function commitPagesSourceChanges(
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "GitHub commit failed." };
   }
+}
+
+export async function commitPagesSourceChanges(
+  config: GithubSyncConfig,
+  files: Record<string, string | null>,
+  message: string,
+  author: { name: string; email: string },
+): Promise<GithubPatchResult> {
+  return commitFiles(config, files, message, author, isPageSourcePath, "No page-source changes to commit.", "A path is outside page source.");
+}
+
+/** Same as `commitPagesSourceChanges`, but for the `content/` JSON-snapshot
+ * root instead of page source - backs git-mirrored content history
+ * (`plans/history-content.md`). */
+export async function commitContentChanges(
+  config: GithubSyncConfig,
+  files: Record<string, string | null>,
+  message: string,
+  author: { name: string; email: string },
+): Promise<GithubPatchResult> {
+  return commitFiles(config, files, message, author, isContentPath, "No content changes to commit.", "A path is outside the content root.");
 }
 
 const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";

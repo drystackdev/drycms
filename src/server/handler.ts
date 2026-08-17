@@ -29,6 +29,7 @@ import * as pageSourceAiRoute from "./routes/ai-page-source-write.js";
 import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.js";
 import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
 import * as pageHistoryRoute from "./routes/page-history.js";
+import * as contentHistoryRoute from "./routes/content-history.js";
 import * as gitRoute from "./routes/git.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
@@ -100,6 +101,13 @@ const API_ROUTES: Record<string, RouteModule> = {
   "github-sync": pagesSourceGithubSyncRoute,
   "github-restore": pagesSourceGithubRestoreRoute,
   "page-history": pageHistoryRoute,
+  // No dispatcher-level gate here, unlike `page-history` above - a request
+  // is scoped to ONE entry/singleton/schema (`?type=`/`?schema=`) whose OWN
+  // permission grant is only known once the route reads the query string,
+  // so `content-history.ts` authorizes itself per-request - same
+  // self-gating precedent as `dry-http`/`pages-build` (see the comment
+  // above `github-sync` below).
+  "content-history": contentHistoryRoute,
   // The git smart-HTTP proxy the browser working copy talks to
   // (`routes/git.ts`) - same permission as `pages-source` below, since a
   // clone through it IS a read of that same executable tenant source.

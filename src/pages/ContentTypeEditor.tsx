@@ -13,6 +13,8 @@ import {
   getDraft,
   saveDraft,
 } from "../content-types/draft-store.js";
+import { isGitMirrorEligible } from "../content-types/git-mirror.js";
+import { syncSchemaChangesToGit } from "../content-types/entry-git-sync.js";
 import { randomUUID } from "../lib/uuid.js";
 import type {
   RelationFieldConfig,
@@ -31,8 +33,10 @@ import type {
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
+import ContentHistoryDialog from "../components/ContentHistoryDialog.js";
 import {
   ArrowLeftIcon,
+  HistoryIcon,
   InfoCircleIcon,
   TrashIcon,
 } from "../components/icons/index.js";
@@ -183,6 +187,7 @@ export default function ContentTypeEditor({
   // Starts from the simple `!id` guess so first render has something
   // reasonable, then gets corrected once `allTypes` is fetched.
   const [isNew, setIsNew] = useState(!id);
+  const [showHistory, setShowHistory] = useState(false);
 
   const [definition, setDefinition] = useState<ContentTypeDefinition | null>(
     null,
@@ -689,7 +694,26 @@ export default function ContentTypeEditor({
     setDeleting(true);
     try {
       await api.remove(definition.id);
-      discardDraft(definition.id);
+      // Same treatment as `ApplyBuildDialog.tsx`'s successful applies: a
+      // git-eligible type's draft stays undiscarded until the `[CONTENT]`
+      // deletion commit confirms (retried 3x), no automatic "reset" offered
+      // on failure (recreating the definition wouldn't restore the dropped
+      // table's actual rows, so it'd be a misleading undo - decision #4
+      // already treats schema history as view-only for the same reason).
+      if (isGitMirrorEligible(definition)) {
+        void syncSchemaChangesToGit(path, [{ schemaId: definition.id, op: "delete" }]).then((outcome) => {
+          if (outcome === "synced") discardDraft(definition.id);
+          else {
+            toast.add({
+              type: "error",
+              title: "Content history sync failed",
+              description: "The deletion was applied, but syncing it to git failed after 3 attempts.",
+            });
+          }
+        });
+      } else {
+        discardDraft(definition.id);
+      }
       setShowDeleteConfirm(false);
       toast.add({
         type: "success",
@@ -739,6 +763,15 @@ export default function ContentTypeEditor({
           onClick={() => setShowDiscardDraftConfirm(true)}
         >
           Discard draft
+        </button>
+      )}
+      {!isNew && isGitMirrorEligible(definition) && (
+        <button
+          type="button"
+          class="outline"
+          onClick={() => setShowHistory(true)}
+        >
+          <HistoryIcon /> History
         </button>
       )}
       <button type="button" disabled={!isDirty} onClick={handleSaveClick}>
@@ -1027,6 +1060,16 @@ export default function ContentTypeEditor({
         }}
         onCancel={() => setLeaveTo(null)}
       />
+
+      {!isNew && isGitMirrorEligible(definition) && (
+        <ContentHistoryDialog
+          open={showHistory}
+          adminPath={path}
+          target={{ schema: definition.id }}
+          label={definition.label || definition.name}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </>
   );
 }

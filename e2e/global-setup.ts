@@ -46,6 +46,27 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       throw new Error(`E2E setup could not authenticate (${authResponse.status()}): ${body}`);
     }
 
+    // A fresh Super Admin (which the e2e account always is) is force-
+    // redirected to `/dry/github-setup` on EVERY navigation until a
+    // `githubSync` repo/branch is saved (`routers/App.tsx`'s
+    // `canAccess(PAGE_BUILDER_RESOURCE_ID, "setting")` branch) - without
+    // this, no spec that visits any real admin page can get past that
+    // redirect at all (confirmed: this blocks even specs that have nothing
+    // to do with git). `token` is required by that singleton's own field
+    // validation, so there's no way to satisfy this with an empty one - it's
+    // a deliberately invalid value, never a real credential, so anything
+    // that goes on to actually attempt a git push (a real GitHub API call)
+    // fails fast on the bad token rather than hanging or silently no-oping
+    // the way an actually-unconfigured repo would.
+    const githubSyncResponse = await context.put("/dry/api/content/githubSync", {
+      data: { repo: "e2e-org/e2e-repo", branch: "main", token: "e2e-invalid-token-not-real" },
+      headers: { "X-CSRF-Token": csrfTokenFromState(await context.storageState()) },
+    });
+    if (!githubSyncResponse.ok()) {
+      const body = await githubSyncResponse.text();
+      throw new Error(`E2E setup could not dismiss the GitHub Setup gate (${githubSyncResponse.status()}): ${body}`);
+    }
+
     mkdirSync("test-results", { recursive: true });
     await context.storageState({ path: "test-results/e2e-storage-state.json" });
   } finally {
