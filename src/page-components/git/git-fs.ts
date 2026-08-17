@@ -63,6 +63,27 @@ export async function isCloned(): Promise<boolean> {
   }
 }
 
+/**
+ * A tab or browser shutdown can interrupt isomorphic-git after it creates the
+ * index but before it writes its contents. An absent index is valid and is
+ * rebuilt from HEAD on the next status/checkout; a zero-byte index instead
+ * makes every isomorphic-git command fail before it can repair anything.
+ * Remove only that exact interrupted-write artifact, leaving the working tree
+ * (including uncommitted page edits) untouched.
+ */
+export async function repairEmptyGitIndex(): Promise<boolean> {
+  const filesystem = await gitFs();
+  const indexPath = `${REPO_DIR}/.git/index`;
+  try {
+    const stat = await filesystem.promises.stat(indexPath);
+    if (stat.size !== 0) return false;
+    await filesystem.promises.rm(indexPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Bytes the working copy currently occupies, as reported by the browser
  * (whole-origin, so this includes the app's other IndexedDB databases) -
  * only used for diagnostics/telemetry in the UI, never for a decision. */

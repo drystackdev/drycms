@@ -40,8 +40,23 @@ const projectPath = (config: GitLabConfig) => `/projects/${encodeURIComponent(co
 const isPageSourcePath = (path: string) => PAGES_SOURCE_ROOTS.some((root) => path.startsWith(`${root.id}/`)) && PAGE_SOURCE_FILE_PATTERN.test(path);
 
 interface GitLabTreeEntry { path: string; type: "blob" | "tree" }
-interface GitLabCommit { id: string; title?: string; message: string; author_name: string; authored_date: string }
+interface GitLabCommit { id: string; title?: string; message: string; author_name: string; authored_date: string; parent_ids?: string[] }
 interface GitLabDiff { new_path: string; old_path: string; new_file: boolean; deleted_file: boolean; diff: string }
+
+function diffLineCounts(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+function contentLineCount(content: string): number {
+  if (content === "") return 0;
+  return content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
+}
 
 async function listTree(config: GitLabConfig, ref: string): Promise<GitLabTreeEntry[]> {
   const all: GitLabTreeEntry[] = [];
@@ -146,7 +161,19 @@ export async function getCommitDetail(config: GitLabConfig, sha: string): Promis
       gitlabRequest<GitLabCommit>(config, `${projectPath(config)}/repository/commits/${encodeURIComponent(sha)}`),
       gitlabRequest<GitLabDiff[]>(config, `${projectPath(config)}/repository/commits/${encodeURIComponent(sha)}/diff`),
     ]);
-    return { ok: true, sha: commit.id, message: commit.message, authorName: commit.author_name, date: commit.authored_date, files: diffs.filter((diff) => isPageSourcePath(diff.new_path || diff.old_path)).map((diff) => ({ path: diff.deleted_file ? diff.old_path : diff.new_path, status: diff.new_file ? "added" : diff.deleted_file ? "removed" : "modified", additions: 0, deletions: 0, patch: diff.diff })) };
+    const files = await Promise.all(diffs.filter((diff) => isPageSourcePath(diff.new_path || diff.old_path)).map(async (diff) => {
+      const path = diff.deleted_file ? diff.old_path : diff.new_path;
+      let counts = diffLineCounts(diff.diff);
+      if (diff.diff === "" && diff.new_file) {
+        const file = await readFileAtCommit(config, commit.id, path);
+        if ("content" in file) counts = { additions: contentLineCount(file.content), deletions: 0 };
+      } else if (diff.diff === "" && diff.deleted_file && commit.parent_ids?.[0]) {
+        const file = await readFileAtCommit(config, commit.parent_ids[0], path);
+        if ("content" in file) counts = { additions: 0, deletions: contentLineCount(file.content) };
+      }
+      return { path, status: diff.new_file ? "added" : diff.deleted_file ? "removed" : "modified", ...counts, patch: diff.diff };
+    }));
+    return { ok: true, sha: commit.id, message: commit.message, authorName: commit.author_name, date: commit.authored_date, files };
   } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : "Failed to read the GitLab commit." }; }
 }
 

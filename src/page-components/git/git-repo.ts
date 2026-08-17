@@ -1,6 +1,6 @@
 import http from "isomorphic-git/http/web";
 import { PAGES_SOURCE_ROOTS } from "../../server/app-router/source-roots.js";
-import { gitFs, isCloned, REPO_DIR, withGitLock } from "./git-fs.js";
+import { gitFs, isCloned, repairEmptyGitIndex, REPO_DIR, withGitLock } from "./git-fs.js";
 
 /**
  * Every git operation Page Builder performs, in one place - isomorphic-git
@@ -79,6 +79,8 @@ export async function ensureCloned(options: EnsureClonedOptions): Promise<{ head
   const fs = await gitFs();
 
   return withGitLock(async () => {
+    await repairEmptyGitIndex();
+
     // The configured branch can change under an existing working copy (an
     // admin edits `GITHUB_BRANCH`, or a tenant is re-pointed). A `depth: 1`
     // clone of the OLD branch has none of the new branch's objects, so
