@@ -5,7 +5,6 @@ import { isEdgeCacheable, readEdgeCache, storeEdgeCache } from "./app-router/edg
 import { SITEMAP_EDGE_TTL_SECONDS } from "./app-router/sitemap.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
-import { handleVeiRoute } from "./vei-routes.js";
 import { ADMIN_CONTENT_SECURITY_POLICY } from "./security-headers.js";
 
 /**
@@ -95,9 +94,6 @@ export default {
 
     const guardResponse = await guardPageRequest(request, env);
     if (guardResponse) return withSecurityHeaders(guardResponse);
-
-    const veiResponse = await handleVeiRoute(request, env);
-    if (veiResponse) return withSecurityHeaders(veiResponse);
 
     let pathname: string;
     try {

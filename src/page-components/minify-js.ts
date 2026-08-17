@@ -5,7 +5,7 @@
  *
  * `buildPage()` runs in the ADMIN'S OWN BROWSER TAB (`page-build.ts`'s own
  * doc comment - "the browser build orchestrator"), not on the server -
- * `PageEditor.tsx`/`PageBuild.tsx` call it directly from client code. A first
+ * `PageBuilder.tsx`/`PageBuild.tsx` call it directly from client code. A first
  * attempt at this reused `build-component-bundle.ts`'s nested `vite build()`
  * trick, which pulls in `node:fs`/`node:path` - that one only works there
  * because those calls are only ever reached from a SERVER route handler
@@ -14,12 +14,12 @@
  * the client ("Module has been externalized for browser compatibility").
  * `terser` is pure JS with no Node built-ins anywhere in its `minify()` path
  * (confirmed against its own source) - the exact same call works identically
- * here, under `PageEditor`'s live browser tab, and under vitest's Node test
+ * here, under `PageBuilder`'s live browser tab, and under vitest's Node test
  * environment.
  *
  * Dynamically imported (not a top-level import) so terser's own weight is
  * only paid the first time a build/publish actually runs, not on every
- * `PageEditor`/`PageBuild` mount - same reasoning `Editer/format-code.ts`'s
+ * `PageBuilder`/`PageBuild` mount - same reasoning `Editer/format-code.ts`'s
  * `loadPlugins` already documents for Prettier's plugins.
  */
 export async function minifyEsmSource(source: string): Promise<string> {

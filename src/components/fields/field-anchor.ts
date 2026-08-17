@@ -3,7 +3,7 @@
  * (one per top-level entry field) and `ComponentField.tsx` (one per
  * top-level field of whichever repeatable item is currently open in its
  * dialog) - both scroll-to-and-flash a field found this way for the Visual
- * Editing Interface's `?_field=`/`?_path=` deep link (`overlay.ts`).
+ * Editing Interface's `?_field=`/`?_path=` deep link (Page Builder's visual editing panel).
  *
  * Lives under `components/fields/` rather than `pages/content-entry-editor/`
  * (where the deep-link handling itself lives) because `ComponentField.tsx`

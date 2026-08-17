@@ -44,7 +44,7 @@ export interface FieldFocusEventDetail {
    * top-level name only, since that's all a value write can address without
    * threading the rest of `EntryValue`'s shape through - see
    * `applyFieldSet`'s own doc comment), this is matched EXACTLY against a
-   * marker's `ref.path` on the other end (`overlay.ts`'s `elementsForFocus`)
+   * marker's `ref.path` on the other end (Page Builder's preview highlight)
    * so only the one field actually focused highlights, not every marker
    * under the same top-level component. A field nested inside a
    * `component-repeat` item's own dialog is a known gap: that dialog names
@@ -112,7 +112,7 @@ export function listenForFieldInput(onInput: (detail: FieldInputEventDetail) => 
 
 /**
  * Emits `dry:field-focus` on `window` whenever a top-level field gains or
- * loses focus - the Visual Editing Interface (`overlay.ts`) uses this to
+ * loses focus - Page Builder's visual editing panel uses this to
  * scroll the corresponding marked element into view and swap its baseline
  * dashed outline for a solid one while the admin is actually working on it.
  * Undebounced (unlike `dispatchFieldInput`): a focus change is already one
@@ -162,7 +162,7 @@ export function listenForFieldSet(onSet: (name: string, value: unknown) => void)
  * `ENTRY_SAVE_EVENT` is a plain CustomEvent, so a request dispatched while
  * no editor is mounted - or while the mounted one is still fetching its
  * entry - simply vanishes. That is the normal case, not an edge one: the
- * Visual Editing Interface drives a save through `pages/vei/bridge.ts` as
+ * Visual Editing Interface drives a save through `content-entry-editor/builder-bridge.ts` as
  * soon as the frame announces itself (`App.tsx`'s mount effect), which is
  * milliseconds before the route-split `ContentEntryEditor` has mounted, let
  * alone loaded anything to save. This latch is what makes the request

@@ -2,7 +2,7 @@ import { h } from "preact";
 import { describe, expect, it, vi } from "vitest";
 import type { DryRequestContext } from "../../content-types/dry-context.js";
 import type { RouteMatch } from "./match.js";
-import { buildVeiShellDocument, renderErrorHtml, renderPage, spliceVeiScripts } from "./render.js";
+import { renderErrorHtml, renderPage } from "./render.js";
 
 /** Never actually read by these tests - nothing here calls `dry()`. */
 const fakeDryContext = { entries: {} as never, allTypes: [] } as DryRequestContext;
@@ -182,39 +182,6 @@ describe("renderPage", () => {
     };
     await expect(renderPage(match, fakeDryContext).text()).rejects.toThrow();
     spy.mockRestore();
-  });
-});
-
-describe("spliceVeiScripts", () => {
-  it("flips a real build's inert edit:false config to edit:true and appends the live-render script before </body></html>", async () => {
-    const built = await renderPage(
-      { page: () => Promise.resolve({ default: (async () => h("article", null, "content")) as never }), layouts: [], params: {} },
-      fakeDryContext,
-    ).text();
-    expect(built).toContain('"edit":false');
-
-    const spliced = spliceVeiScripts(built);
-    expect(spliced).not.toContain('"edit":false');
-    expect(spliced).toContain('"edit":true');
-    expect(spliced).toContain("<article>content</article>");
-    expect(spliced).toMatch(/<script type="module" src="[^"]*vei-live-refresh[^"]*"><\/script><\/body><\/html>$/);
-  });
-
-  it("still appends the live-render script before </body></html> even when there's no dry-vei-config to flip (doesn't crash on an unexpected input)", () => {
-    const spliced = spliceVeiScripts("<html><body>plain</body></html>");
-    expect(spliced).toBe('<html><body>plain<script type="module" src="/src/apps/vei-live-refresh.ts"></script></body></html>');
-  });
-});
-
-describe("buildVeiShellDocument", () => {
-  it("carries the overlay + live-render scripts with edit:true, but no hydrate script and no isodata marker", () => {
-    const html = buildVeiShellDocument();
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain('"edit":true');
-    expect(html).toMatch(/<script type="module" src="[^"]*vei\/overlay[^"]*"><\/script>/);
-    expect(html).toMatch(/<script type="module" src="[^"]*vei-live-refresh[^"]*"><\/script>/);
-    expect(html).not.toContain("hydrate-client");
-    expect(html).not.toContain("isodata");
   });
 });
 

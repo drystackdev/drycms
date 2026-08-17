@@ -33,7 +33,7 @@ export interface FieldRendererProps {
   onChange: (value: unknown) => void;
   error?: string;
   allTypes: ContentTypeDefinition[];
-  /** The Visual Editing Interface's `?_path=` deep link (`overlay.ts`),
+  /** The visual editing panel's `?_path=` deep link (`page-builder/VeiEntryFrame.tsx`),
    * already confirmed to start at THIS node (`revealPath[0] === node.fieldName`
    * - `ContentEntryEditor.tsx`'s `renderFieldNodes` only passes it down that
    * far). Only `flatten` and `component-repeat` do anything with it: a

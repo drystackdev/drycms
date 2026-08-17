@@ -18,7 +18,7 @@ interface TreeEntry {
 export interface AssetHrefs {
   globalsCssHref: string;
   hydrateEntryHref: string;
-  veiOverlayHref: string;
+  editLauncherHref: string;
   preactRuntimeHref: string;
   hydrateBuiltHref: string;
 }
@@ -45,7 +45,7 @@ export async function fetchText(url: string, cache: RequestCache = "default"): P
  * (real R2 simulation, `kind: "cloudflare"`): `{"supported":false}`, not an
  * error - this recursive per-folder fallback is required for production,
  * not a defensive nicety. Shared by every caller that only needs the
- * minimal id/name/kind shape; `PageEditor.tsx` keeps its own walk where it
+ * minimal id/name/kind shape; `PageBuilder.tsx` keeps its own walk where it
  * needs the full `FileEntry` (`parentId` etc) for `ComponentTreePanel`. */
 export async function listAllFilesRecursive(adminPath: string, folder = "", cache: RequestCache = "default"): Promise<TreeEntry[]> {
   const url = folder === "" ? `${adminPath}/api/pages-source` : `${adminPath}/api/pages-source/${toUrlPath(folder)}`;

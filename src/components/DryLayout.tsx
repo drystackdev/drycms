@@ -151,15 +151,6 @@ const NAV: {
     permissionResourceId: PAGE_BUILDER_RESOURCE_ID,
   },
   {
-    key: "page-editor",
-    label: "Page Code Editor",
-    href: `${path}/page-editor`,
-    icon: "Content",
-    ready: true,
-    section: "System",
-    permissionResourceId: PAGE_BUILDER_RESOURCE_ID,
-  },
-  {
     key: "roles",
     label: "Roles",
     href: `${path}/roles`,

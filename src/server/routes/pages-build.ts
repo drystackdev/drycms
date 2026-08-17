@@ -231,12 +231,9 @@ async function handleList(context: Parameters<DryRouteHandler>[0]): Promise<Resp
 
 /** `?byResource=a,b` - "what needs rebuilding now that these content types
  * changed" (mục 5's `_page_deps`, `PagesRegistryAdapter.listPathsByResource`).
- * The VEI overlay's `saveAll()` is the caller (`overlay.ts`'s
- * `rebuildAffectedPages` - mục 12's "Sau saveAll() thì chạy build cho trang
- * hiện tại + trang phụ thuộc"): it only knows which content TYPES it just
- * saved, not which pages read them, and has no business querying `_page_deps`
- * directly from the public bundle - this is the one HTTP hop that lets it
- * ask. Comma-joined rather than repeated `?byResource=` params - pathnames
+ * `page-components/rebuild-affected-pages.ts` is the caller (fired right
+ * after an entry Save): it only knows which content TYPES it just saved, not
+ * which pages read them - this is the one HTTP hop that lets it ask. Comma-joined rather than repeated `?byResource=` params - pathnames
  * and content-type names can't contain a comma, so splitting is unambiguous. */
 async function handleByResource(context: Parameters<DryRouteHandler>[0], raw: string): Promise<Response> {
   const resolved = await resolvePublishAccess(context);

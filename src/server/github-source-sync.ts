@@ -135,7 +135,7 @@ async function resolveBaseCommit(repo: string, branch: string, token: string): P
  * Never throws: every failure (config invalid, network, GitHub 4xx/5xx)
  * comes back as `{pushed:false, reason}` so a caller on the build's hot
  * path can surface it as a non-blocking warning instead of failing the
- * publish itself (see `PageEditor.tsx`/`PageBuild.tsx`'s own callers).
+ * publish itself (see `PageBuilder.tsx`/`PageBuild.tsx`'s own callers).
  */
 export async function pushPagesSourceSnapshot(
   sourceByPath: Record<string, string>,
@@ -227,7 +227,8 @@ export type GithubHistoryResult =
   | { ok: false; reason: string };
 
 /**
- * Lists `config.branch`'s recent commits (`PageEditor.tsx`'s History dialog)
+ * Lists `config.branch`'s recent commits (the deleted Page Editor's History
+ * dialog; no UI calls it today)
  * - every one of them IS a full pages-source snapshot, since
  * `pushPagesSourceSnapshot` always commits the whole tree atomically, never
  * a partial/per-file commit. Never throws, same `{ok:false,reason}` contract

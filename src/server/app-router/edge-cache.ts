@@ -1,6 +1,6 @@
 import { pagesCacheEdgeTtl } from "../config.js";
 import { readCookie, SESSION_COOKIE_NAME } from "../session.js";
-import { VEI_COOKIE_NAME, VEI_HINT_COOKIE_NAME } from "../vei-session.js";
+import { ADMIN_HINT_COOKIE_NAME } from "../admin-hint-cookie.js";
 
 /**
  * Cloudflare's edge cache in front of the whole page pipeline - the layer
@@ -14,9 +14,8 @@ import { VEI_COOKIE_NAME, VEI_HINT_COOKIE_NAME } from "../vei-session.js";
  * Correctness rests on two rules, both enforced below:
  *
  * - Only fully anonymous `GET`s participate. Any request carrying an admin
- *   session or a VEI cookie skips the cache in BOTH directions - an editor
- *   never reads someone else's cached copy, and a per-viewer render (VEI
- *   editing metadata) never becomes one.
+ *   session or the signed-in hint cookie skips the cache in BOTH directions,
+ *   so an editor never reads (or seeds) a shared copy.
  * - Freshness is time-based, not version-based, because eviction can't be
  *   coordinated: Cloudflare's cache is per-colo, so a purge issued while
  *   handling one request would only ever clear the colo that ran it. An
@@ -48,9 +47,9 @@ const CACHE_STATUS_HEADER = "X-Drycms-Cache";
 
 /** A cookie whose presence means "this viewer is not anonymous". The admin
  * session cookie is scoped to the admin `path` and so never reaches a public
- * page at all (see `vei-session.ts`) - checked anyway rather than relying on
- * that scoping to stay true. */
-const PRIVATE_COOKIES = [SESSION_COOKIE_NAME, VEI_COOKIE_NAME, VEI_HINT_COOKIE_NAME];
+ * page at all (see `admin-hint-cookie.ts`) - checked anyway rather than
+ * relying on that scoping to stay true. */
+const PRIVATE_COOKIES = [SESSION_COOKIE_NAME, ADMIN_HINT_COOKIE_NAME];
 
 function cacheStorage(): WorkerCache | null {
   const store = (globalThis as { caches?: { default?: unknown } }).caches;

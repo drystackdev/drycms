@@ -15,13 +15,13 @@ import { encodeRef, MARKER_ATTR, refOf, unbox } from "../../content-types/dry-ve
  * `typeof` per prop and changes nothing.
  *
  * `options` is per-Preact-module-instance state, so patching the default
- * import only affects vnodes created through THAT instance. `vei-live-refresh.ts`
+ * import only affects vnodes created through THAT instance. Page Builder's client-side build (`page-components/page-build.ts`)
  * builds its vnode tree through a separately-bundled, dynamically-imported
  * Preact runtime (`preact-runtime.ts`, required so `hydrate()` shares one
  * module instance with the compiled page/layout - `hydrate-built.ts`'s doc
  * comment) - a different instance than the one this file's own static
  * `preact` import resolves to. Callers with a non-default instance to patch
- * (i.e. `vei-live-refresh.ts`) pass its `options` in explicitly instead of
+ * (i.e. Page Builder's client-side build (`page-components/page-build.ts`)) pass its `options` in explicitly instead of
  * relying on the default.
  */
 type Props = Record<string, unknown>;

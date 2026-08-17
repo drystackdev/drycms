@@ -2,7 +2,7 @@ import { COMPONENT_ALIAS, COMPONENT_ROOT } from "../server/app-router/source-roo
 
 /**
  * The synthetic page a component is previewed through (`plans/component.md`
- * mục 4). Nothing here is ever written to storage - `PageEditor.tsx` merges
+ * mục 4). Nothing here is ever written to storage - `PageBuilder.tsx` merges
  * it into its own LOCAL copy of `sourceByPath` for one `buildPage()` call,
  * the same trick `LAYOUT_PLACEHOLDER_PATH` already uses to preview a layout.
  *

@@ -2,7 +2,7 @@ import type { DryRouteHandler } from "../context.js";
 import { errorResponse, jsonResponse } from "../route-helpers.js";
 import { path } from "../config.js";
 import { ensurePreactRuntimeAsset } from "../app-router/built-pages-storage.js";
-import { GLOBALS_CSS_HREF, HYDRATE_BUILT_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "../app-router/assets.js";
+import { GLOBALS_CSS_HREF, HYDRATE_BUILT_HREF, HYDRATE_ENTRY_HREF, EDIT_LAUNCHER_HREF } from "../app-router/assets.js";
 
 /**
  * Exposes `assets.ts`'s built hrefs to the ADMIN's own browser bundle
@@ -29,7 +29,7 @@ export const GET: DryRouteHandler = async (context) => {
     return jsonResponse({
       globalsCssHref: GLOBALS_CSS_HREF,
       hydrateEntryHref: HYDRATE_ENTRY_HREF,
-      veiOverlayHref: VEI_OVERLAY_HREF,
+      editLauncherHref: EDIT_LAUNCHER_HREF,
       preactRuntimeHref: `${path}/api/built-assets/${preactRuntimePath}`,
       hydrateBuiltHref: HYDRATE_BUILT_HREF,
     });

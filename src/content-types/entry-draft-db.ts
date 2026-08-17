@@ -56,7 +56,7 @@ function broadcast(message: EntryDraftChangeMessage): void {
  * elsewhere - the public site's VEI overlay live-previewing a marked field,
  * `DryLayout`'s nav draft badges - can react immediately instead of only
  * catching up on its own next reload/poll. Both callers of this (
- * `entry-draft-store.ts` for the admin bundle, `apps/vei/overlay.ts` for the
+ * `entry-draft-store.ts` for the admin bundle, `pages/page-components/page-builder/` (Page Builder's preview) for the
  * public site) read straight from here rather than through
  * `entry-draft-store.ts`, which pulls in `@preact/signals` that the public
  * site's bundle has no other reason to carry.

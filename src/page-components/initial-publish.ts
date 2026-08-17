@@ -60,7 +60,7 @@ async function publishPages(
         assets: {
           globalsCssHref: assetHrefs.globalsCssHref,
           hydrateEntryHref: assetHrefs.hydrateBuiltHref,
-          veiOverlayHref: assetHrefs.veiOverlayHref,
+          editLauncherHref: assetHrefs.editLauncherHref,
         },
         preactRuntimeHref: assetHrefs.preactRuntimeHref,
         builtAssetsBaseUrl: `${adminPath}/api/built-assets`,

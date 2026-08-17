@@ -86,7 +86,7 @@ function labelFieldFor(type: ContentTypeDefinition, allTypes: ContentTypeDefinit
 
 /**
  * The rows a human can PICK between when previewing a `[param]` template
- * (`PageEditor.tsx`'s preview entry picker) - the same published-only
+ * (`PageBuilder.tsx`'s preview entry picker) - the same published-only
  * `dry-http` read `fetchAllSlugs` above does for the build, in ONE request
  * capped at `limit`, plus a label per row.
  *
@@ -156,7 +156,7 @@ export async function resolveDynamicPages(
   dryHttpEndpoint: string,
   /** Caps how many rows `fetchAllSlugs` pages through per template - unset
    * (the "Build all" caller) fetches every published row, same as before.
-   * `PageEditor.tsx`'s live-preview caller only needs ONE sample entry, so
+   * `PageBuilder.tsx`'s live-preview caller only needs ONE sample entry, so
    * it passes `1` here rather than paginating a whole collection just to
    * preview its first row. */
   slugLimit?: number,

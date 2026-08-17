@@ -88,7 +88,7 @@ export interface NotFoundRoute {
 /** The manifest-tree counterpart to `page-handler.ts`'s own
  * `routeTree.notFound`/`routeTree.root.layout` miss-fallback shape - lets a
  * caller that only has SOURCE PATHS (e.g. a browser resolving routes
- * client-side, `vei-live-refresh.ts`) render the pages-root `404.tsx` the
+ * client-side, Page Builder's client-side build (`page-components/page-build.ts`)) render the pages-root `404.tsx` the
  * same way. `undefined` when the tree has no `404.tsx` at all. */
 export function notFoundRoute(tree: RouteTree): NotFoundRoute | undefined {
   if (!tree.notFound) return undefined;

@@ -227,7 +227,7 @@ browser (which also seeds `setAdminPath()` from `#dry-vei-config`, since
 `window.__DRY_CONFIG__` exists only in the admin app) - because a `src`
 resolved on only one side reverts to its raw storage id on any re-render.
 Two callers still resolve explicitly, both outside JSX: `render.ts`'s
-`og:image`/JSON-LD tags, and the VEI overlay's DOM preview patch, which
+`og:image`/JSON-LD tags, and Page Builder's visual-editing DOM preview patch, which
 writes attributes with `setAttribute` and so never passes through Preact at
 all.
 

@@ -36,18 +36,18 @@ export interface UseScaledPreviewResult<K extends string> {
 }
 
 /** Width-table-agnostic core of `useDevicePreview` below - split out so
- * `PageEditor.tsx`'s own viewport preview (5 presets - xs/sm/md/lg/xl - not
+ * `PageBuilder.tsx`'s own viewport preview (5 presets - xs/sm/md/lg/xl - not
  * this module's 3-device set, and no reason the two features should share a
  * literal key type) can reuse the exact same "zoom to fit" mechanism without
  * this module needing to know Component Builder's own preset names, or
- * `PageEditor.tsx` needing to duplicate the `ResizeObserver` plumbing.
+ * `PageBuilder.tsx` needing to duplicate the `ResizeObserver` plumbing.
  * `zoom` (not `transform: scale`, applied by the caller using `scale`) does
  * the shrink-to-fit - it reflows layout at the scaled size, so the
  * viewport's own height tracks the *scaled* content height with no leftover
  * whitespace `transform: scale` would leave behind.
  *
  * `viewportRef` is a callback ref, not a plain object ref - the viewport div
- * isn't always mounted (`PageEditor.tsx` swaps it out for an error message,
+ * isn't always mounted (`PageBuilder.tsx` swaps it out for an error message,
  * or for a "select a file" hint, while keeping this hook alive across the
  * swap), and a plain ref's `.current` reassignment is invisible to
  * `useEffect`'s dependency array, so a remount left the `ResizeObserver`

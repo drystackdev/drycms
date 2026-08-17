@@ -4,13 +4,12 @@ import { fetchJson, loadAllPagesSource, type AssetHrefs } from "./pages-source-h
 /**
  * Background rebuild of every published page that depends on `typeName`,
  * meant to be fired right after a collection/singleton entry Save succeeds
- * (`ContentEntryEditor.tsx`'s `handleSave`). Mirrors what VEI's `saveAll()`
- * already does for its own saves (`apps/vei/overlay.ts`'s
- * `rebuildAffectedPages`, via a hidden iframe pointed at `PageBuild.tsx`'s
- * `?autoBuild=` mode) - that iframe indirection exists only because VEI
- * ships inside the PUBLIC site bundle, which can't afford to carry the
- * Sucrase/Tailwind build pipeline. `ContentEntryEditor.tsx` already runs in
- * the admin SPA alongside `PageEditor.tsx`/`PageBuild.tsx`, so this calls
+ * (`ContentEntryEditor.tsx`'s `handleSave`). The deleted public-site VEI
+ * overlay used to do the same thing through a hidden iframe pointed at
+ * `PageBuild.tsx`'s `?autoBuild=` mode - that indirection existed only
+ * because the overlay shipped inside the PUBLIC site bundle, which can't
+ * afford to carry the Sucrase/Tailwind build pipeline.
+ * `ContentEntryEditor.tsx` already runs in the admin SPA, so this calls
  * the same low-level primitives (`buildPage`, `publishBuiltPage`,
  * `resolveAllPageTargets`) directly, in-process - `page-build.js` is
  * dynamic-imported here (not a static top-level import) so its
@@ -71,7 +70,7 @@ export async function rebuildAffectedPages(
         origin,
         adminPath,
         siteLang: "en",
-        assets: { globalsCssHref: assetHrefs.globalsCssHref, hydrateEntryHref: assetHrefs.hydrateBuiltHref, veiOverlayHref: assetHrefs.veiOverlayHref },
+        assets: { globalsCssHref: assetHrefs.globalsCssHref, hydrateEntryHref: assetHrefs.hydrateBuiltHref, editLauncherHref: assetHrefs.editLauncherHref },
         preactRuntimeHref: assetHrefs.preactRuntimeHref,
         builtAssetsBaseUrl: `${adminPath}/api/built-assets`,
         dryHttpEndpoint: `${adminPath}/api/dry-http`,

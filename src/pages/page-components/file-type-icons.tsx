@@ -3,10 +3,10 @@
  * (https://icon-sets.iconify.design/material-icon-theme/, prefix
  * `material-icon-theme`), hand-copied as local components rather than
  * fetched at runtime - same "no runtime icon-library dependency" pattern
- * this codebase already uses for hand-drawn icons (e.g. `PageEditor.tsx`'s
+ * this codebase already uses for hand-drawn icons (e.g. `PageBuilder.tsx`'s
  * `ReloadIcon`/`HistoryIcon`), just sourced from a real icon set instead of
  * drawn from scratch. Shared between `ComponentTreePanel.tsx` (file tree
- * rows) and `PageEditor.tsx` (source-root switcher, code-editor toggle) -
+ * rows) and `PageBuilder.tsx` (source-root switcher, code-editor toggle) -
  * having two-plus call sites is what promoted these out of being file-local
  * one-offs. Colors are the set's own per-language colors, left un-themed
  * (`currentColor` would lose the whole point of a multi-color file-type

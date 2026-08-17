@@ -1,7 +1,7 @@
 import { LockIcon } from "../../../components/icons/index.js";
 
 /** Recreated verbatim if `styles/globals.css` is ever found missing
- * (`PageEditor.tsx`'s `loadTree`) - matches what a fresh `styles/` folder
+ * (`PageBuilder.tsx`'s recovery effect) - matches what a fresh `styles/` folder
  * needs day one: the Tailwind import plus the other 2 core files, in the
  * order `vite.config.ts`'s build (and `@source`, for class-name scanning)
  * expects. */

@@ -10,7 +10,6 @@ import { toast } from "../components/Toast.js";
 import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import { clearPageSourceCache, replacePageSourceCacheOrThrow } from "../page-components/page-source-cache-db.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
 
 interface GithubSyncValue extends Record<string, unknown> {
@@ -23,7 +22,7 @@ interface GithubSyncValue extends Record<string, unknown> {
 /**
  * The `githubSync` singleton's admin page (`status/pages-source-github-versioning.md`) -
  * repo/branch/token for `routes/pages-source-github-sync.ts`'s snapshot
- * push, triggered from `PageEditor.tsx`/`PageBuild.tsx`'s Build actions.
+ * push, triggered from `PageBuild.tsx`'s Build actions.
  * `token` is `secretkey` (write-only, same "blank keeps the stored secret"
  * contract `AiKeyEditor.tsx` already established for its own `key` field) -
  * this page never receives the decrypted token back, only whether one is
@@ -114,11 +113,6 @@ export default function GithubSyncSettings() {
   async function resetAllPages() {
     setResetting(true);
     try {
-      // Clearing first avoids showing stale files while the server reset is
-      // running. A blocked/unavailable IndexedDB must not prevent the
-      // authoritative storage reset from happening; the strict replacement
-      // below retries the cache as a complete snapshot before success.
-      await clearPageSourceCache().catch(() => undefined);
       const response = await fetch(`${path}/api/github-sync`, {
         method: "PUT",
         credentials: "same-origin",
@@ -134,14 +128,16 @@ export default function GithubSyncSettings() {
         throw new Error(result.reason ?? `Reset failed: HTTP ${response.status}`);
       }
 
-      await replacePageSourceCacheOrThrow(result.sourceByPath);
+      // No editor-side cache to refresh anymore (Page Editor's IndexedDB
+      // mirror died with it) - Page Builder reads the tree over HTTP on
+      // every load, so the server's own reset IS the new state.
       const published = await publishAllPages(path, allTypes);
       if (published.error) throw new Error(`Mock source was reset, but Build all failed: ${published.error}`);
       setResetOpen(false);
       toast.add({
         type: "success",
         title: "All pages reset",
-        description: `${result.githubPushed ? "Pushed the mock snapshot to GitHub, " : ""}reset page storage and build state, refreshed IndexedDB, and built ${published.built} ${published.built === 1 ? "page" : "pages"}.${result.githubReason && result.githubReason !== "not-configured" ? ` GitHub was skipped: ${result.githubReason}` : ""}`,
+        description: `${result.githubPushed ? "Pushed the mock snapshot to GitHub, " : ""}reset page storage and build state, and built ${published.built} ${published.built === 1 ? "page" : "pages"}.${result.githubReason && result.githubReason !== "not-configured" ? ` GitHub was skipped: ${result.githubReason}` : ""}`,
       });
     } catch (error) {
       toast.add({ type: "error", title: "Reset All page failed", description: error instanceof Error ? error.message : undefined });

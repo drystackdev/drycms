@@ -31,7 +31,7 @@ async function listCurrentSourcePaths(adapter: StorageAdapter): Promise<string[]
 
 /**
  * `GET {path}/api/github-restore` - lists `githubSync`'s recent commits
- * (`PageEditor.tsx`'s History dialog), each one a full pages-source
+ * (the deleted Page Editor's History dialog), each one a full pages-source
  * snapshot (`github-source-sync.ts`'s `listSnapshotCommits` doc comment).
  * `?limit=` caps the page size, default 30. Gated on `PAGE_BUILDER_RESOURCE_ID`
  * (`"system-build"`) in `handler.ts` - the same merged resource `github-sync`'s
@@ -57,7 +57,7 @@ export const GET: DryRouteHandler = async (context) => {
       if (!ensured.ok) return jsonResponse({ configured: true, repo: loaded.config.repo, branch: loaded.config.branch, reason: ensured.reason, commits: [] });
       if (ensured.created) result = await listSnapshotCommits(loaded.config, limit);
     }
-    // `repo`/`branch` (never `token`) are echoed back so `PageEditor.tsx` can
+    // `repo`/`branch` (never `token`) are echoed back so `PageBuilder.tsx` can
     // show what "Reset all"/"Restore" actually pulls from - e.g. the typed
     // "type the repo name to confirm" prompt on the Reset dialog.
     if (!result.ok) return jsonResponse({ configured: true, repo: loaded.config.repo, branch: loaded.config.branch, reason: result.reason, commits: [] });
@@ -73,9 +73,9 @@ export const GET: DryRouteHandler = async (context) => {
  * omitted) and OVERWRITES `pagesSourceStorage` with it: every `.tsx`/`.ts`
  * file not present in the pulled snapshot is removed, every file the
  * snapshot has is written. Backs both "Reset all from GitHub" (no `sha` -
- * PageEditor.tsx's Settings menu) and History's "Restore this commit" (a
+ * the deleted Page Editor's Settings menu) and History's "Restore this commit" (a
  * specific `sha`) - same mechanism, different starting point. The caller
- * (`PageEditor.tsx`) reloads its file tree and re-triggers "Build all"
+ * (`PageBuilder.tsx`) reloads its file tree and re-triggers "Build all"
  * itself once this returns `applied: true`; this route only ever touches
  * `pagesSourceStorage`, never the published `built/live/*` output.
  *

@@ -79,7 +79,7 @@ export interface HttpDryReaderConfig {
    * refetched - see `dry-http-cache.ts`. Set ONLY by the page editor's live
    * preview; every publishing build leaves it unset and fetches fresh. */
   cacheTtlMs?: number;
-  /** Present only for a real VEI editing session (`vei-live-refresh.ts`) -
+  /** Present only for a real VEI editing session (Page Builder's client-side build (`page-components/page-build.ts`)) -
    * absent for every "build a static page" caller (Page Editor preview,
    * real publish), which must keep getting today's inert `$` unconditionally.
    * See `markOrInert` below. */
@@ -129,7 +129,7 @@ function withInertRefs<T>(value: T): T {
 }
 
 /** Real VEI boxing when this config carries a `vei` (a real editing
- * session, `vei-live-refresh.ts`) and `name` resolves to a known content
+ * session, Page Builder's client-side build (`page-components/page-build.ts`)) and `name` resolves to a known content
  * type; `withInertRefs` otherwise - the exact "no live session" fallback
  * `withInertRefs` itself documents. `unboxedKeys` only matters for
  * `list()`'s `select`-transformed fields (see `createCollectionReader`'s

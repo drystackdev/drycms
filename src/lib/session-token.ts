@@ -25,13 +25,12 @@ export interface SessionTokenClaims extends SessionPayload {
 
 export interface SignSessionOptions {
   sessionId: string;
-  /** Overrides the 15-minute default. Only the Visual Editing Interface's
-   * own `Path=/` cookie uses this (`server/vei-session.ts`): its holder is
-   * browsing the public site, where nothing refreshes the admin cookie
-   * pair, so a 15-minute token would drop them out of edit mode mid-edit.
-   * Revocation is unaffected either way - `resolveSession`/
-   * `resolveVeiSession` still check the server-side session record, so a
-   * logout kills a long-lived token immediately. */
+  /** Overrides the 15-minute default. No caller uses it today - the one
+   * that did (the deleted VEI `Path=/` cookie, whose holder browsed the
+   * public site where nothing refreshes the admin cookie pair) is gone.
+   * Revocation is unaffected regardless: `resolveSession` checks the
+   * server-side session record, so a logout kills a long-lived token
+   * immediately. */
   expiresInMs?: number;
 }
 

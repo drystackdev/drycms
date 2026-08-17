@@ -34,8 +34,8 @@ client can never do anything the token's owner couldn't already do by hand.
 - `list_page_source` / `read_page_source` - browse and read one file. Start
   with `md/README.md` for this project's own admin-authored notes, if any.
 - `write_page_source` - create or overwrite one file's raw text. Saves
-  straight to storage (no draft/Save step, unlike the Page Editor UI) - the
-  change still needs a Build (from the admin's Page Editor) to reach the
+  straight to storage (no draft/Save step, unlike the Page Builder UI) - the
+  change still needs a Build (from the admin's Page Builder) to reach the
   live site.
 - `preview_page_source` - compile and render a static `page.tsx` route to
   check it works. `dry()` resolves to empty/null here, so this checks

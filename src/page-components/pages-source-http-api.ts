@@ -21,13 +21,13 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
  * client for everything in `pagesSourceStorage`, both source roots included
  * (`source-roots.ts`: `pages/**` and `component/**` are plain paths in the
  * same tree, not separate endpoints). Used by both `PageBuild.tsx`
- * (read-only: tree + file contents, to compile) and `PageEditor.tsx` (adds
+ * (read-only: tree + file contents, to compile) and `PageBuilder.tsx` (adds
  * the write calls below). */
 export function createPagesSourceApi(baseUrl: string) {
   /** The whole pages-source tree, one round trip - `entries` is empty and
    * `supported: false` if the configured storage kind doesn't implement
    * `StorageAdapter.listAll` (only `local` does today; R2/S3 falls back to
-   * `PageBuild.tsx`/`PageEditor.tsx`'s own per-folder `listAllFilesRecursive`). */
+   * `PageBuild.tsx`/`PageBuilder.tsx`'s own per-folder `listAllFilesRecursive`). */
   async function listTree(): Promise<{ supported: boolean; entries: FileEntry[] }> {
     const res = await fetch(`${baseUrl}?tree`);
     await assertOk(res, "Failed to load the pages-source tree.");

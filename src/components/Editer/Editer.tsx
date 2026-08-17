@@ -45,7 +45,7 @@ export interface EditerProps {
   value: string;
   onChange: (result: EditerResult) => void;
   /** Set once at mount - not live-updatable, matching `theme`'s own contract
-   * (`PageEditor.tsx` forces a remount via `key={selectedPath}` whenever the
+   * (`PageBuilder.tsx` forces a remount via `key={selectedPath}` whenever the
    * open file's language would change anyway). `"css"` skips every
    * TypeScript-Language-Service feature below (diagnostics/hover/
    * signature-help/quick-fix/describeProps) - none of it applies to a plain

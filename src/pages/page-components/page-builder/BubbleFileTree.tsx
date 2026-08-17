@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { FileEntry } from "../../../storage/entry-types.js";
 import { buildComponentTree, type ComponentTreeNode } from "../../../page-components/tree.js";
 import { FolderBaseIcon, FolderBaseOpenIcon, fileIconForName } from "../file-type-icons.js";
+import { EditIcon, TrashIcon } from "../../../components/icons/index.js";
 
 export interface BubbleFileTreeProps {
   sourceByPath: Record<string, string>;
   activeRoot: string;
   activePath: string | null;
   onSelectFile: (path: string) => void;
+  onRenameFile: (path: string) => void;
+  onDeleteFile: (path: string) => void;
+  /** `false` hides the delete button entirely for that path (built-in style
+   * files, which storage refuses to delete anyway). */
+  canDelete: (path: string) => boolean;
 }
 
 /** Synthesizes `FileEntry[]` (id/name/kind/parentId) purely from a flat path
@@ -41,10 +47,9 @@ function buildEntries(paths: string[], rootId: string): FileEntry[] {
 /**
  * Read-only expandable folder tree for `BubbleMenu.tsx` - the same shape and
  * CSS Page Editor's own `ComponentTreePanel` sidebar uses
- * (`page-components-tree*`, `buildComponentTree`), minus every write
- * operation (create/rename/delete/move/paste) that popup doesn't need - Page
- * Builder edits one file at a time (`PageBuilder.tsx`'s mục 10 cut), it never
- * creates/deletes/reorganizes files from here.
+ * (`page-components-tree*`, `buildComponentTree`). Rename/delete live on
+ * each file row; creating a file is `BubbleMenu.tsx`'s own header button,
+ * since it needs no row to act on.
  *
  * Deliberately does NOT attach `useOverlayScrollbars`, unlike most scrollable
  * panels in this app: `ComponentTreePanel` itself doesn't either (plain
@@ -104,7 +109,16 @@ export default function BubbleFileTree(props: BubbleFileTreeProps) {
 
   return (
     <div class="page-components-tree scroll" ref={treeRef}>
-      <BubbleFileTreeList nodes={tree} collapsed={collapsed} activePath={props.activePath} onToggle={toggle} onSelectFile={props.onSelectFile} />
+      <BubbleFileTreeList
+        nodes={tree}
+        collapsed={collapsed}
+        activePath={props.activePath}
+        onToggle={toggle}
+        onSelectFile={props.onSelectFile}
+        onRenameFile={props.onRenameFile}
+        onDeleteFile={props.onDeleteFile}
+        canDelete={props.canDelete}
+      />
     </div>
   );
 }
@@ -119,6 +133,9 @@ function BubbleFileTreeList(props: {
   activePath: string | null;
   onToggle: (id: string) => void;
   onSelectFile: (path: string) => void;
+  onRenameFile: (path: string) => void;
+  onDeleteFile: (path: string) => void;
+  canDelete: (path: string) => boolean;
 }) {
   return (
     <>
@@ -152,10 +169,43 @@ function BubbleFileTreeList(props: {
               >
                 <span>{entry.name}</span>
               </button>
+              {entry.kind === "file" && (
+                <>
+                  <button
+                    type="button"
+                    class="icon ghost sm"
+                    aria-label={`Rename ${entry.name}`}
+                    title="Rename"
+                    onClick={() => props.onRenameFile(entry.id)}
+                  >
+                    <EditIcon />
+                  </button>
+                  {props.canDelete(entry.id) && (
+                    <button
+                      type="button"
+                      class="icon ghost sm"
+                      aria-label={`Delete ${entry.name}`}
+                      title="Delete"
+                      onClick={() => props.onDeleteFile(entry.id)}
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </>
+              )}
             </div>
             {entry.kind === "folder" && open && node.children.length > 0 && (
               <div class="page-components-tree-children">
-                <BubbleFileTreeList nodes={node.children} collapsed={props.collapsed} activePath={props.activePath} onToggle={props.onToggle} onSelectFile={props.onSelectFile} />
+                <BubbleFileTreeList
+                  nodes={node.children}
+                  collapsed={props.collapsed}
+                  activePath={props.activePath}
+                  onToggle={props.onToggle}
+                  onSelectFile={props.onSelectFile}
+                  onRenameFile={props.onRenameFile}
+                  onDeleteFile={props.onDeleteFile}
+                  canDelete={props.canDelete}
+                />
               </div>
             )}
           </div>

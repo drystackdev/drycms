@@ -1,7 +1,7 @@
 /**
  * The Visual Editing Interface's wire format, and nothing else (see
  * `plans/vei.md`). Split out of `dry-vei.ts` deliberately: the browser
- * overlay (`apps/vei/overlay.ts`) ships on every public page and only needs
+ * overlay (`pages/page-components/page-builder/` (Page Builder's preview)) ships on every public page and only needs
  * to READ markers, while `dry-vei.ts` reaches into `entry-tree.ts` ->
  * `field-registry.ts` to resolve field types. Keeping this module
  * import-free is what stops the whole field registry from landing in the

@@ -609,7 +609,7 @@ const MAX_PREVIEW_HTML_CHARS = 40_000;
 /** Loads every `.tsx`/`.ts` file in `pagesSourceStorage` (`pages/`/
  * `component/` roots - `.css` files under `styles/` don't match the
  * extension filter, and aren't needed for evaluating components anyway).
- * Same bulk-load shape `PageEditor.tsx`'s own `loadTree()` uses client-side -
+ * Same bulk-load shape `PageBuilder.tsx`'s own `loadTree()` uses client-side -
  * simpler than precisely walking the import graph, and cheap enough for a
  * preview (not a hot path). */
 async function loadAllPageSource(context: DryRouteContext): Promise<Record<string, string>> {

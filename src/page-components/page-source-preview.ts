@@ -1,7 +1,7 @@
 /**
  * "Does this page compile and render?" check for the MCP `preview_page_source`
  * tool (`src/server/routes/mcp.ts`) - answers the question a human gets for
- * free from `PageEditor.tsx`'s own `srcdoc` iframe preview, for an MCP
+ * free from `PageBuilder.tsx`'s own `srcdoc` iframe preview, for an MCP
  * client that has no browser to look at one.
  *
  * Deliberately NOT a call to `page-build.ts`'s own `buildPage()` - that
@@ -43,7 +43,7 @@ import { buildDocument } from "../server/app-router/build-document.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import { buildManifestRouteTree, matchSourceRoute } from "../server/app-router/route-manifest.js";
 import { PAGES_ROOT } from "../server/app-router/source-roots.js";
-import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "../server/app-router/assets.js";
+import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, EDIT_LAUNCHER_HREF } from "../server/app-router/assets.js";
 import type { DryCollectionReader, DryReader, DrySingletonReader } from "../content-types/dry-reader.js";
 
 function createStubDryReader(): DryReader {
@@ -139,9 +139,8 @@ export async function checkPageSourceBuild(path: string, sourceByPath: Record<st
       pathname,
       adminPath,
       siteLang,
-      assets: { globalsCssHref: GLOBALS_CSS_HREF, hydrateEntryHref: HYDRATE_ENTRY_HREF, veiOverlayHref: VEI_OVERLAY_HREF },
+      assets: { globalsCssHref: GLOBALS_CSS_HREF, hydrateEntryHref: HYDRATE_ENTRY_HREF, editLauncherHref: EDIT_LAUNCHER_HREF },
       callLog: [],
-      editMode: false,
     });
     return { ok: true, html };
   } catch (error) {

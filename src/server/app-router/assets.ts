@@ -1,8 +1,7 @@
 import {
   HYDRATE_ENTRY_HREF as GENERATED_HYDRATE_ENTRY_HREF,
-  VEI_OVERLAY_HREF as GENERATED_VEI_OVERLAY_HREF,
+  EDIT_LAUNCHER_HREF as GENERATED_EDIT_LAUNCHER_HREF,
   HYDRATE_BUILT_HREF as GENERATED_HYDRATE_BUILT_HREF,
-  VEI_LIVE_REFRESH_HREF as GENERATED_VEI_LIVE_REFRESH_HREF,
 } from "./generated-asset-hrefs.js";
 
 import { resolveGlobalsCssHref } from "./resolve-asset-href.js";
@@ -10,9 +9,8 @@ import { resolveGlobalsCssHref } from "./resolve-asset-href.js";
 export {
   resolveGlobalsCssHref,
   resolveHydrateEntryHref,
-  resolveVeiOverlayHref,
+  resolveEditLauncherHref,
   resolveHydrateBuiltHref,
-  resolveVeiLiveRefreshHref,
 } from "./resolve-asset-href.js";
 
 /**
@@ -31,11 +29,8 @@ export {
  * pages compile and inline the current pages-source stylesheet themselves. */
 export const GLOBALS_CSS_HREF = import.meta.env.DEV ? resolveGlobalsCssHref(true) : "";
 export const HYDRATE_ENTRY_HREF = import.meta.env.DEV ? "/src/apps/hydrate-client.ts" : GENERATED_HYDRATE_ENTRY_HREF;
-export const VEI_OVERLAY_HREF = import.meta.env.DEV ? "/src/apps/vei/overlay.ts" : GENERATED_VEI_OVERLAY_HREF;
+/** See `src/apps/edit-launcher.ts` - the "Edit this page" button a signed-in
+ * admin sees on the public site, which deep-links into Page Builder. */
+export const EDIT_LAUNCHER_HREF = import.meta.env.DEV ? "/src/apps/edit-launcher.ts" : GENERATED_EDIT_LAUNCHER_HREF;
 /** mục 7 - see `src/apps/hydrate-built.ts`'s doc comment. */
 export const HYDRATE_BUILT_HREF = import.meta.env.DEV ? "/src/apps/hydrate-built.ts" : GENERATED_HYDRATE_BUILT_HREF;
-/** See `src/apps/vei-live-refresh.ts`'s doc comment. Never actually loaded in
- * dev - `page-handler.ts` only sets `veiLiveManifest` outside `bun run dev`
- * (that case is already live via `DevPagesSource`) - but resolved the same
- * way as the other 3 hrefs for consistency. */
-export const VEI_LIVE_REFRESH_HREF = import.meta.env.DEV ? "/src/apps/vei-live-refresh.ts" : GENERATED_VEI_LIVE_REFRESH_HREF;

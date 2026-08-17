@@ -7,7 +7,6 @@ import { path as adminPath } from "./config.js";
 import { mimeType } from "./route-helpers.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
-import { handleVeiRoute } from "./vei-routes.js";
 import { ADMIN_CONTENT_SECURITY_POLICY } from "./security-headers.js";
 
 /**
@@ -89,11 +88,6 @@ const server = createHttpServer((req, res) => {
     const redirect = await guardPageRequest(request, {});
     if (redirect) {
       await sendFetchResponse(redirect, res);
-      return;
-    }
-    const veiResponse = await handleVeiRoute(request, {});
-    if (veiResponse) {
-      await sendFetchResponse(veiResponse, res);
       return;
     }
     await serveRequest(req, res);

@@ -44,7 +44,7 @@ components a page imports as `@component/Card`; `styles/` holds the Tailwind
 entry and imports; `md/` holds project notes for AI.
 
 `bun run dev` reads the local store directly through `DevPagesSource` and
-Vite. Page Editor, Page Build, and VEI read/write the same storage API. The
+Vite. Page Builder and Page Build read/write the same storage API. The
 browser build pipeline compiles the current source and publishes HTML/JS/CSS
 to `built/live/*`; production visitors only receive those published objects
 and production never imports page-source modules. There is no `src/apps/*`
@@ -70,7 +70,7 @@ One shared git repo holds the app's own source (`src/`); in practice each
 git branch is a separate deployed TENANT/project (`sivelap`, `drystack`,
 `mai-anh-quyen`, ...), each with its own Cloudflare resources named
 `<branch>-db`/`<branch>-content`/`<branch>-session`. Page/component content
-authored through the Page Editor (a tenant's actual website) is **never
+authored through Page Builder (a tenant's actual website) is **never
 tracked in git** - it lives in `pagesSourceStorage` only (`.dry/pages-source`
 locally, that tenant's own R2 bucket in production), entirely separate from
 the application source. The committed `mock/` tree is the one exception: it

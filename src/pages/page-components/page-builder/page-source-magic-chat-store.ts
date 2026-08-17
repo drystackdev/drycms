@@ -1,5 +1,5 @@
 /**
- * Thin hand-rolled IndexedDB wrapper for the Page Editor's Magic Chat
+ * Thin hand-rolled IndexedDB wrapper for Page Builder's Magic Chat
  * history - a sibling of `content-entry-editor/magic-chat-store.ts` (same
  * degrade-safely-on-any-failure style, same one-object-store-keyed-by-a-
  * string shape), own DB so a version bump here can never collide with that

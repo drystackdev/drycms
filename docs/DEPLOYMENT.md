@@ -41,7 +41,7 @@ git branch is a separate deployed TENANT/project (`sivelap`, `drystack`,
 `<branch>` convention (`scripts/new-project.ts` sets these on `bun run
 new:project`).
 
-**Page/component/layout content authored through the Page Editor is NEVER
+**Page/component/layout content authored through Page Builder is NEVER
 tracked in git** - it lives in `.dry/pages-source` locally or that tenant's
   own R2 bucket in production (`pagesSourceStorage`, see AGENTS.md's
   "Page source lives only in pagesSourceStorage"), entirely separate from the application source code so
@@ -151,7 +151,7 @@ A public page view goes through two caches, in this order:
    `resolveOptions` in `src/server/config.ts` - default `60` seconds, `0`
    disables). A hit costs no D1 and no R2 at all.
    Only anonymous `GET`s are stored or served: a request carrying an admin
-   session or VEI cookie bypasses it in both directions, so an editor always
+   session (or the `drycms_admin` hint cookie) bypasses it in both directions, so an editor always
    sees their own change immediately while an anonymous visitor sees it at
    most `edgeTtl` seconds later. **The Cache API is disabled on
    `*.workers.dev`** - the Worker must be served through a custom
@@ -162,7 +162,8 @@ A public page view goes through two caches, in this order:
    never stale. Costs one R2 read plus one batched D1 version query per view.
 
 Both are production-only (`import.meta.env.DEV` skips them) and both are
-skipped for a VEI edit-mode render.
+Editing never renders through this path at all: it happens in Page Builder,
+under the admin path.
 
 `status/worker-request-cost.md` has the per-request cost breakdown these
 layers exist to cut, and why D1 throughput - not any quota - is the real

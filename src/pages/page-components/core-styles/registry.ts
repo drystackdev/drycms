@@ -17,7 +17,7 @@ const BY_NAME: Record<string, { defaultContent: string; Card: ComponentType }> =
 };
 
 /** `source-roots.ts`'s `CORE_STYLE_FILE_NAMES`, paired with each file's
- * default content and its display card (`PageEditor.tsx`'s recovery check,
+ * default content and its display card (`PageBuilder.tsx`'s recovery check,
  * `SystemFilesPanel.tsx`'s cards) - one array built off that single name
  * list so the 2 stay impossible to drift apart. */
 export const CORE_STYLE_FILES: CoreStyleFile[] = CORE_STYLE_FILE_NAMES.map((name) => ({ name, ...BY_NAME[name]! }));

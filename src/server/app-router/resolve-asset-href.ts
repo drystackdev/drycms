@@ -83,11 +83,13 @@ export function resolveHydrateEntryHref(
   return resolveBuiltAssetHref(dev, "src/apps/hydrate-client.ts", manifestPath);
 }
 
-export function resolveVeiOverlayHref(
+/** See `src/apps/edit-launcher.ts`'s doc comment - the one script every built
+ * public page carries for editing, replacing the old VEI overlay. */
+export function resolveEditLauncherHref(
   dev: boolean,
   manifestPath: string = join(process.cwd(), "dist/client/.vite/manifest.json"),
 ): string {
-  return resolveBuiltAssetHref(dev, "src/apps/vei/overlay.ts", manifestPath);
+  return resolveBuiltAssetHref(dev, "src/apps/edit-launcher.ts", manifestPath);
 }
 
 /** mục 7 - see `src/apps/hydrate-built.ts`'s doc comment. */
@@ -98,10 +100,3 @@ export function resolveHydrateBuiltHref(
   return resolveBuiltAssetHref(dev, "src/apps/hydrate-built.ts", manifestPath);
 }
 
-/** See `src/apps/vei-live-refresh.ts`'s doc comment. */
-export function resolveVeiLiveRefreshHref(
-  dev: boolean,
-  manifestPath: string = join(process.cwd(), "dist/client/.vite/manifest.json"),
-): string {
-  return resolveBuiltAssetHref(dev, "src/apps/vei-live-refresh.ts", manifestPath);
-}

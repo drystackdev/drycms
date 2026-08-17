@@ -18,7 +18,7 @@ import { installVeiMarkerHook } from "./vei-marker-hook.js";
  * browser tab; this file adds the document-shell assembly around them
  * without reintroducing anything that doesn't.
  *
- * `GLOBALS_CSS_HREF`/`HYDRATE_ENTRY_HREF`/`VEI_OVERLAY_HREF` do NOT come from
+ * `GLOBALS_CSS_HREF`/`HYDRATE_ENTRY_HREF`/`EDIT_LAUNCHER_HREF` do NOT come from
  * `./assets.js` here (an earlier version of this file imported them from
  * there, on the assumption that module was safe - WRONG, caught live: that
  * module RE-EXPORTS from `resolve-asset-href.ts`, which imports `node:fs`
@@ -137,8 +137,13 @@ function buildStructuredData(
  * convention). */
 export const ISODATA_MARKER = '<script type="isodata"></script>';
 
-function veiConfigScript(adminPath: string, editMode: boolean): string {
-  return `<script type="application/json" id="dry-vei-config">{"path":${JSON.stringify(adminPath)},"edit":${editMode}}</script>`;
+/** The admin base path, handed to `apps/edit-launcher.ts` - the site bundle
+ * has no other way to know it. Deliberately carries nothing session-shaped:
+ * built HTML is cached and shared across visitors, so whether the Edit button
+ * renders is decided client-side off the `drycms_admin` hint cookie, never
+ * baked into the document. */
+function editConfigScript(adminPath: string): string {
+  return `<script type="application/json" id="dry-edit-config">{"path":${JSON.stringify(adminPath)}}</script>`;
 }
 
 export const DOC_BODY_OPEN = "</head><body>";
@@ -149,7 +154,7 @@ export interface AssetHrefs {
   /** `""` omits the script tag entirely - see `buildHeadPrefix`'s own use
    * of it below. */
   hydrateEntryHref: string;
-  veiOverlayHref: string;
+  editLauncherHref: string;
 }
 
 /** The static, non-SEO part of `<head>` - `adminPath`/`siteLang`/asset hrefs
@@ -170,13 +175,11 @@ export function buildHeadPrefix(adminPath: string, siteLang: string, assets: Ass
     // resolves to the CURRENT document URL and tries to parse as CSS).
     (assets.globalsCssHref ? `<link rel="stylesheet" href="${assets.globalsCssHref}">` : "") +
     (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
-    // Empty for the VEI shell document (`render.ts`'s `buildVeiShellDocument`)
-    // - deliberately no hydrate script there at all, so `preact-iso`'s
-    // `hydrate()` (called only by `vei-live-refresh.ts` itself) has no
-    // `<script type="isodata">` marker to find and always takes its plain
-    // `render()` branch - see that function's own doc comment.
+    // `""` omits the tag entirely - a caller that renders a document nothing
+    // hydrates has no `<script type="isodata">` marker for `preact-iso` to
+    // find either.
     (assets.hydrateEntryHref ? `<script type="module" src="${assets.hydrateEntryHref}"></script>` : "") +
-    `<script type="module" src="${assets.veiOverlayHref}"></script>`
+    `<script type="module" src="${assets.editLauncherHref}"></script>`
   );
 }
 
@@ -200,10 +203,6 @@ export interface BuildDocumentContext {
   assets: AssetHrefs;
   seoEntryDates?: DryRequestContext["seoEntryDates"];
   callLog?: DryCallLogEntry[];
-  /** Whether this render carries VEI edit markers - `false`/absent for
-   * every build-pipeline render (VEI never applies to a static build - see
-   * `dry-reader-http.ts`'s doc comment on `withInertRefs`). */
-  editMode?: boolean;
 }
 
 /**
@@ -232,7 +231,7 @@ export async function buildDocument(vnode: unknown, ctx: BuildDocumentContext): 
     DOC_BODY_OPEN;
   const bodyHtml = await renderToStringAsync(vnode as never);
   const replayData = `<script type="application/json" id="dry-replay-data">${encodeCallLog(ctx.callLog ?? [])}</script>`;
-  return head + bodyHtml + replayData + veiConfigScript(ctx.adminPath, ctx.editMode === true) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
+  return head + bodyHtml + replayData + editConfigScript(ctx.adminPath) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
 }
 
-export { buildSeoTags, buildStructuredData, veiConfigScript };
+export { buildSeoTags, buildStructuredData, editConfigScript };

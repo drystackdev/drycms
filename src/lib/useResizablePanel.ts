@@ -43,12 +43,12 @@ export interface UseResizablePanelResult {
  *
  * Tracks the drag via `setPointerCapture` on the handle itself, not a
  * `document`-level `pointermove` listener (the original approach here) -
- * found live (`PageEditor.tsx`'s preview panel, flanked by a real
+ * found live (`PageBuilder.tsx`'s preview panel, flanked by a real
  * `<iframe>`): a fast drag routinely overshoots the handle's own 4px hit
  * area, and once the cursor lands over the iframe, its pointer events fire
  * inside THAT document instead of bubbling to the parent's `document`
  * listener at all - the drag would just silently stop tracking. Capture
- * (the same fix `overlay.ts`'s own `panelResizeHandle` already uses for an
+ * (the same fix Page Builder's own resize handle already uses for an
  * identical drag) redirects every subsequent event for this pointer straight
  * to the handle regardless of what's actually underneath it, iframe
  * included, so the listeners can live as plain props on the handle itself

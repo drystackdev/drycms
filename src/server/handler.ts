@@ -1,7 +1,6 @@
 import { path as basePath } from "./config.js";
 import type { DryRouteContext, DryRouteHandler } from "./context.js";
 import { readBearerToken, readRefreshCookie, readSessionCookie, resolveSession } from "./session.js";
-import { resolveVeiSession } from "./vei-session.js";
 import { verifySessionClaims } from "../lib/session-token.js";
 import { resolveMcpToken } from "./auth-security.js";
 import { getContentAdapters } from "./content-adapters.js";
@@ -189,18 +188,6 @@ export async function handleApiRequest(
   const refreshToken = readRefreshCookie(request);
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
   let session = await resolveSession(request, env, claims);
-  // A VEI session (`drycms_vei`, `vei-session.ts`) is a strictly-read-only
-  // capability for the SAME real user - deliberately usable here: the real
-  // admin session (`drycms_session`, 15min) routinely expires out from
-  // under a still-valid VEI one (2h) while an admin keeps browsing the
-  // public site, and `vei-live-refresh.ts` needs every read-only endpoint's
-  // existing `context.session`-based authorization to keep working through
-  // that. Never widens what a WRITE can do: `requiresCsrf` below still
-  // gates every mutating request on the CSRF double-submit cookie, which a
-  // public page structurally can't satisfy either way (`vei-routes.ts`'s
-  // own doc comment) - VEI session or not.
-  if (!session) session = await resolveVeiSession(request, env);
-
   const boundedRequest = limitRequestBody(request, segment, request.method, slug);
   const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
 
@@ -301,7 +288,8 @@ export async function handleApiRequest(
   }
   // `github-restore` (listing GitHub snapshot commits, and pulling one to
   // overwrite `pagesSourceStorage`) is part of the Code Editor's Settings
-  // surface (`PageEditor.tsx`'s "Reset all from GitHub"/History) - gated on
+  // surface (no UI calls it since Page Editor's History/Reset dialogs were
+  // deleted; the git working-copy work is what will replace them) - gated on
   // the same merged Page Builder permission as `pages-source`'s own write
   // methods above, every method including GET (same "one all-or-nothing
   // toggle" shape as Page Components).

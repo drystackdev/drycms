@@ -3,8 +3,10 @@ import Toaster from "../../components/Toast.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 
 /**
- * Bare-mode chrome for the Visual Editing Interface's dialog iframe
- * (`?_vei=1` - see `routers/App.tsx`'s `Chrome`, `plans/vei.md`). Skipping
+ * Bare-mode chrome for the entry-editor iframe Page Builder's visual editing
+ * panel embeds (`?_vei=1` - see `routers/App.tsx`'s `Chrome`, and
+ * `page-builder/VeiEntryFrame.tsx`, its only host now that the public-site
+ * overlay is gone). Skipping
  * `DryLayout` entirely (the point of bare mode - no sidebar/topbar around a
  * modal) also skips everything else `DryLayout` happens to own: `.main`'s
  * `useOverlayScrollbars` viewport, `.content`'s padding, and the
@@ -16,7 +18,7 @@ import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
  * simply never mounted. This restores exactly those three things, at the
  * scale a compact dialog (not a full page) calls for.
  */
-export default function VeiFrame({ children }: { children: ComponentChildren }) {
+export default function BuilderBridgeFrame({ children }: { children: ComponentChildren }) {
   const { ref } = useOverlayScrollbars<HTMLDivElement>();
 
   return (

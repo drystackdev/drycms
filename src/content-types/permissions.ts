@@ -37,9 +37,9 @@ export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
  * `server/auth-security.ts` for session revocation/rate-limiting. A
  * `system-media` entry and a `system-vei` entry - gating the Media page and
  * the Visual Editing Interface respectively - also used to live here,
- * removed 2026-08-07: both are now open to any authenticated user rather
- * than a grantable permission, see `Media.tsx` and `vei-routes.ts`'s
- * `handleVeiRoute`.) */
+ * removed 2026-08-07: both were opened to any authenticated user rather
+ * than a grantable permission. Visual editing itself now lives inside Page
+ * Builder, gated by `PAGE_BUILDER_RESOURCE_ID` below.) */
 export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";

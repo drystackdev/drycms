@@ -194,7 +194,7 @@ export default function PageBuild() {
         // mục 7's dedicated bootstrap, NOT hydrateEntryHref - see
         // `page-build.ts`'s `PageBuildInput.assets` doc comment for why.
         hydrateEntryHref: assetHrefs.hydrateBuiltHref,
-        veiOverlayHref: assetHrefs.veiOverlayHref,
+        editLauncherHref: assetHrefs.editLauncherHref,
       },
       preactRuntimeHref: assetHrefs.preactRuntimeHref,
       builtAssetsBaseUrl: `${path}/api/built-assets`,
@@ -328,7 +328,7 @@ export default function PageBuild() {
       // after the whole queue (a fresh run or a resume) is fully done - not
       // per batch, so a resumed/interrupted run still produces a single
       // coherent commit rather than several partial ones. Best-effort, same
-      // as `PageEditor.tsx`'s own `reportGithubSync`: a real failure gets its
+      // as `PageBuilder.tsx`'s own `reportGithubSync`: a real failure gets its
       // own separate, non-blocking toast, "not configured" stays silent.
       const githubSync = await triggerGithubSync(`${path}/api/github-sync`, `Build all: ${total} pages - ${new Date().toISOString()}`);
       if (!githubSync.pushed && githubSync.reason && githubSync.reason !== "not-configured") {
@@ -373,7 +373,7 @@ export default function PageBuild() {
   }, [ready]);
 
   // Headless rebuild trigger (mục 12's "Sau saveAll() thì chạy build cho
-  // trang hiện tại + trang phụ thuộc") - `overlay.ts`'s `rebuildAffectedPages`
+  // trang hiện tại + trang phụ thuộc") - `rebuild-affected-pages.ts`
   // points a hidden iframe at this same page with `?autoBuild=/a,/b` instead
   // of reimplementing the load-targets-and-compile pipeline a second time
   // for a public-site bundle that has no business importing Sucrase/Tailwind.

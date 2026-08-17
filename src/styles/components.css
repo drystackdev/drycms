@@ -7696,6 +7696,28 @@
       }
     }
 
+    /* `BubbleMenu.tsx`'s create/rename row - one line under the tabs, so the
+       tree below never shifts sideways while it's open. The error wraps onto
+       its own line (`flex-basis: 100%`) instead of squeezing the input. */
+    .page-builder-bubble-form {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.5rem;
+      border-bottom: 1px solid var(--dry-border);
+      flex: none;
+
+      & input {
+        flex: 1;
+        min-width: 0;
+      }
+
+      & .error {
+        flex-basis: 100%;
+      }
+    }
+
     /* `CodePanel.tsx` - the Page tab's drag-resizable code panel, docked to
      * the right edge over the full-screen preview iframe. */
     .page-builder-code-panel {

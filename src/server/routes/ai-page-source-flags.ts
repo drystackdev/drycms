@@ -1,6 +1,6 @@
 /**
  * Browser-facing side of `../ai-page-source-flags.ts`'s global "AI wrote
- * this page.tsx, not built since" tracker - what `PageEditor.tsx` polls
+ * this page.tsx, not built since" tracker - what `PageBuilder.tsx` polls
  * while open to light up the file tree's red dot. Read-only: there's no
  * DELETE, unlike `ai-content-type-drafts.ts` - clearing only ever happens
  * automatically, when `routes/pages-build.ts`'s `publishOne` records a real

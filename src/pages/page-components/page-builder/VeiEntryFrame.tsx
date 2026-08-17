@@ -4,9 +4,9 @@ import { encodeEntryId } from "../../../lib/id-hash.js";
 import type { PreviewVeiClickRef } from "../../../page-components/page-preview-engine.js";
 import type { PreviewPatchDetail } from "../../../page-components/vei-preview-patch.js";
 
-/** Same admin route `apps/vei/overlay.ts`'s own `editorUrl` builds - the
+/** The ordinary entry-editor admin route, aimed at one field - the
  * ordinary entry editor, `?_field=`/`?_path=` aimed at the clicked field,
- * `?_vei=1` so `pages/vei/bridge.ts`'s `isVeiFrame()` recognizes it and
+ * `?_vei=1` so `content-entry-editor/builder-bridge.ts`'s `isVeiFrame()` recognizes it and
  * relays its `dry:field-*`/`dry:entry-save(d)` events out via
  * `postMessage` (`plans/new-ui-page-builder.md` mục 8). */
 function editorUrl(adminPath: string, ref: PreviewVeiClickRef): string {
@@ -31,10 +31,11 @@ export interface VeiEntryFrameProps {
 /**
  * The entry/singleton editor iframe VEI mode opens on a marked-field click -
  * the same right-hand panel as the code editor. Listens for the SAME
- * `vei:*` bridge messages `apps/vei/overlay.ts` does (`pages/vei/bridge.ts`'s
- * `startVeiBridge`, running inside this iframe), just without that file's
- * own hover-highlight/cross-tab-draft-sync/drag-resize polish - "không
- * giống 100% chỉ tương đồng một vài chức năng" (mục 3).
+ * `vei:*` bridge messages the deleted public-site overlay did
+ * (`content-entry-editor/builder-bridge.ts`'s `startVeiBridge`, running
+ * inside this iframe), just without that overlay's own
+ * hover-highlight/cross-tab-draft-sync/drag-resize polish - "không giống
+ * 100% chỉ tương đồng một vài chức năng" (mục 3).
  */
 export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -76,7 +77,7 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
         props.onSaved();
       } else if (message?.type === "vei:close") {
         // Fired by `ContentEntryEditor.tsx`'s own Cancel button (via
-        // `pages/vei/bridge.ts`'s `closeVeiDialog`) - a real Save leaves
+        // `content-entry-editor/builder-bridge.ts`'s `closeVeiDialog`) - a real Save leaves
         // this dialog open so the admin can keep editing other fields; only
         // an explicit close (this, Escape, or the backdrop) dismisses it.
         props.onClose();

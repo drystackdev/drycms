@@ -198,7 +198,10 @@ export default defineConfig(({ isSsrBuild, command }) => ({
             input: {
               main: "index.html",
               appsHydrate: "src/apps/hydrate-client.ts",
-              appsVeiOverlay: "src/apps/vei/overlay.ts",
+              // The public site's whole editing surface: one "Edit this
+              // page" button that deep-links into Page Builder
+              // (`src/apps/edit-launcher.ts`).
+              appsEditLauncher: "src/apps/edit-launcher.ts",
               // mục 7 (app-r2 build pipeline hydration) - the client
               // bootstrap for browser-compiled source in
               // `pagesSourceStorage`. Its own `preact-iso/
@@ -210,12 +213,6 @@ export default defineConfig(({ isSsrBuild, command }) => ({
               // (`build-preact-runtime-bundle.ts`), and hooks silently
               // break across two instances.
               appsHydrateBuilt: "src/apps/hydrate-built.ts",
-              // The VEI-in-production live-content fix (`page-handler.ts`'s
-              // `veiLiveManifest`) - a normal Vite entry (unlike
-              // `appsHydrateBuilt` above), sharing the app's one deduped
-              // Preact instance, since it re-hydrates over the SAME DOM
-              // `appsHydrate` already hydrated moments earlier.
-              appsVeiLiveRefresh: "src/apps/vei-live-refresh.ts",
             },
             output: {
               // Keep prismjs to exactly ONE instance across the app. A

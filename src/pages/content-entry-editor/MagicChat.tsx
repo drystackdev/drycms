@@ -250,7 +250,7 @@ export interface MagicChatProps {
    * `ContentEntryEditor.tsx`'s `canUseMagic`. */
   canUse: boolean;
   /** The Visual Editing Interface's dialog iframe skips `DryLayout` (see
-   * `VeiFrame.tsx`) and shifts `Toaster` to `bottom-start` to avoid its own
+   * `BuilderBridgeFrame.tsx`) and shifts `Toaster` to `bottom-start` to avoid its own
    * dock - the bubble/panel mirror that same shift so they don't collide. */
   veiFrame?: boolean;
   /** Lifted up to `ContentEntryEditor.tsx` (`status/richtext-rewrite-shared-chat.md`)

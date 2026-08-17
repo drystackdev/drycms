@@ -61,7 +61,7 @@ function languageForPath(path: string): EditerFormatLanguage {
  * `component/`/`styles/`/`md/` files (`plans/new-ui-page-builder.md` mục 7) -
  * a `<dialog class="xl">`, 1 column for style/md (no meaningful preview) or
  * 2 for a component (reusing `buildComponentPreviewSource`/`buildPage()`,
- * the same synthetic-page trick `PageEditor.tsx`'s own Component tab
+ * the same synthetic-page trick `PageBuilder.tsx`'s own Component tab
  * preview uses). Save/Reset write straight to `pagesSourceStorage` -
  * there's no staged-apply here, matching Page Editor's own current
  * behavior for this same storage.
@@ -101,7 +101,7 @@ export default function FileDialog(props: FileDialogProps) {
             origin: props.origin,
             adminPath: props.adminPath,
             siteLang: "en",
-            assets: { globalsCssHref: props.assetHrefs.globalsCssHref, hydrateEntryHref: props.assetHrefs.hydrateBuiltHref, veiOverlayHref: props.assetHrefs.veiOverlayHref },
+            assets: { globalsCssHref: props.assetHrefs.globalsCssHref, hydrateEntryHref: props.assetHrefs.hydrateBuiltHref, editLauncherHref: props.assetHrefs.editLauncherHref },
             preactRuntimeHref: `${props.origin}${props.assetHrefs.preactRuntimeHref}`,
             builtAssetsBaseUrl: `${props.origin}${props.adminPath}/api/built-assets`,
             dryHttpEndpoint: `${props.adminPath}/api/dry-http`,
@@ -115,7 +115,7 @@ export default function FileDialog(props: FileDialogProps) {
             layoutPaths: isComponent ? [] : props.previewLayoutPaths,
             params: isComponent ? {} : props.previewParams,
           },
-          veiOverlayHref: props.assetHrefs.veiOverlayHref,
+          editLauncherHref: props.assetHrefs.editLauncherHref,
         });
         setPreviewError(null);
         if (iframeRef.current) iframeRef.current.srcdoc = html;

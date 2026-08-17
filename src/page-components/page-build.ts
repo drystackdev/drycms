@@ -137,7 +137,7 @@ function toJsAssetPath(sourcePath: string): string {
 }
 
 /** The encode/join half of `toBuiltAssetUrl`, exported on its own for
- * `PageEditor.tsx`'s interactive preview: it only ever has a `PageBuildResult
+ * `PageBuilder.tsx`'s interactive preview: it only ever has a `PageBuildResult
  * .jsAssets` entry's already-`.js` `jsPath` in hand (not the original source
  * path `toBuiltAssetUrl` expects), and needs the EXACT same URL string
  * `compileEsmAsset`'s rewritten imports/the hydrate manifest embed for that
@@ -206,7 +206,7 @@ function transitiveDependencies(roots: string[], sourceByPath: Record<string, st
 
 /** Every `layout.tsx` wrapping `pagePath`, root-first - derived from the
  * path string alone (a folder's layout wraps every page below it), the same
- * way `PageEditor.tsx`'s own `ancestorLayoutChain` does for a layout. */
+ * way `PageBuilder.tsx`'s own `ancestorLayoutChain` does for a layout. */
 function ancestorLayoutsOf(pagePath: string, sourceByPath: Record<string, string>): string[] {
   const segments = pagePath.split("/").slice(0, -1);
   const chain: string[] = [];
@@ -413,7 +413,7 @@ export interface PageBuildInput {
   origin: string;
   adminPath: string;
   siteLang: string;
-  /** `globals.css`/`hydrate-built.ts`/`vei/overlay.ts` hrefs
+  /** `globals.css`/`hydrate-built.ts`/`edit-launcher.ts` hrefs
    * (`build-document.ts`'s `AssetHrefs`) - fetch real values from
    * `GET <adminPath>/api/asset-hrefs` (`routes/asset-hrefs.ts`), NOT
    * `assets.ts` directly (that module transitively imports `node:fs` via a
@@ -422,7 +422,7 @@ export interface PageBuildInput {
    * (mục 7's dedicated bootstrap for a browser-compiled page), NOT
    * `hydrateEntryHref` (that one does `import.meta.glob`, meaningless for a
    * page Vite never saw). */
-  assets: { globalsCssHref: string; hydrateEntryHref: string; veiOverlayHref: string };
+  assets: { globalsCssHref: string; hydrateEntryHref: string; editLauncherHref: string };
   /** Same `GET /api/asset-hrefs` response's `preactRuntimeHref` - what
    * `page.js`/`layout.js`'s compiled `"preact"`/`"preact/hooks"` imports get
    * rewritten to point at (mục 7). */
@@ -443,7 +443,7 @@ export interface PageBuildInput {
   layoutPaths: string[];
   params: Record<string, string | string[]>;
   /** Skip compiling `jsAssets` (the ESM bundle `publishBuiltPage` uploads) -
-   * for `PageEditor`'s live preview, which only ever reads `result.html`
+   * for `PageBuilder`'s live preview, which only ever reads `result.html`
    * and deliberately never touches `jsAssets` (see that component's own
    * comment on `result.jsAssets`). Measured live (2026-08-09): sucrase's
    * ESM `compileEsmAsset` pass costs roughly as much synchronous,
@@ -456,7 +456,7 @@ export interface PageBuildInput {
    * this, instead of refetching them (see `dry-http-cache.ts`) - the same
    * "a debounced preview rebuild shouldn't redo work that can't have
    * changed between two keystrokes" motivation as `skipJsAssets`, applied
-   * to the network side. Set ONLY by `PageEditor`'s live preview; leave it
+   * to the network side. Set ONLY by `PageBuilder`'s live preview; leave it
    * unset (every publishing caller does) and every `dry()` call fetches
    * fresh exactly as before. */
   dryCacheTtlMs?: number;
@@ -596,7 +596,6 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     assets: { ...input.assets, globalsCssHref: "" },
     seoEntryDates: dryConfig.seoEntryDates,
     callLog: dryConfig.callLog,
-    editMode: false,
   });
   // mục 7: the WHOLE reachable closure (entry + layouts + anything THEY
   // import) - both the Tailwind scan below (every class ANY of these files
@@ -779,7 +778,7 @@ export interface UnmatchedTemplate {
 /** Every buildable page on the site - static `page.tsx` routes plus every
  * dynamic `[param]` template resolved against the published rows of
  * whichever collection its own source reads (`dynamic-routes.ts`). Shared by `PageBuild.tsx`
- * ("Build all") and `PageEditor.tsx` (its own "Build all" shortcut) so the
+ * ("Build all") and `PageBuilder.tsx` (its own "Build all" shortcut) so the
  * 2 never compute a different notion of "every page" from the same
  * `sourceByPath`. */
 export async function resolveAllPageTargets(

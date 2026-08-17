@@ -31,7 +31,7 @@ to reproduce the same mistakes.
 - [MCP.md](MCP.md) - the Model Context Protocol server for external AI
   clients (Claude Desktop, Claude Code, ...): auth, and the full tool list
   for reading/writing content and page source. A different surface from
-  this Page Editor chat you're reading this index in.
+  this Page Builder chat you're reading this index in.
 
 For the project layout and dev/build/test commands, see
 [`AGENTS.md`](../AGENTS.md) at the repo root (`CLAUDE.md` is a symlink to it).

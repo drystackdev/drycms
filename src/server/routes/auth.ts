@@ -16,7 +16,7 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
-import { clearVeiCookieHeader, clearVeiHintCookieHeader, veiHintCookieHeader } from "../vei-session.js";
+import { adminHintCookieHeader, clearAdminHintCookieHeader } from "../admin-hint-cookie.js";
 import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../rate-limit.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 import { readEnvVar } from "../options.js";
@@ -196,9 +196,10 @@ function withSessionCookies(response: Response, context: DryRouteContext, token:
   response.headers.append("Set-Cookie", sessionCookieHeader(context, token, 15 * 60));
   response.headers.append("Set-Cookie", sessionCookieHeader(context, refreshToken, refreshToken ? SESSION_MAX_AGE_SECONDS : 0, REFRESH_COOKIE_NAME));
   response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
-  // Any signed-in user can use the public-site "Edit" overlay - no separate
-  // VEI permission to check.
-  response.headers.append("Set-Cookie", veiHintCookieHeader(context.url, SESSION_MAX_AGE_SECONDS));
+  // Any signed-in user gets the public site's "Edit this page" button, which
+  // only deep-links into Page Builder - no separate permission to check here
+  // (Page Builder itself is permission-gated).
+  response.headers.append("Set-Cookie", adminHintCookieHeader(context.url, SESSION_MAX_AGE_SECONDS));
   return response;
 }
 
@@ -206,11 +207,10 @@ function withClearedSessionCookie(response: Response, context: DryRouteContext):
   response.headers.append("Set-Cookie", sessionCookieHeader(context, "", 0));
   response.headers.append("Set-Cookie", sessionCookieHeader(context, "", 0, REFRESH_COOKIE_NAME));
   response.headers.append("Set-Cookie", clearCsrfCookieHeader(context));
-  // Both `Path=/` cookies go too - a signed-out browser must not keep
-  // rendering edit markers on the public site, nor keep offering the
-  // overlay's button (see `server/vei-session.ts`).
-  response.headers.append("Set-Cookie", clearVeiCookieHeader(context.url));
-  response.headers.append("Set-Cookie", clearVeiHintCookieHeader(context.url));
+  // The `Path=/` hint cookie goes too - a signed-out browser must not keep
+  // offering the public site's Edit button (see
+  // `server/admin-hint-cookie.ts`).
+  response.headers.append("Set-Cookie", clearAdminHintCookieHeader(context.url));
   return response;
 }
 

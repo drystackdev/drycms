@@ -4,7 +4,7 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
 import { buildPage, candidatePathsFor, canSkipBuild, computeSourceHash, evalModule, pagesAffectedBy, publishBuiltPage, resolveAllPageTargets, PageBuildError } from "./page-build.js";
 
-const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
+const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", editLauncherHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
 const TEST_BUILT_ASSETS_BASE_URL = "/dry/api/built-assets";
 

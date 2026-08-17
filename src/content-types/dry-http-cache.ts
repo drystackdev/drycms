@@ -2,7 +2,7 @@ import { deleteCacheEntriesByPrefix, getCacheEntry, setCacheEntry } from "../lib
 
 /**
  * IndexedDB cache in front of `POST ${adminPath}/api/dry-http`, for the page
- * editor's LIVE PREVIEW only (`PageEditor.tsx`'s `refreshPreview`, which
+ * editor's LIVE PREVIEW only (`PageBuilder.tsx`'s `refreshPreview`, which
  * re-renders the whole page on a debounce after every edit - each render
  * re-running every `dry()` call the page makes, against content that
  * typically hasn't changed at all between two keystrokes).
@@ -15,7 +15,7 @@ import { deleteCacheEntriesByPrefix, getCacheEntry, setCacheEntry } from "../lib
  * the manual escape hatch.
  *
  * NOT used by any path that publishes: `handleBuildCurrent`/`handleBuildAll`
- * (PageEditor) and `PageBuild.tsx` all leave `ttlMs` unset, so they fetch
+ * (Page Builder) and `PageBuild.tsx` all leave `ttlMs` unset, so they fetch
  * fresh exactly as before - built HTML on `built/live/*` never carries cached
  * data, and the `X-Dry-Resource-Version` those builds record into
  * `_page_deps` (`plans/app-r2.md` mục 5) stays the true current version

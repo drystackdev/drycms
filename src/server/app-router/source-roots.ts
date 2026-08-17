@@ -73,7 +73,7 @@ export function rootOf(path: string): PagesSourceRoot | null {
  * and it `@import`s the other two by exact relative
  * name. Deleting any of them silently breaks the build rather than failing
  * loudly, so both the Page Editor's tree UI and this route's own `DELETE`
- * refuse to remove them (`PageEditor.tsx` also recreates one from its
+ * refuse to remove them (`PageBuilder.tsx` also recreates one from its
  * default content if it's ever found missing). */
 export const CORE_STYLE_FILE_NAMES = ["globals.css", "theme.css", "base.css"] as const;
 

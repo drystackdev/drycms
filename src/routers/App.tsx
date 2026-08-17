@@ -18,8 +18,8 @@ import { publishAllPages } from "../page-components/initial-publish.js";
 import OAuthConsent from "../pages/OAuthConsent.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
-import { isVeiFrame, startVeiBridge } from "../pages/vei/bridge.js";
-import VeiFrame from "../pages/vei/VeiFrame.js";
+import { isVeiFrame, startVeiBridge } from "../pages/content-entry-editor/builder-bridge.js";
+import BuilderBridgeFrame from "../pages/content-entry-editor/BuilderBridgeFrame.js";
 import { authState, canAccess, loadSession } from "../store/auth.js";
 import "../lib/native/native.js";
 
@@ -39,13 +39,11 @@ const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
 const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
 const PageBuild = lazy(() => import("../pages/PageBuild.js"));
-const PageEditor = lazy(() => import("../pages/PageEditor.js"));
 const PageBuilder = lazy(() => import("../pages/PageBuilder.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
 const GoogleVerificationSettings = lazy(() => import("../pages/GoogleVerificationSettings.js"));
 const GithubSyncSettings = lazy(() => import("../pages/GithubSyncSettings.js"));
 const Backup = lazy(() => import("../pages/Backup.js"));
-const VeiChangesPreview = lazy(() => import("../pages/vei/ChangesPreview.js"));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
  * base path and any unmatched path have to be sent to `/dashboard` here. */
@@ -110,18 +108,18 @@ class Boundary extends Component<
  * SuperAdmin instead, without `DryLayout`'s sidebar/topbar chrome or any of
  * these lazy route chunks ever loading for a visitor who isn't authenticated
  * yet. */
-/** The Visual Editing Interface's dialog (`plans/vei.md`) frames one entry
- * editor route inside a public page, where the sidebar/topbar would be
- * noise wrapped around a modal. `AuthGate` already establishes that
+/** Page Builder's visual-editing panel frames one entry editor route inside
+ * itself (`page-builder/VeiEntryFrame.tsx`), where the sidebar/topbar would
+ * be noise wrapped around a compact form. `AuthGate` already establishes that
  * rendering a route without `DryLayout`'s chrome is a normal thing to do
  * here (Sign in/Register do exactly that); this is the same move for a
- * route that IS authenticated. `VeiFrame` (not a bare passthrough) replaces
- * what skipping `DryLayout` loses - a scroll container, padding, and the
- * toast stack - at dialog rather than full-page scale; see its own doc
+ * route that IS authenticated. `BuilderBridgeFrame` (not a bare passthrough)
+ * replaces what skipping `DryLayout` loses - a scroll container, padding, and
+ * the toast stack - at panel rather than full-page scale; see its own doc
  * comment. */
 function Chrome({ children }: { children: ComponentChildren }) {
   const { path: locationPath } = useLocation();
-  if (isVeiFrame()) return <VeiFrame>{children}</VeiFrame>;
+  if (isVeiFrame()) return <BuilderBridgeFrame>{children}</BuilderBridgeFrame>;
   if (locationPath === `${path}/page-builder`) {
     return (
       <>
@@ -157,7 +155,7 @@ function AuthenticatedApp() {
   // deploy whose pages-source was just auto-seeded but never built. Guarded
   // by a ref (same pattern `PageBuild.tsx`'s own `ranAutoBuild` uses) so a
   // later, unrelated re-render never replays it; gated on the SAME
-  // permission `PageBuild.tsx`/`PageEditor.tsx` require for a manual build,
+  // permission `PageBuild.tsx`/`PageBuilder.tsx` require for a manual build,
   // so a signed-in user without it doesn't fire a request that would just
   // 403.
   const ranInitialPublish = useRef(false);
@@ -209,10 +207,6 @@ function AuthenticatedApp() {
                 component={PageBuild}
               />
               <Route
-                path={`${path}/page-editor`}
-                component={PageEditor}
-              />
-              <Route
                 path={`${path}/page-builder`}
                 component={PageBuilder}
               />
@@ -241,7 +235,6 @@ function AuthenticatedApp() {
                 path={`${path}/content/:typeSlug`}
                 component={ContentEntryList}
               />
-              <Route path={`${path}/vei/changes`} component={VeiChangesPreview} />
               <Route path={`${path}/profile`} component={Profile} />
               <Route path={`${path}/mcp`} component={McpConnect} />
               <Route path={`${path}/roles`} component={Roles} />

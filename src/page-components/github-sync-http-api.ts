@@ -7,7 +7,7 @@ export interface GithubSyncTriggerResult {
 /**
  * POSTs to `routes/pages-source-github-sync.ts` - a best-effort snapshot
  * commit of the pages-source tree, called AFTER a build's own
- * `publishBuiltPage(s)` has already succeeded (`PageEditor.tsx`'s Build
+ * `publishBuiltPage(s)` has already succeeded (`PageBuilder.tsx`'s Build
  * current/Build all, `PageBuild.tsx`'s Build all - see
  * `status/pages-source-github-versioning.md`). Never throws: a GitHub
  * outage, a missing/invalid token, or the feature simply being turned off

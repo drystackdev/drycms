@@ -96,10 +96,10 @@ const { rows } = await dry().collection("blog").list({
   relation (those cost one query per row).
 - `where`/`sort` still work on fields you didn't select - they're resolved
   in SQL, not from the returned row.
-- One caveat for [VEI](../plans/vei.md) inline editing: a field you
+- One caveat for Page Builder's inline (visual) editing: a field you
   transformed is not inline-editable (the rendered text isn't what's in the
   DB). Use `true` for fields an admin should be able to edit in place.
-- VEI marking is automatic for a `true` field rendered plainly - `{post.title}`
+- Inline-edit marking is automatic for a `true` field rendered plainly - `{post.title}`
   as JSX text, or `src={post.hero}` as an attribute - server-side rendering
   already detects it and marks the element for you. **Don't add
   `` {...dryBind(post.$.field)} `` for a plain, untransformed field** - it's
@@ -129,7 +129,7 @@ To make a collection's entries reachable as real pages:
 1. Turn on the **Slug** feature for the collection (Content Types editor).
 2. Create `pages/<whatever>/[slug]/page.tsx`.
 3. Fetch the entry in it with `dry().collection("<name>").get(...)`.
-4. Build the page (Page Builder's "Build all", or the Page Editor's Build).
+4. Build the page (Page Builder's Save, or "Build all" on the Page Build page).
 
 What this means in practice:
 
@@ -140,7 +140,7 @@ What this means in practice:
 - The call must be written out in the page itself. Hiding it behind a helper
   or a variable (`const c = dry().collection("blog"); await c.get(slug)`)
   leaves the route unresolvable - Page Builder then lists it under
-  "Unresolved dynamic routes" and the Page Editor preview says so too,
+  "Unresolved dynamic routes" and the Page Builder preview says so too,
   rather than silently building nothing.
 - A `.list()` call doesn't count (a page listing related posts isn't
   identified by them), and neither does a `.get()` on a collection without

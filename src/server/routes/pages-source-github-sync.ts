@@ -15,7 +15,7 @@ import { clearBuiltPages } from "../app-router/built-pages-storage.js";
  * belong in the GitHub snapshot or the browser editor cache. */
 /** `pagesSourceStorage.listAll` only exists for the `local` backend (see
  * `pages-source.ts`'s own `handleTree`) - R2 falls back to this same
- * recursive `list()` walk `PageEditor.tsx`/`PageBuild.tsx` already do
+ * recursive `list()` walk `PageBuilder.tsx`/`PageBuild.tsx` already do
  * client-side over HTTP, just directly against the adapter instead. */
 async function listAllSourcePaths(adapter: StorageAdapter, folder = ""): Promise<string[]> {
   const entries = await adapter.list(folder);
@@ -83,7 +83,7 @@ export async function loadGithubSyncConfig(context: DryRouteContext): Promise<{ 
  * `POST {path}/api/github-sync` - pushes ONE atomic snapshot commit of the
  * current `pagesSourceStorage` tree to GitHub (`github-source-sync.ts`),
  * per `status/pages-source-github-versioning.md`. Called by
- * `PageEditor.tsx`'s Build current/Build all and `PageBuild.tsx`'s Build
+ * `PageBuilder.tsx`'s Build current/Build all and `PageBuild.tsx`'s Build
  * all, always AFTER their own `publishBuiltPage(s)` has already succeeded -
  * best-effort by design: this never throws a hard failure back at the
  * caller (see `pushPagesSourceSnapshot`'s own doc comment), it only ever

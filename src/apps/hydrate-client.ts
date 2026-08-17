@@ -88,7 +88,7 @@ async function resolveClientMatch(): Promise<RouteMatch | null> {
  */
 async function main(): Promise<void> {
   // `finally` so this fires even on the early return below (a 404, where
-  // `hydrate()` never runs at all) - `overlay.ts` waits on this event before
+  // `hydrate()` never runs at all) - a public-page listener waits on this event before
   // it's safe to touch the DOM (see `hydrated-event.ts`), and it must not
   // wait forever just because there was nothing to hydrate.
   try {
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     const vnode = await resolveMatchToVNode(match);
     hydrate(vnode as never);
   } finally {
-    // The flag lets a listener attached AFTER this point (`overlay.ts`'s
+    // The flag lets a listener attached AFTER this point (a public-page script's
     // `whenHydrated`) skip straight past the event it necessarily missed.
     (window as { dryHydrated?: boolean }).dryHydrated = true;
     window.dispatchEvent(new Event(HYDRATED_EVENT));

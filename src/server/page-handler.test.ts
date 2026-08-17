@@ -2,14 +2,9 @@ import { h } from "preact";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { DevPagesSource } from "./app-router/route-tree.js";
 
-vi.mock("./vei-session.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./vei-session.js")>();
-  return { ...actual, resolveVeiSession: vi.fn(actual.resolveVeiSession) };
-});
-
-vi.mock("../content-types/access.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../content-types/access.js")>();
-  return { ...actual, resolveAccess: vi.fn(actual.resolveAccess) };
+vi.mock("./pages-source-seed.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pages-source-seed.js")>();
+  return { ...actual, ensurePagesSourceSeeded: vi.fn(actual.ensurePagesSourceSeeded) };
 });
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
@@ -40,17 +35,7 @@ const { handlePageRequest } = await import("./page-handler.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../content-types/engine/index.js");
 const { content } = await import("./config.js");
 const { writeBuiltPage, readBuiltPage } = await import("./app-router/built-pages-storage.js");
-const { resolveVeiSession } = await import("./vei-session.js");
-const { resolveAccess } = await import("../content-types/access.js");
-
-/** Fakes a signed-in VEI session for one request, without needing a real
- * `user`/`role` row in the fixture DB - `resolveVeiContext` only ever reads
- * `session` (for identity) and `access.can()` (for per-type edit rights),
- * neither of which this file's tests care about. */
-function mockVeiSession(): void {
-  vi.mocked(resolveVeiSession).mockResolvedValueOnce({ id: 1, name: "Admin", email: "admin@example.com" });
-  vi.mocked(resolveAccess).mockResolvedValueOnce({ userId: 1, isSuperAdmin: true, permissions: [], can: () => true });
-}
+const { ensurePagesSourceSeeded } = await import("./pages-source-seed.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -116,7 +101,7 @@ describe("handlePageRequest", () => {
 
   it("serves the built /500 artifact when production request setup fails", async () => {
     await writeBuiltPage({ env: {} }, "/500", "error-build", "<html><body>built server error</body></html>");
-    vi.mocked(resolveVeiSession).mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(ensurePagesSourceSeeded).mockRejectedValueOnce(new Error("boom"));
     const response = await handlePageRequest(new Request("http://localhost/anything"), {}, false);
     expect(response!.status).toBe(500);
     expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
@@ -169,7 +154,7 @@ describe("handlePageRequest", () => {
         const html = await response!.text();
         expect(html).toContain("built not found");
         expect(html).not.toContain("hydrate-client.ts");
-        expect(html).not.toContain("vei/overlay.ts");
+        expect(html).not.toContain("edit-launcher.ts");
       }
     });
 
@@ -180,62 +165,20 @@ describe("handlePageRequest", () => {
 
   });
 
-  describe("VEI session (dev or prod - no server-side route matching or SSR at all)", () => {
-    it("splices the overlay/live-render scripts into a real editing session, no-store, when a built page exists at built/live/* - the client resolves routing and content itself from there", async () => {
-      mockVeiSession();
-      const ctx = { env: {} };
-      await writeBuiltPage(ctx, "/vei-cache-hit", "build-1", `<html><body>cached copy<script type="application/json" id="dry-vei-config">{"path":"/dry","edit":false}</script></body></html>`);
-
-      const response = await handlePageRequest(new Request("http://localhost/vei-cache-hit"), {}, false);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(200);
-      expect(response!.headers.get("Cache-Control")).toBe("no-store");
-      const html = await response!.text();
-      expect(html).toContain("cached copy");
-      expect(html).toContain('"edit":true');
-      expect(html).not.toContain('"edit":false');
-      expect(html).toContain("vei-live-refresh.ts");
-    });
-
-    it("serves a minimal shell with no server-side route match when nothing is cached for this path - the client resolves routing (including the true-404 case) itself", async () => {
-      mockVeiSession();
-      // Not even the fixture route tree needs to have this route (or any
-      // route at all) - unlike the old server-SSR pipeline, this branch
-      // never calls `matchRoute`.
-      const response = await handlePageRequest(new Request("http://localhost/genuinely-nowhere"), {}, false);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(200);
-      expect(response!.headers.get("Cache-Control")).toBe("no-store");
-      const html = await response!.text();
-      expect(html).toContain('"edit":true');
-      expect(html).toContain("vei/overlay.ts");
-      expect(html).toContain("vei-live-refresh.ts");
-      expect(html).not.toContain("hydrate-client.ts");
-    });
-
-    it("still 301s to a matching redirect row before falling to the shell", async () => {
-      mockVeiSession();
-      const response = await handlePageRequest(new Request("http://localhost/blogs/old-post?ref=x"), {}, false);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(301);
-      expect(response!.headers.get("Location")).toBe("http://localhost/blogs/new-post?ref=x");
-    });
-  });
-
   describe("dev (isDev: true) - unchanged from before mục 12", () => {
     it("renders the pages-root 404.tsx live (full SSR) at status 404 for a path with no built page, no route match, and no redirect", async () => {
       // `fixtureDevPagesSource()` supplies the live-source fixture here; the
       // status code is fixed independently of
       // which source rendered the page (see `render.ts`'s
-      // `RenderPageOptions.status` doc comment); the hydrate/VEI script
-      // tags are what actually distinguish this from prod's bare fallback
-      // above, not the exact body markup.
+      // `RenderPageOptions.status` doc comment); the hydrate/edit-launcher
+      // script tags are what actually distinguish this from prod's bare
+      // fallback above, not the exact body markup.
       const response = await handlePageRequest(new Request("http://localhost/this-route-does-not-exist-anywhere"), {}, true, fixtureDevPagesSource());
       expect(response).not.toBeNull();
       expect(response!.status).toBe(404);
       const html = await response!.text();
       expect(html).toContain("hydrate-client.ts");
-      expect(html).toContain("vei/overlay.ts");
+      expect(html).toContain("edit-launcher.ts");
     });
 
     it("never even looks at built/live/* - a built page is ignored in favor of a live re-render", async () => {

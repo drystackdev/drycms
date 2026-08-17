@@ -25,10 +25,10 @@ export interface CodePanelProps {
 
 /**
  * The Page tab's drag-resizable code panel (`plans/new-ui-page-builder.md`
- * mục 6) - `useResizablePanel` (already used 3x in `PageEditor.tsx`) drives
+ * mục 6) - `useResizablePanel` (already used 3x in `PageBuilder.tsx`) drives
  * the divider, `Editer` is the same editor component, unmodified. Kept to
  * ONE file's worth of Save/Reset (the currently-previewed `page.tsx`), not
- * `PageEditor.tsx`'s whole-tree save-everything-dirty behavior - Page
+ * `PageBuilder.tsx`'s whole-tree save-everything-dirty behavior - Page
  * Builder edits one file at a time by design (mục 10's sanctioned cut).
  */
 export default function CodePanel(props: CodePanelProps) {

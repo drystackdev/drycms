@@ -52,8 +52,8 @@ describe("isEdgeCacheable", () => {
     expect(isEdgeCacheable(new Request("https://site.test/about", { method: "POST" }))).toBe(false);
   });
 
-  it("rejects a viewer carrying an admin or VEI cookie", () => {
-    const cookies = ["drycms_session=abc", "drycms_vei=abc", "drycms_admin=", "other=1; drycms_vei=abc"];
+  it("rejects a viewer carrying an admin session or the signed-in hint cookie", () => {
+    const cookies = ["drycms_session=abc", "drycms_admin=", "other=1; drycms_admin=1"];
     for (const cookie of cookies) {
       expect(isEdgeCacheable(new Request("https://site.test/about", { headers: { Cookie: cookie } }))).toBe(false);
     }
@@ -110,8 +110,8 @@ describe("readEdgeCache / storeEdgeCache", () => {
 
     storeEdgeCache(request, pageResponse("<html>404</html>", { status: 404 }), ctx);
     storeEdgeCache(request, new Response("{}", { headers: { "Content-Type": "application/json" } }), ctx);
-    storeEdgeCache(request, pageResponse("<html>vei</html>", { headers: { "Content-Type": "text/html", "Cache-Control": "no-store" } }), ctx);
-    storeEdgeCache(request, pageResponse("<html>login</html>", { headers: { "Content-Type": "text/html", "Set-Cookie": "drycms_vei=x" } }), ctx);
+    storeEdgeCache(request, pageResponse("<html>no-store</html>", { headers: { "Content-Type": "text/html", "Cache-Control": "no-store" } }), ctx);
+    storeEdgeCache(request, pageResponse("<html>login</html>", { headers: { "Content-Type": "text/html", "Set-Cookie": "drycms_admin=1" } }), ctx);
 
     await Promise.all(waitUntils);
     expect(cache.put).not.toHaveBeenCalled();

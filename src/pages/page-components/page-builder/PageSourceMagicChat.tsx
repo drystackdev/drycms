@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import ConfirmDialog from "../../components/ConfirmDialog.js";
-import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
-import { SparkleIcon } from "../../components/AiSparkleIcon.js";
-import { EraserIcon, LockIcon, XIcon } from "../../components/icons/index.js";
-import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
-import { toast } from "../../components/Toast.js";
+import ConfirmDialog from "../../../components/ConfirmDialog.js";
+import AiKeyPicker, { useAiKeySelection } from "../../../components/AiKeyPicker.js";
+import { SparkleIcon } from "../../../components/AiSparkleIcon.js";
+import { EraserIcon, LockIcon, XIcon } from "../../../components/icons/index.js";
+import { useOverlayScrollbars } from "../../../hooks/overlayscrollbars.js";
+import { toast } from "../../../components/Toast.js";
 import {
   discardPageSourceMagicChatSession,
   loadPageSourceMagicChatSession,
   savePageSourceMagicChatSession,
 } from "./page-source-magic-chat-store.js";
 import type { PageSourceChatBubble, PageSourceMagicChatHistoryMessage } from "./page-source-magic-chat-store.js";
-import { parsePartialPageSourceYaml } from "../../page-components/ai-page-source-protocol.js";
+import { parsePartialPageSourceYaml } from "../../../page-components/ai-page-source-protocol.js";
 
 const { path } = window.__DRY_CONFIG__;
 
@@ -31,7 +31,7 @@ const { path } = window.__DRY_CONFIG__;
  * `kind: chat` reply. `path`/`code` below are still passed in (what's
  * CURRENTLY open, if anything) purely as context for the model - never a
  * constraint on which file(s) it may touch. The existing Save/Reset/
- * diagnostics flow already in `PageEditor.tsx` is the safety net: nothing
+ * diagnostics flow already in `PageBuilder.tsx` is the safety net: nothing
  * here ever touches real storage itself (see `ai-page-source-write.ts`'s own
  * doc comment), only the in-memory buffer the admin's own Save button
  * already writes from.
@@ -141,11 +141,11 @@ export interface PageSourceMagicChatProps {
    * when `path` is `""`. */
   code: string;
   /** Every file path that already exists in the project's source tree
-   * (`PageEditor.tsx`'s `Object.keys(sourceByPath)`) - lets the model tell
+   * (`PageBuilder.tsx`'s `Object.keys(sourceByPath)`) - lets the model tell
    * "rewrite an existing file" from "create a new one" without a `kind: read`
    * hop just to discover the tree's shape. */
   projectFiles: string[];
-  /** Writes new content into a file's buffer - `PageEditor.tsx`'s
+  /** Writes new content into a file's buffer - `PageBuilder.tsx`'s
    * `setSourceByPath`-based setter, the exact same seam `handleChange`/
    * `handleReset` already use, so an AI edit is indistinguishable from a
    * hand-typed one to the rest of the page (dirty tracking, diagnostics,
@@ -153,7 +153,7 @@ export interface PageSourceMagicChatProps {
    * `pushCodeWrittenStatus`), with whatever `path` THAT write named - never
    * assumed to be the file currently open. */
   onCodeChange: (path: string, code: string) => void;
-  /** `PageEditor.tsx`'s own `canEdit` (`canAccess(PAGE_BUILDER_RESOURCE_ID,
+  /** `PageBuilder.tsx`'s own `canEdit` (`canAccess(PAGE_BUILDER_RESOURCE_ID,
    * "setting")`) - the same single toggle already gating the whole page,
    * reused as-is rather than adding a separate "magic" grant (see
    * `status/page-editor-magic-chat.md`: the System fieldset's toggles are

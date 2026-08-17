@@ -55,7 +55,7 @@ import {
   scrollToField,
   takeEntrySaveRequest,
 } from "./content-entry-editor/field-events.js";
-import { closeVeiDialog, isVeiFrame } from "./vei/bridge.js";
+import { closeVeiDialog, isVeiFrame } from "./content-entry-editor/builder-bridge.js";
 import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
 import { showPublishStatus } from "../store/sync.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
@@ -346,7 +346,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // Outside the VEI dialog, this entry's title/Cancel/Preview/Save move into
   // DryLayout's shared topbar instead of a local `.page-header` - see
   // `usePageHeaderActions`. Inside the dialog (`veiFrame`), there's no
-  // topbar to move them to (`VeiFrame.tsx` skips `DryLayout` entirely), so
+  // topbar to move them to (`BuilderBridgeFrame.tsx` skips `DryLayout` entirely), so
   // this stays `null` and the `.page-header` block further down (unchanged)
   // renders them locally exactly as before. `handleSave`/`saving` are
   // referenced before their own declarations below - safe, `function
@@ -468,7 +468,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   useEffect(() => listenForFieldSet(applyFieldSet), [typeSlug, entryId]);
 
   // Broadcasts the EXACT field currently focused - the Visual Editing
-  // Interface (`overlay.ts`'s `vei:focus` handling) scrolls the
+  // Interface (`VeiEntryFrame.tsx`'s `vei:focus` relay) scrolls the
   // corresponding marked element on the public page into view and swaps its
   // baseline dashed outline for a solid one while it's the one actually
   // being worked on. `focusin`/`focusout` bubble (unlike `focus`/`blur`), so
@@ -484,7 +484,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       // `EntryValue`'s shape through). A nested `flatten` field's own
       // composite path ("hero.title", `FieldRenderer.tsx`'s `pathPrefix`)
       // matches a marker's `ref.path` exactly, so keeping it whole lets
-      // `overlay.ts` highlight the ONE field actually focused instead of
+      // the preview highlight the ONE field actually focused instead of
       // every marker under the same top-level component.
       return anchor?.getAttribute(FIELD_ANCHOR_ATTR) ?? null;
     };
@@ -514,7 +514,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // navigation, but `value` flips from `null` exactly once per load - that's
   // the real "fields are on screen now" signal this effect waits for.
   //
-  // `?_path=` (`overlay.ts`'s `editorUrl`, only ever set alongside `_field`
+  // `?_path=` (`VeiEntryFrame.tsx`'s `editorUrl`, only ever set alongside `_field`
   // and only when the click landed past a top-level field) reaches further
   // than a top-level field can highlight on its own - `revealPath` below
   // threads it through `renderFieldNodes` -> `FieldRenderer`, which now gives
@@ -634,7 +634,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       // Background, best-effort: rebuilds whatever already-published static
       // pages depend on this content type, so an edit made here doesn't sit
       // stale until someone remembers to visit `/dry/page-build`. Skipped
-      // inside a VEI dialog - `saveAll()` (`apps/vei/overlay.ts`) already
+      // inside a VEI dialog - `saveAll()` (`pages/page-components/page-builder/` (Page Builder's preview)) already
       // does this itself, batched across every entry it just saved; doing it
       // here too would rebuild the same pages twice.
       if (saved && type && !veiFrame) {
@@ -776,7 +776,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     <EntryMediaContext.Provider value={entryMediaValue}>
       {/* Outside the dialog, this same title/Cancel/Preview/Save row is
        * handed to DryLayout's topbar instead (`usePageHeaderActions` above)
-       * - `VeiFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
+       * - `BuilderBridgeFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
        * dialog keeps its own local header exactly as it always has. */}
       {veiFrame && (
         <div class="page-header">

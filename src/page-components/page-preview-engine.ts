@@ -1,7 +1,7 @@
 import { buildPage, builtAssetUrlForJsPath, type PageBuildInput, type PageBuildResult } from "./page-build.js";
 
 /**
- * The part of `PageEditor.tsx`'s live preview (`refreshPreview`) that has
+ * The part of `PageBuilder.tsx`'s live preview (`refreshPreview`) that has
  * real reuse value for a second caller (`PageBuilder.tsx`, `plans/
  * new-ui-page-builder.md` mục 10) - calling `buildPage()` against in-browser,
  * not-yet-saved source and turning the result into a self-contained
@@ -27,7 +27,7 @@ export const PREVIEW_SAVE_MESSAGE = "dry-page-preview-save";
  * mode is on (`buildPreviewBridgeScript({ vei: true })`) - `plans/
  * new-ui-page-builder.md` mục 3/8. Carries the FIRST ref decoded off the
  * clicked element's marker attribute, same "first ref wins" rule
- * `apps/vei/overlay.ts`'s own `intercept` uses. */
+ * the deleted public-site overlay's own `intercept` uses. */
 export const PREVIEW_VEI_CLICK_MESSAGE = "dry-page-preview-vei-click";
 export const PREVIEW_VEI_MODE_MESSAGE = "dry-page-preview-vei-mode";
 export const PREVIEW_TITLE_MESSAGE = "dry-page-preview-title";
@@ -45,7 +45,7 @@ export interface PreviewVeiClickRef {
  * when VEI is enabled (see `buildPreviewSrcdoc`), never unconditionally -
  * the plan's own "Không cần thêm css js thừa riêng cho chế độ VEI phục vụ
  * việc đã đăng nhập" requirement. Deliberately much smaller than
- * `apps/vei/overlay-styles.ts`'s own `MARKER_STYLES` (no brand-color
+ * the deleted overlay's own `MARKER_STYLES` (no brand-color
  * `--dry-vei-highlight` fetch, no separate focused-field state) - this is
  * the "tương đồng một vài chức năng", not a 1:1 port. */
 const VEI_PREVIEW_MARKER_CSS = `
@@ -89,7 +89,7 @@ export function buildPreviewStorageShimScript(): string {
  * gets a chance to, since a marked field is very often nested inside an
  * `<a href>` (a card whose title is both a link and an editable field) and
  * VEI mode wants that click to open the field editor, not navigate away -
- * same precedence `apps/vei/overlay.ts`'s own `intercept` gives a marked
+ * same precedence the deleted public-site overlay's own `intercept` gives a marked
  * click over the page's native behavior.
  */
 export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiToggle?: boolean }): string {
@@ -117,13 +117,13 @@ export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiTo
 
 export interface BuildPreviewSrcdocInput {
   buildInput: PageBuildInput;
-  /** `assetHrefs.veiOverlayHref` - stripped from the built HTML by exact
-   * href match, same as `PageEditor.tsx` always did: whoever is running
+  /** `assetHrefs.editLauncherHref` - stripped from the built HTML by exact
+   * href match, same as `PageBuilder.tsx` always did: whoever is running
    * this preview is already signed in, so the public site's own
    * "Edit content" overlay script has nothing useful to do inside a
    * detached `srcdoc` render (no real route, no server round trip
    * possible). */
-  veiOverlayHref: string;
+  editLauncherHref: string;
   /** Extends the injected bridge script with the `[data-dry]` click branch
    * and injects `VEI_PREVIEW_MARKER_CSS` - independent of
    * `buildInput.vei` (which controls whether `buildPage()` actually BOXES
@@ -154,11 +154,11 @@ function previewModuleDataUrl(source: string): string {
 }
 
 /**
- * `buildPage()` + everything `PageEditor.tsx`'s `refreshPreview` used to do
+ * `buildPage()` + everything `PageBuilder.tsx`'s `refreshPreview` used to do
  * by hand to turn the result into a droppable `iframe.srcdoc` string:
  * interactive-hydration import map (each compiled asset's real
  * `/api/built-assets` URL remapped to a `Blob` object URL holding the exact
- * source just compiled - see `PageEditor.tsx`'s own doc comment on this
+ * source just compiled - see `PageBuilder.tsx`'s own doc comment on this
  * for the full "why"), an origin-qualifying `<base href>` (a `srcdoc`
  * document has no origin of its own), and the navigate/save/vei bridge
  * script. Never calls `publishBuiltPage` - this is preview-only, same as
@@ -178,7 +178,7 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
     importMap.imports[realUrl] = moduleUrl;
     // Vite dev's import-analysis pass appends `?import` to every dynamic
     // `import()` it instruments (`hydrate-built.ts`'s own entry/layout/
-    // preact-runtime imports included) - see `PageEditor.tsx`'s original
+    // preact-runtime imports included) - see `PageBuilder.tsx`'s original
     // doc comment on this exact line for the full trace of why the plain
     // key alone would silently miss under `bun run dev`.
     importMap.imports[`${realUrl}?import`] = moduleUrl;
@@ -187,7 +187,7 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
   // Keep Vite's dev client in the preview: hydrate-built and its dependency
   // graph are not imported by the admin bundle, so this frame owns their HMR
   // subscription. HTTP caching is independent from that WebSocket channel.
-  const withoutVei = result.html.replace(`<script type="module" src="${input.veiOverlayHref}"></script>`, "");
+  const withoutVei = result.html.replace(`<script type="module" src="${input.editLauncherHref}"></script>`, "");
 
   const veiStyle = input.veiEnabled ? `<style>${VEI_PREVIEW_MARKER_CSS}</style>` : "";
   const headExtras =

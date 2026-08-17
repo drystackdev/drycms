@@ -5,7 +5,7 @@ import { resolveImageSrc } from "../storage/http-source.js";
 /**
  * `PageBuilder.tsx`'s VEI mode live-preview patch - the "Preview = patch DOM
  * trực tiếp" half of `plans/new-ui-page-builder.md` mục 8, adapted from
- * `apps/vei/overlay.ts`'s own `applyPreview` to take an explicit `Document`
+ * the deleted public-site overlay's own `applyPreview` to take an explicit `Document`
  * instead of always reading the global `document`: the public site's
  * overlay patches the page it's INJECTED INTO, while Page Builder patches a
  * SEPARATE preview iframe's `contentDocument` from its own parent document -
@@ -16,7 +16,7 @@ import { resolveImageSrc } from "../storage/http-source.js";
 /** Walks `value` down the part of `ref.path` below `fromField` - the field
  * editor reports a change per TOP-LEVEL field, so a change to `hero.name`
  * arrives as the whole `hero` object and the rest of the path is resolved
- * here, same as `overlay.ts`'s own `valueAtPath`. */
+ * here, same as that overlay's own `valueAtPath`. */
 function valueAtPath(value: unknown, path: string, fromField: string): unknown {
   const segments = path.split(".");
   if (segments[0] !== fromField) return undefined;
@@ -28,7 +28,7 @@ function valueAtPath(value: unknown, path: string, fromField: string): unknown {
   return current;
 }
 
-/** Same translation `overlay.ts`'s own `attributeValue` does - only `image`
+/** Same translation that overlay's own `attributeValue` does - only `image`
  * needs it, since it stores a bare storage id the page resolved through
  * `resolveImageSrc` at render time. */
 function attributeValue(ref: DryRef, value: unknown, basePath: string): string {

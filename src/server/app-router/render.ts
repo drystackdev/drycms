@@ -8,9 +8,9 @@ import {
   buildHeadPrefix,
   buildSeoTags,
   buildStructuredData,
-  veiConfigScript,
+  editConfigScript,
 } from "./build-document.js";
-import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_LIVE_REFRESH_HREF, VEI_OVERLAY_HREF } from "./assets.js";
+import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, EDIT_LAUNCHER_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { resolveMatchToVNode } from "./resolve-match.js";
@@ -55,7 +55,7 @@ export function renderPage(
         const origin = dryContext.origin ?? "";
         const pathname = dryContext.pathname ?? "";
         const head =
-          buildHeadPrefix(adminPath, siteLang, { globalsCssHref: GLOBALS_CSS_HREF, hydrateEntryHref: HYDRATE_ENTRY_HREF, veiOverlayHref: VEI_OVERLAY_HREF }) +
+          buildHeadPrefix(adminPath, siteLang, { globalsCssHref: GLOBALS_CSS_HREF, hydrateEntryHref: HYDRATE_ENTRY_HREF, editLauncherHref: EDIT_LAUNCHER_HREF }) +
           buildSeoTags(seoLayers, origin, pathname) +
           buildStructuredData(seoLayers, origin, pathname, dryContext.seoEntryDates) +
           DOC_BODY_OPEN;
@@ -69,7 +69,7 @@ export function renderPage(
         const devManifest = options.devHydrateManifest
           ? `<script type="application/json" id="dry-dev-hydrate-manifest">${JSON.stringify(options.devHydrateManifest).replace(/</g, "\\u003c")}</script>`
           : "";
-        const rest = bodyHtml + replayData + devManifest + veiConfigScript(adminPath, dryContext.vei !== undefined) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
+        const rest = bodyHtml + replayData + devManifest + editConfigScript(adminPath) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
         controller.enqueue(encoder.encode(rest));
         controller.close();
         options.onDocumentReady?.(head + rest);
@@ -148,49 +148,6 @@ export async function renderErrorHtml(loader: ModuleLoader): Promise<string> {
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}"></head><body>${body}</body></html>`
   );
-}
-
-// `veiConfigScript`'s own deterministic output for this deployment's fixed
-// `adminPath` - computed once at module scope (not per-request, nothing
-// here depends on the request) so `spliceVeiScripts` can find/replace the
-// EXACT substring `buildPage()`'s `editMode: false` render always produces,
-// rather than re-deriving or regex-matching it.
-const VEI_LIVE_CONFIG_INERT = veiConfigScript(adminPath, false);
-const VEI_LIVE_CONFIG_EDIT = veiConfigScript(adminPath, true);
-const VEI_LIVE_REFRESH_SCRIPT = `<script type="module" src="${VEI_LIVE_REFRESH_HREF}"></script>`;
-
-/**
- * A VEI session's fast path (`page-handler.ts`, on a `readBuiltPage` cache
- * hit): that cached HTML already came from a real `buildPage()` render
- * (`page-build.ts`), which always bakes in `edit: false`
- * (`build-document.ts`'s `BuildDocumentContext.editMode`) plus the overlay
- * script (inert while `edit` reads `false`). This just flips that flag to
- * `true` and appends the live-render script - `overlay.ts` and
- * `vei-live-refresh.ts` both then read a real editing session off the SAME
- * `#dry-vei-config` element every other App Router page already carries, no
- * separate manifest needed. A plain string replace, not a DOM parse: the
- * substring being replaced is `veiConfigScript`'s own deterministic output,
- * not arbitrary/untrusted content, so it's exact rather than fuzzy.
- */
-export function spliceVeiScripts(cachedHtml: string): string {
-  return cachedHtml.replace(VEI_LIVE_CONFIG_INERT, VEI_LIVE_CONFIG_EDIT).replace(BODY_AND_HTML_CLOSE, VEI_LIVE_REFRESH_SCRIPT + BODY_AND_HTML_CLOSE);
-}
-
-/**
- * A VEI session's slow path (`page-handler.ts`, nothing cached for this
- * pathname at all - never built, or genuinely a brand-new page): no
- * server-side route match is attempted here, deliberately -
- * `vei-live-refresh.ts` resolves routing itself, against the LIVE pages
- * source, never this build's own possibly-stale snapshot. No hydrate script
- * (`hydrateEntryHref: ""` - `buildHeadPrefix`'s own doc comment) and no
- * `ISODATA_MARKER`: nothing here needs `preact-iso`'s real hydrate pass, and
- * omitting the marker is exactly what makes its `hydrate()` call always take
- * the plain `render()` branch instead once `vei-live-refresh.ts` calls it -
- * see that script's own doc comment for the full mechanics.
- */
-export function buildVeiShellDocument(): string {
-  const head = buildHeadPrefix(adminPath, siteLang, { globalsCssHref: GLOBALS_CSS_HREF, hydrateEntryHref: "", veiOverlayHref: VEI_OVERLAY_HREF });
-  return head + DOC_BODY_OPEN + VEI_LIVE_CONFIG_EDIT + VEI_LIVE_REFRESH_SCRIPT + BODY_AND_HTML_CLOSE;
 }
 
 /** Exported for `render.test.ts`/callers that want a synchronous render of

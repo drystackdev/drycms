@@ -59,11 +59,10 @@ export function requiresCsrf(request: Request, segment: string, slug?: string): 
   // per-type `view`/`setting` permission, never a state change. CSRF
   // protects against a forged STATE CHANGE riding a victim's ambient
   // credentials; there's none to forge here, and (unlike every other
-  // segment) this one is legitimately called from a PUBLIC page during a
-  // VEI session (`vei-live-refresh.ts`), which structurally can't read the
-  // CSRF cookie at all (`vei-routes.ts`'s own doc comment on why VEI enters
-  // edit mode via navigation instead) - same "no meaningful CSRF target"
-  // reasoning `mcp`/`oauth` above already get, for a different reason.
+  // segment) this one is legitimately called from Page Builder's `srcdoc`
+  // preview iframes, which can't read the admin-path-scoped CSRF cookie -
+  // same "no meaningful CSRF target" reasoning `mcp`/`oauth` above already
+  // get, for a different reason.
   if (segment === "dry-http") return false;
   if (segment !== "auth") return true;
   return slug !== "login";

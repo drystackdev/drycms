@@ -7,7 +7,8 @@
  * live dev-server/VEI session, nothing reaches a real site visitor until a
  * human explicitly Builds/Publishes. Until this existed, an MCP-authored
  * change to a `page.tsx` was invisible everywhere: the Page Editor's own
- * "needs build" dot (`PageEditor.tsx`'s `unbuiltPaths`) is `sessionStorage`,
+ * "needs build" dot (the deleted Page Editor's `unbuiltPaths`) was
+ * `sessionStorage`,
  * populated only by THAT tab's own Save button - an MCP write from outside
  * any browser session never touched it.
  *

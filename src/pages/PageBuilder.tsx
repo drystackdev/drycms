@@ -14,7 +14,7 @@ import { usePageBuilderSource } from "../page-components/use-page-builder-source
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { fetchPreviewEntries } from "../page-components/dynamic-routes.js";
 import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
-import { MD_ROOT, PAGES_ROOT, rootOf } from "../server/app-router/source-roots.js";
+import { MD_ROOT, PAGES_ROOT, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import type { PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
 import { encodeEntryId } from "../lib/id-hash.js";
@@ -25,6 +25,8 @@ import CodePanel from "./page-components/page-builder/CodePanel.js";
 import FileDialog from "./page-components/page-builder/FileDialog.js";
 import VeiEntryFrame from "./page-components/page-builder/VeiEntryFrame.js";
 import SavePreviewDialog, { type SaveProgress } from "./page-components/page-builder/SavePreviewDialog.js";
+import PageSourceMagicChat from "./page-components/page-builder/PageSourceMagicChat.js";
+import { CORE_STYLE_FILES } from "./page-components/core-styles/registry.js";
 import { getAllEntryDraftRecords, putEntryDraftRecord, type EntryDraftRecord } from "../content-types/entry-draft-db.js";
 import { discardEntryDraft } from "../content-types/entry-draft-store.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
@@ -67,10 +69,10 @@ function readBuilderState(): PersistedBuilderState {
  * open where, VEI on/off, the resolved route) and the handlers that move
  * between them.
  *
- * Deliberately NOT `PageEditor.tsx`'s tree/draft engine (mục 10's
- * sanctioned cut, see `use-page-builder-source.ts`'s own doc comment) -
- * only the real reuse win (`buildPage()` + the preview `srcdoc` pipeline,
- * `page-preview-engine.ts`) is shared between the two pages.
+ * Deliberately NOT the deleted Page Editor's tree/draft engine (mục 10's
+ * sanctioned cut, see `use-page-builder-source.ts`'s own doc comment) - what
+ * survived that page is here: the file menu's create/rename/delete, Magic
+ * Chat, and the core-style recovery check.
  */
 export default function PageBuilder() {
   const [previewTitle, setPreviewTitle] = useState("");
@@ -78,7 +80,8 @@ export default function PageBuilder() {
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
 
-  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving, dirtyPaths } = usePageBuilderSource(path, canEdit);
+  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving, dirtyPaths, createFile, renameFile, deleteFile } =
+    usePageBuilderSource(path, canEdit);
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
@@ -96,7 +99,7 @@ export default function PageBuilder() {
         toast.add({ type: "error", title: "Failed to load build context." });
       }
     })();
-    // Best-effort, same "never fatal" spirit as `PageEditor.tsx`'s own fetch
+    // Best-effort, same "never fatal" spirit as `PageBuilder.tsx`'s own fetch
     // of this - a missing/failed `dry.generated.d.ts` just means `dry()`
     // shows as an untyped global in the editor until it resolves.
     void fetch(`${path}/api/types-cache`, { credentials: "same-origin" })
@@ -106,7 +109,7 @@ export default function PageBuilder() {
   }, [canEdit]);
 
   /** Every OTHER loaded file, PLUS `dry.generated.d.ts` - `Editer`'s ambient
-   * reference set for cross-file TS resolution, mirroring `PageEditor.tsx`'s
+   * reference set for cross-file TS resolution, mirroring `PageBuilder.tsx`'s
    * own `extraFiles` memo exactly (same reasons: `md/` holds plain Markdown,
    * never real TS/TSX an editor's Language Service should reason about, and
    * the currently-open file's own path is excluded per-caller below so its
@@ -147,6 +150,7 @@ export default function PageBuilder() {
   const [saveDrafts, setSaveDrafts] = useState<EntryDraftRecord[]>([]);
   const [draftsHydrated, setDraftsHydrated] = useState(false);
   const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null);
+  const [recoveredCoreFiles, setRecoveredCoreFiles] = useState<string[]>([]);
 
   useEffect(() => {
     void getAllEntryDraftRecords().then((records) => {
@@ -159,6 +163,40 @@ export default function PageBuilder() {
       setDraftsHydrated(true);
     });
   }, []);
+
+  /** Core `styles/` files (`core-styles/registry.ts`) back a hardcoded build
+   * entry and each other's `@import`s (`source-roots.ts`'s
+   * `isCoreStyleFilePath` doc comment) - restore any missing one (a fresh
+   * checkout, or an old project predating this lock) instead of leaving the
+   * styles tab, and the build, silently broken. Page Editor used to do this
+   * inside its own tree load; Page Builder is the only editor left, so the
+   * check moved here. Runs once per loaded tree. */
+  const ranCoreStyleRecovery = useRef(false);
+  useEffect(() => {
+    if (!sourceByPath || ranCoreStyleRecovery.current) return;
+    ranCoreStyleRecovery.current = true;
+    const missing = CORE_STYLE_FILES.filter((file) => !(`${STYLES_ROOT}/${file.name}` in sourceByPath));
+    if (missing.length === 0) return;
+    void (async () => {
+      const restored: string[] = [];
+      for (const file of missing) {
+        try {
+          await createFile(`${STYLES_ROOT}/${file.name}`, file.defaultContent);
+          restored.push(file.name);
+        } catch {
+          // A failed restore is reported by its absence from the panel -
+          // never fatal to opening the builder.
+        }
+      }
+      if (restored.length === 0) return;
+      setRecoveredCoreFiles(restored);
+      toast.add({
+        type: "info",
+        title: restored.length > 1 ? `Restored ${restored.length} built-in style files.` : `Restored ${restored[0]}.`,
+        description: "See the styles tab in the file menu.",
+      });
+    })();
+  }, [sourceByPath, createFile]);
 
   useEffect(() => {
     sessionStorage.setItem(BUILDER_STATE_KEY, JSON.stringify({ panelMode, panelWidth: codePanelWidth, fileDialogPath, veiTarget } satisfies PersistedBuilderState));
@@ -201,6 +239,12 @@ export default function PageBuilder() {
     () => (fileDialogPath ? extraFilesExcluding(fileDialogPath) : baseExtraFiles),
     [fileDialogPath, baseExtraFiles],
   );
+  /** What Magic Chat treats as "the file the admin is looking at" - the
+   * dialog's file when one is open, otherwise the previewed route's own
+   * entry file. `""` when neither resolves (a route with no page source
+   * yet), which the chat accepts: `path` is context, never a limit on what
+   * it may write. */
+  const magicPath = fileDialogPath ?? match?.entryPath ?? "";
 
   async function resolvePageFilePathname(entryPath: string): Promise<string | null> {
     for (const candidate of staticPagePaths(manifest)) {
@@ -237,7 +281,54 @@ export default function PageBuilder() {
     setBubbleRoot(null);
   }
 
+  /** Creating/renaming/deleting all write straight through to storage
+   * (`use-page-builder-source.ts`'s own doc comment) - there is no draft
+   * state a structural change could sit in, so the only work left here is
+   * keeping whatever is currently OPEN pointed at a path that still exists. */
+  async function handleCreateFile(filePath: string, code: string) {
+    await createFile(filePath, code);
+    setBubbleRoot(null);
+    if (rootOf(filePath)?.id === PAGES_ROOT && /(^|\/)page\.tsx$/.test(filePath)) await handleSelectPageFile(filePath);
+    else setFileDialogPath(filePath);
+  }
+
+  async function handleRenameFile(from: string, to: string) {
+    await renameFile(from, to);
+    if (fileDialogPath === from) setFileDialogPath(to);
+    // The previewed route is derived from the manifest, which the rename
+    // just changed - re-resolving keeps the preview on the same FILE rather
+    // than on a pathname that no longer maps to anything.
+    if (match?.entryPath === from) {
+      const resolved = await resolvePageFilePathname(to);
+      if (resolved) setPathname(resolved);
+    }
+  }
+
+  async function handleDeleteFile(filePath: string) {
+    await deleteFile(filePath);
+    if (fileDialogPath === filePath) setFileDialogPath(null);
+    if (match?.entryPath === filePath) setPathname("/");
+  }
+
   const handleVeiClick = useCallback((ref: PreviewVeiClickRef) => setVeiTarget(ref), []);
+
+  /** Every file that already exists in this project's source tree, for
+   * `PageSourceMagicChat`'s own orientation (`PageSourceMagicChatProps.
+   * projectFiles`) - Magic has authority to write ANY of them, or a brand
+   * new path, not just whatever's currently open. */
+  const projectFiles = useMemo(() => Object.keys(sourceByPath ?? {}), [sourceByPath]);
+
+  /** Magic's write callback goes through the SAME `updateSource` seam a
+   * keystroke in `CodePanel`/`FileDialog` does, so an AI edit is
+   * indistinguishable from a hand-typed one to the rest of this page: it
+   * lands in `dirtyPaths`, shows up as a row in `SavePreviewDialog`, and is
+   * published by the one Save pipeline - including a write to a file that
+   * isn't currently open, which is the normal case for a multi-file turn
+   * (`status/magic-chat-multifile.md`). */
+  const handleMagicCodeChange = useCallback(
+    (changedPath: string, code: string) => updateSource(changedPath, code),
+    [updateSource],
+  );
 
   const handleFieldInput = useCallback((detail: PreviewPatchDetail) => {
     const key = dryVeiOverrideKey(detail.typeSlug, detail.entryId);
@@ -399,7 +490,11 @@ export default function PageBuilder() {
       />
 
       <Toolbar
-        onExit={() => (window.location.href = `${path}/dashboard`)}
+        // Back to the public page being previewed - the return leg of
+        // `apps/edit-launcher.ts`'s "Edit" button, which is how a signed-in
+        // admin gets here from the site in the first place.
+        onExit={() => (window.location.href = pathname)}
+        onDashboard={() => (window.location.href = `${path}/dashboard`)}
         onOpenMenu={() => setBubbleRoot((current) => (current ? null : PAGES_ROOT))}
         panelMode={panelMode}
         onTogglePanel={togglePanel}
@@ -416,6 +511,10 @@ export default function PageBuilder() {
           onRootChange={setBubbleRoot}
           onSelectPageFile={(entryPath) => void handleSelectPageFile(entryPath)}
           onSelectOtherFile={handleSelectOtherFile}
+          recoveredCoreFiles={recoveredCoreFiles}
+          onCreateFile={handleCreateFile}
+          onRenameFile={handleRenameFile}
+          onDeleteFile={handleDeleteFile}
           onClose={() => setBubbleRoot(null)}
         />
       )}
@@ -481,6 +580,17 @@ export default function PageBuilder() {
           onSaved={handleVeiSaved}
         />
       )}
+
+      {/* The file the chat treats as CONTEXT ("what the admin is looking
+          at") - the dialog's file when one is open, otherwise the route's
+          own page.tsx. Never a limit on what Magic may write. */}
+      <PageSourceMagicChat
+        path={magicPath}
+        code={sourceByPath[magicPath] ?? ""}
+        projectFiles={projectFiles}
+        onCodeChange={handleMagicCodeChange}
+        canUse={canEdit}
+      />
 
       <SavePreviewDialog
         open={saveDialogOpen}

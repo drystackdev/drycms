@@ -19,7 +19,7 @@ import type { DryVeiOverrideMap } from "../../../content-types/dry-reader-http.j
  * The full-viewport `<iframe srcdoc>` `/dry/page-builder` is built around
  * (`plans/new-ui-page-builder.md` mục 2/3) - "Nguyên trang là iframe chiếm
  * 100% screen của browser có cùng chức năng với preview". Unlike
- * `PageEditor.tsx`'s own preview column, there's no zoom/viewport
+ * `PageBuilder.tsx`'s own preview column, there's no zoom/viewport
  * simulation here: the iframe renders at real 1:1 size, the browser's own
  * window IS the viewport.
  */
@@ -85,7 +85,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
             origin,
             adminPath,
             siteLang: "en",
-            assets: { globalsCssHref: assetHrefs.globalsCssHref, hydrateEntryHref: assetHrefs.hydrateBuiltHref, veiOverlayHref: assetHrefs.veiOverlayHref },
+            assets: { globalsCssHref: assetHrefs.globalsCssHref, hydrateEntryHref: assetHrefs.hydrateBuiltHref, editLauncherHref: assetHrefs.editLauncherHref },
             preactRuntimeHref: `${origin}${assetHrefs.preactRuntimeHref}`,
             builtAssetsBaseUrl: `${origin}${adminPath}/api/built-assets`,
             dryHttpEndpoint: `${adminPath}/api/dry-http`,
@@ -97,7 +97,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
             vei: veiContext,
             veiOverrides: props.veiOverrides,
           },
-          veiOverlayHref: assetHrefs.veiOverlayHref,
+          editLauncherHref: assetHrefs.editLauncherHref,
           veiEnabled: true,
           runtimeVeiToggle: true,
         });

@@ -5,13 +5,16 @@ import {
   listenForFieldInput,
   type FieldFocusEventDetail,
   type FieldInputEventDetail,
-} from "../content-entry-editor/field-events.js";
+} from "./field-events.js";
 
 /**
- * Admin half of the Visual Editing Interface bridge (`plans/vei.md`). Runs
- * only inside the dialog iframe (`?_vei=1`), and its whole job is to relay
- * the entry editor's existing `window` CustomEvents to the public page
- * hosting it.
+ * Admin half of the visual-editing bridge. Runs only inside the entry-editor
+ * iframe (`?_vei=1`), and its whole job is to relay the entry editor's
+ * existing `window` CustomEvents to the page hosting it - today that host is
+ * always Page Builder's `page-builder/VeiEntryFrame.tsx`. It used to also
+ * serve the public site's VEI overlay (`apps/vei/overlay.ts`), which is why
+ * the message names are still `vei:*`; that overlay is gone, and the public
+ * site now only deep-links into Page Builder (`apps/edit-launcher.ts`).
  *
  * `field-events.ts` was written for exactly this - its own doc comment
  * offers "an AI assist feature, a browser extension, any other plugin" a way
@@ -60,22 +63,20 @@ export function isVeiFrame(): boolean {
 }
 
 /**
- * `targetOrigin` is this document's own origin rather than `"*"`: the
- * overlay is always same-origin (an iframe under the admin path, embedded
- * by a page of the same site - see `X-Frame-Options: SAMEORIGIN` in
- * `adapters/node.ts`), so anything cross-origin has no business receiving
- * entry contents as they're typed.
+ * `targetOrigin` is this document's own origin rather than `"*"`: the host is
+ * always same-origin (an iframe under the admin path, embedded by an admin
+ * page - see `X-Frame-Options: SAMEORIGIN` in `adapters/node.ts`), so
+ * anything cross-origin has no business receiving entry contents as they're
+ * typed.
  */
 function post(message: VeiMessage): void {
   window.parent.postMessage(message, window.location.origin);
 }
 
-/** Tells the overlay to close the dialog - used both by the Escape handler
- * below and by `ContentEntryEditor`'s own Cancel button, which is the one
- * the visible dialog offers (see `plans/vei.md`; the overlay's own outer
- * chrome deliberately has no close control of its own beyond the backdrop/
- * Escape, since the admin page already has one). A no-op outside the VEI
- * frame - nothing is listening on the other end. */
+/** Tells the host to close the panel - used both by the Escape handler below
+ * and by `ContentEntryEditor`'s own Cancel button, which is the one the
+ * visible form offers. A no-op outside the framed case - nothing is listening
+ * on the other end. */
 export function closeVeiDialog(): void {
   post({ type: "vei:close" });
 }
@@ -88,20 +89,20 @@ export function startVeiBridge(navigate: (url: string) => void): () => void {
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
     const data = event.data as { type?: string; url?: string } | null;
     // `dispatchEntrySave` rather than a raw event: this message routinely
-    // arrives before `ContentEntryEditor` has mounted (the overlay answers
+    // arrives before `ContentEntryEditor` has mounted (the host answers
     // `vei:ready` immediately, and `vei:ready` comes from `App.tsx`'s own
     // mount effect), and only the latch inside it keeps the request alive
     // until an editor can act on it - see `field-events.ts`.
     if (data?.type === "vei:save") {
       dispatchEntrySave();
     } else if (data?.type === "vei:navigate" && typeof data.url === "string") {
-      // The overlay re-points an already-open panel/dialog at a different
-      // admin route by sending this instead of reassigning `iframe.src` -
+      // The host re-points an already-open panel at a different admin route
+      // by sending this instead of reassigning `iframe.src` -
       // this frame is already running the same Preact SPA a hard load would
       // boot, so it retargets its OWN client-side router (`preact-iso`)
       // rather than tearing the whole document down and re-parsing/
-      // re-hydrating the bundle for every field click (`overlay.ts`'s
-      // `openFrame`).
+      // re-hydrating the bundle for every field click
+      // (`VeiEntryFrame.tsx`'s own navigate effect).
       navigate(data.url);
     }
   };

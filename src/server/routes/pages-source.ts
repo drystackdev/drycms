@@ -14,7 +14,7 @@ import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
  * committed files into this root, never the other way round on its own).
  * What the browser build pipeline reads `page.tsx`/`layout.tsx` source text
  * and the tree from (mục 1's route manifest, mục 7's per-page compile) -
- * and, since Giai đoạn 6, what `PageEditor.tsx`'s in-browser editor writes
+ * and, since Giai đoạn 6, what `PageBuilder.tsx`'s in-browser editor writes
  * through too.
  *
  * Every method is gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`
