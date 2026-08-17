@@ -22,6 +22,15 @@
     }
   }
 
+  @keyframes page-builder-loading-overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   .dry {
     /* Single column - `AiSchemaWizardPanel` used to become a second column
      * here (`>= 64rem`) or a tab replacing this one (`< 64rem`); now that
@@ -7998,17 +8007,56 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
       width: 100%;
       height: 100%;
       gap: 0.75rem;
       padding: 2rem;
-      text-align: center;
+    }
+
+    .page-builder-vei-browser-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 1rem;
+
+      & > button {
+        flex: none;
+      }
+    }
+
+    .page-builder-vei-browser-heading {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 0.75rem;
+      text-align: start;
+
+      & > span {
+        display: grid;
+        min-width: 0;
+        gap: 0.125rem;
+      }
+
+      & small {
+        color: var(--dry-muted-foreground);
+        overflow-wrap: anywhere;
+      }
+    }
+
+    .page-builder-vei-browser-icon {
+      display: grid;
+      place-items: center;
+      width: 2.75rem;
+      height: 2.75rem;
+      flex: none;
+      border-radius: 50%;
+      background: var(--dry-muted);
+      color: var(--dry-muted-foreground);
 
       & > svg {
-        width: 2rem;
-        height: 2rem;
-        color: var(--dry-muted-foreground);
+        width: 1.5rem;
+        height: 1.5rem;
       }
     }
 
@@ -8016,31 +8064,39 @@
       position: relative;
       width: 100%;
       height: 100%;
+      background: var(--dry-card);
+    }
+
+    .page-builder-vei-type-scroll {
+      position: relative;
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+      min-width: 0;
+      text-align: start;
     }
 
     .page-builder-vei-type-groups {
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
       width: 100%;
-      max-width: 32rem;
       gap: 1.25rem;
       text-align: start;
 
-      & section,
+      & details,
       & .stack {
         min-width: 0;
-      }
-
-      & h3 {
-        margin-block-end: 0.5rem;
       }
     }
 
     .page-builder-vei-type {
       justify-content: flex-start;
       width: 100%;
+      min-width: 0;
       height: auto;
       padding: 0.75rem;
       text-align: start;
+      white-space: normal;
 
       & > svg {
         flex: none;
@@ -8055,6 +8111,7 @@
       & small {
         color: var(--dry-muted-foreground);
         font-weight: 400;
+        overflow-wrap: anywhere;
       }
     }
 
@@ -8068,13 +8125,31 @@
       overflow: hidden;
     }
 
-    /* First-load-only state (`loading || !sourceByPath || ...`). */
-    .page-builder-loading {
+    /* Keep the published page visible while editable state hydrates. */
+    .page-builder-loading-layer {
+      position: absolute;
+      z-index: 200;
+      inset: 0;
+    }
+
+    .page-builder-loading-preview {
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .page-builder-loading-overlay {
+      position: absolute;
+      inset: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 0.75rem;
+      background: color-mix(in srgb, var(--dry-background) 45%, transparent);
+      color: var(--dry-foreground);
+      backdrop-filter: blur(2px);
+      animation: page-builder-loading-overlay-in 240ms ease-out both;
 
       & .spinner {
         width: 1.75rem;
@@ -8163,6 +8238,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       .page-builder-drawer-backdrop,
+      .page-builder-loading-overlay,
       .page-builder-code-panel,
       .page-builder-vei-sheet.docked,
       .page-builder-vei-sheet.docked .page-builder-vei-panel {

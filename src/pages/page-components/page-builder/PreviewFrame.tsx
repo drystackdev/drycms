@@ -38,6 +38,7 @@ export interface PreviewFrameProps {
   onSave: () => void;
   onVeiClick: (ref: PreviewVeiClickRef) => void;
   onTitleChange: (title: string) => void;
+  onReady: () => void;
   codePanelWidth: number;
   /** Changes only after a successful VEI content save, forcing a fresh
    * `dry()` render even though no page-source code changed. */
@@ -51,6 +52,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
   const blobUrlsRef = useRef<string[]>([]);
+  const hasPreviewDocumentRef = useRef(false);
 
   const syncVeiMode = () => {
     iframeRef.current?.contentWindow?.postMessage({ type: PREVIEW_VEI_MODE_MESSAGE, enabled: props.veiEnabled }, "*");
@@ -58,6 +60,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
 
   const handleLoad = () => {
     syncVeiMode();
+    if (hasPreviewDocumentRef.current) props.onReady();
   };
 
   useEffect(syncVeiMode, [props.veiEnabled]);
@@ -102,7 +105,10 @@ export default function PreviewFrame(props: PreviewFrameProps) {
           runtimeVeiToggle: true,
         });
         if (seq !== seqRef.current) return;
-        if (iframeRef.current) iframeRef.current.srcdoc = html;
+        if (iframeRef.current) {
+          hasPreviewDocumentRef.current = true;
+          iframeRef.current.srcdoc = html;
+        }
         for (const url of blobUrlsRef.current) URL.revokeObjectURL(url);
         blobUrlsRef.current = blobUrls;
       } catch (err) {

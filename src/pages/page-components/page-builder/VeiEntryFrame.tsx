@@ -52,7 +52,10 @@ export interface VeiEntryFrameProps {
 export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [browseType, setBrowseType] = useState<ContentTypeDefinition | null>(null);
-  const { ref: browserScroll } = useOverlayScrollbars<HTMLDivElement>([!props.target && !browseType]);
+  const { ref: browserScroll } = useOverlayScrollbars<HTMLDivElement>(
+    [!props.target && !browseType],
+    { overflow: { x: "hidden", y: "scroll" } },
+  );
   // Same divider as `CodePanel`'s, on the same edge and within the same
   // bounds - pointer capture is what keeps the drag tracking once the cursor
   // crosses onto the preview iframe beside it (`useResizablePanel`'s own doc
@@ -158,15 +161,23 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
           style={{ width: "100%", height: "100%", border: "0", display: desiredUrl ? "block" : "none" }}
         />
         {!desiredUrl && (
-          <div ref={browserScroll} class="page-builder-vei-browser"><div class="page-builder-vei-empty">
-            <EditIcon />
-            <strong>Select content in the preview</strong>
-            <span class="hint">Click a marked area in the preview, or select any content below.</span>
-            <div class="page-builder-vei-type-groups">
-              {groupedTypes.collections.length > 0 && <section><h3>Collection</h3><div class="stack">{groupedTypes.collections.map((type) => <button type="button" class="outline page-builder-vei-type" key={type.id} onClick={() => setBrowseType(type)}><CollectionIcon /><span><strong>{type.label}</strong>{type.description && <small>{type.description}</small>}</span></button>)}</div></section>}
-              {groupedTypes.singletons.length > 0 && <section><h3>Singleton</h3><div class="stack">{groupedTypes.singletons.map((type) => <button type="button" class="outline page-builder-vei-type" key={type.id} onClick={() => setBrowseType(type)}><SingletonIcon /><span><strong>{type.label}</strong>{type.description && <small>{type.description}</small>}</span></button>)}</div></section>}
+          <div class="page-builder-vei-browser"><div class="page-builder-vei-empty">
+            <header class="page-builder-vei-browser-header">
+              <div class="page-builder-vei-browser-heading">
+                <span class="page-builder-vei-browser-icon"><EditIcon /></span>
+                <span>
+                  <strong>Select content in the preview</strong>
+                  <small>Click a marked area in the preview, or select any content below.</small>
+                </span>
+              </div>
+              <button type="button" class="outline" onClick={props.onClose}>Cancel</button>
+            </header>
+            <div ref={browserScroll} class="under page-builder-vei-type-scroll">
+              <div class="page-builder-vei-type-groups">
+                {groupedTypes.collections.length > 0 && <details open><summary><strong>Collection</strong></summary><div class="stack">{groupedTypes.collections.map((type) => <button type="button" class="outline page-builder-vei-type" key={type.id} onClick={() => setBrowseType(type)}><CollectionIcon /><span><strong>{type.label}</strong>{type.description && <small>{type.description}</small>}</span></button>)}</div></details>}
+                {groupedTypes.singletons.length > 0 && <details open><summary><strong>Singleton</strong></summary><div class="stack">{groupedTypes.singletons.map((type) => <button type="button" class="outline page-builder-vei-type" key={type.id} onClick={() => setBrowseType(type)}><SingletonIcon /><span><strong>{type.label}</strong>{type.description && <small>{type.description}</small>}</span></button>)}</div></details>}
+              </div>
             </div>
-            <button type="button" class="ghost" onClick={props.onClose}>Cancel</button>
           </div></div>
         )}
       </div>

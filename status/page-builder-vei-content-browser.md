@@ -8,7 +8,7 @@
 
 # Status
 
-Complete. Implemented the content-type chooser, embedded Collection lists, Singleton/full entry editing, VEI-preserving routes, Back navigation, and field-focus relay to the first matching preview marker. Also fixed opaque-preview CORS for Vite optimized dependency imports whose fetch destination is `empty`. Typecheck, focused CORS/preview tests, the earlier full 1,435-test run, and `git diff --check` pass.
+Complete. Implemented the content-type chooser, embedded Collection lists, Singleton/full entry editing, VEI-preserving routes, Back navigation, and field-focus relay to the first matching preview marker. The chooser now excludes hidden types, requires Collection `view` + `update` permission and Singleton `setting` permission, and keeps its type list in a scrollable `.under` panel. Initial Page Builder hydration now shows the published page in a preview iframe beneath a loading overlay instead of replacing the page with an empty loading screen. Also fixed opaque-preview CORS for Vite optimized dependency imports whose fetch destination is `empty`. Typecheck, focused CORS/preview tests, the earlier full 1,436-test run, and `git diff --check` pass.
 
 # Speed
 

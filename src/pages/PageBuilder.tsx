@@ -51,6 +51,24 @@ interface PersistedBuilderState {
   veiTarget: PreviewVeiClickRef | null;
 }
 
+function PageBuilderLoadingLayer({ pathname }: { pathname: string }) {
+  return (
+    <div class="page-builder-loading-layer">
+      <iframe
+        class="page-builder-loading-preview"
+        src={pathname}
+        title="Page preview"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+      <div class="page-builder-loading-overlay" role="status" aria-label="Loading Page Builder">
+        <span class="spinner" />
+        <span>Loading…</span>
+      </div>
+    </div>
+  );
+}
+
 const BUILDER_STATE_KEY = "drycms:page-builder-state";
 
 /** A commit message that says what changed without putting a dialog in the
@@ -116,6 +134,7 @@ function readBuilderState(): PersistedBuilderState {
  */
 export default function PageBuilder() {
   const [previewTitle, setPreviewTitle] = useState("");
+  const [previewReady, setPreviewReady] = useState(false);
   useDocumentTitle(previewTitle ? `${previewTitle} - Page builder` : "Page builder");
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
@@ -613,9 +632,8 @@ export default function PageBuilder() {
   if (loadError) return <span class="error">{loadError}</span>;
   if (loading || !sourceByPath || !allTypes || !assetHrefs || !draftsHydrated) {
     return (
-      <div class="page-builder-root page-builder-loading">
-        <span class="spinner" />
-        <span class="hint">Loading…</span>
+      <div class="page-builder-root">
+        <PageBuilderLoadingLayer pathname={pathname} />
       </div>
     );
   }
@@ -641,10 +659,13 @@ export default function PageBuilder() {
         onSave={() => void flushPendingWrites()}
         onVeiClick={handleVeiClick}
         onTitleChange={setPreviewTitle}
+        onReady={() => setPreviewReady(true)}
         codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
         contentRevision={contentRevision}
         veiOverrides={veiOverrides}
       />
+
+      {!previewReady && <PageBuilderLoadingLayer pathname={pathname} />}
 
       {!review && <Toolbar
         // Back to the public page being previewed - the return leg of
@@ -737,7 +758,11 @@ export default function PageBuilder() {
           initialWidth={codePanelWidth}
           onWidthChange={setCodePanelWidth}
           adminPath={path}
-          contentTypes={(allTypes ?? []).filter((type) => !type.hidden && type.kind !== "component" && veiContext.canUpdate(type))}
+          contentTypes={(allTypes ?? []).filter((type) => {
+            if (type.hidden || type.name === "user" || type.kind === "component") return false;
+            if (type.kind === "singleton") return canAccess(type.id, "setting");
+            return canAccess(type.id, "view") && canAccess(type.id, "update");
+          })}
           onBrowse={() => setVeiTarget(null)}
           onClose={() => {
             setVeiTarget(null);

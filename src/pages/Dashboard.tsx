@@ -61,7 +61,7 @@ export default function Dashboard() {
 	);
 
 	const collections = useMemo(
-		() => (contentTypes ?? []).filter((t) => t.kind === 'collection' && !t.hidden && canAccess(t.id, 'view')),
+		() => (contentTypes ?? []).filter((t) => t.kind === 'collection' && !t.hidden && t.name !== 'user' && canAccess(t.id, 'view')),
 		[contentTypes],
 	);
 	const singletons = useMemo(
