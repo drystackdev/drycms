@@ -43,7 +43,6 @@ const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
 const PageBuild = lazy(() => import("../pages/PageBuild.js"));
 const PageBuilder = lazy(() => import("../pages/PageBuilder.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
-const GoogleVerificationSettings = lazy(() => import("../pages/GoogleVerificationSettings.js"));
 const GithubSyncSettings = lazy(() => import("../pages/GithubSyncSettings.js"));
 const Backup = lazy(() => import("../pages/Backup.js"));
 
@@ -268,10 +267,6 @@ function AuthenticatedApp() {
               <Route
                 path={`${path}/settings/color-schema`}
                 component={Settings}
-              />
-              <Route
-                path={`${path}/settings/google-verification`}
-                component={GoogleVerificationSettings}
               />
               <Route
                 path={`${path}/settings/github-sync`}

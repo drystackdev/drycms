@@ -1,7 +1,6 @@
 import { path as adminPath } from "./config.js";
 import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
-import { tryServeGoogleVerificationFile } from "./google-verification.js";
 import { tryServeOAuthMetadata } from "./oauth-metadata.js";
 import type { DryRequestContext } from "../content-types/dry-context.js";
 import { loadSeoDefaults, type DrySeoLayers } from "../content-types/dry-seo.js";
@@ -88,9 +87,6 @@ export async function handlePageRequest(
   // `null` unconditionally for now rather than parsing a cookie nothing
   // reads yet.
   const routeContext: DryRouteContext = { request, url, params: {}, env, session: null };
-
-  const verificationResponse = await tryServeGoogleVerificationFile(request, routeContext);
-  if (verificationResponse) return verificationResponse;
 
   const oauthMetadataResponse = tryServeOAuthMetadata(request);
   if (oauthMetadataResponse) return oauthMetadataResponse;

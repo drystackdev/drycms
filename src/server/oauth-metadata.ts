@@ -6,8 +6,7 @@ import { resolveSiteOrigin } from "./app-router/site-origin.js";
  * Authorization Server Metadata, RFC 9728 Protected Resource Metadata) MUST
  * live at a bare-root `.well-known/*` URL - a client resolves them before it
  * knows anything else about this server, so they can't be nested under
- * `${basePath}/api/` the way every other route in this app is. Served the
- * same way `google-verification.ts`'s `tryServeGoogleVerificationFile` is: a
+ * `${basePath}/api/` the way every other route in this app is. Served as a
  * pure, cheap-pathname-filtered function called from `page-handler.ts`,
  * ahead of any DB/route work, with no session/KV access of its own. The
  * actual protocol endpoints these documents point to

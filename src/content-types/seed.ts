@@ -1,5 +1,5 @@
 import { planMigration, type Statement } from "./migration.js";
-import { GITHUB_SYNC_TYPE_ID, GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
+import { GITHUB_SYNC_TYPE_ID, SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 /** Fixed ids for the built-in default content types/fields, so re-running
@@ -46,9 +46,6 @@ const IDS = {
   memoryVersion: "system-memory-version",
   systemSettings: "system-settings",
   systemSettingsData: "system-settings-data",
-  googleVerification: "system-google-verification-singleton",
-  googleVerificationName: "system-google-verification-name",
-  googleVerificationContent: "system-google-verification-content",
   githubSync: "system-github-sync-singleton",
   githubSyncRepo: "system-github-sync-repo",
   githubSyncBranch: "system-github-sync-branch",
@@ -586,48 +583,6 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  const googleVerification: ContentTypeDefinition = {
-    id: GOOGLE_VERIFICATION_TYPE_ID,
-    kind: "singleton",
-    name: "googleVerification",
-    label: "Google Verification",
-    description: "Serves Google's site-ownership verification content at the exact domain root, without an uploaded file.",
-    // Reached via its own "Google Verification" sub-item under the "Settings"
-    // nav group (`DryLayout.tsx`), same treatment as `systemSettings`/
-    // `seoDefaults` above - a dedicated 2-field page (`GoogleVerificationSettings.tsx`)
-    // replaces the generic singleton editor.
-    hidden: true,
-    locked: true,
-    frozen: true,
-    fields: [
-      {
-        id: IDS.googleVerificationName,
-        name: "name",
-        label: "Name",
-        type: "text",
-        // `google-verification.ts`'s `tryServeGoogleVerificationFile` matches
-        // this verbatim against the request path (`/<name>`) - Google's own
-        // instructions give you this filename (e.g.
-        // "google1234567890abcdef.html") alongside `content` below.
-        description: "The exact filename Google Search Console gives you, e.g. google1234567890abcdef.html - served at https://yourdomain.com/<name>.",
-        config: { placeholder: "google1234567890abcdef.html" },
-        validation: { required: true },
-        order: 0,
-      },
-      {
-        id: IDS.googleVerificationContent,
-        name: "content",
-        label: "Content",
-        type: "text",
-        description: "The exact file content Google gives you alongside the filename above - served verbatim as the response body.",
-        config: { multiline: true, placeholder: "google-site-verification: google1234567890abcdef.html" },
-        validation: { required: true },
-        order: 1,
-      },
-    ],
-    version: 0,
-  };
-
   const githubSync: ContentTypeDefinition = {
     id: GITHUB_SYNC_TYPE_ID,
     kind: "singleton",
@@ -635,9 +590,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "Git Sync",
     description: "Pushes page-source commits to the configured GitHub or GitLab repository.",
     // Reached via its own "Git Sync" sub-item under the "Settings" nav
-    // group (`DryLayout.tsx`), same treatment as `googleVerification` above -
-    // a dedicated small form (`GithubSyncSettings.tsx`) replaces the generic
-    // singleton editor.
+    // group (`DryLayout.tsx`), same treatment as `systemSettings`/
+    // `seoDefaults` above - a dedicated small form (`GithubSyncSettings.tsx`)
+    // replaces the generic singleton editor.
     hidden: true,
     locked: true,
     frozen: true,
@@ -677,7 +632,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings, googleVerification, githubSync];
+  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings, githubSync];
 }
 
 /**
@@ -690,7 +645,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
  * `newAllTypes` for every planned type is the FULL default set regardless of
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
  * component from it even on a run where `menuItem` itself isn't being
- * (re-)created. "Default" here always means the 12 built-in system types
+ * (re-)created. "Default" here always means the 11 built-in system types
  * (`defaultContentTypeDefinitions()`) - an app's own content types are never
  * auto-seeded; they only ever arrive by being created directly in the admin
  * UI, or by restoring a database backup (`routes/backup.ts`).

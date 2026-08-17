@@ -51,10 +51,9 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
   useEffect(() => {
     void (async () => {
       try {
-        // Cache-aware, not `typesApi.list()` - same reasoning as
-        // `GoogleVerificationSettings.tsx`'s own load effect: `value` below
-        // has no autosave, so a background revalidation replaying this
-        // effect mid-edit could silently discard unsaved changes.
+        // Cache-aware, not `typesApi.list()` - `value` below has no
+        // autosave, so a background revalidation replaying this effect
+        // mid-edit could silently discard unsaved changes.
         const definitions = await listCached(typesApi);
         const found = definitions.find((candidate) => candidate.name === "githubSync");
         if (!found) throw new Error('The system collection "githubSync" is not available.');

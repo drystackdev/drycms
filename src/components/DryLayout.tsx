@@ -218,9 +218,9 @@ const NAV: {
     superAdminOnly: true,
   },
   // No flat "settings" entry here - it's rendered as its own expandable
-  // `SidebarNavGroup` (2 static sub-items: Color schema/Google Verification)
-  // right after this array's own `sectionItems`, same special-casing the
-  // Content section already does for Collection/Singleton below.
+  // `SidebarNavGroup` (static sub-items: Color schema/Git Sync) right after
+  // this array's own `sectionItems`, same special-casing the Content section
+  // already does for Collection/Singleton below.
 ];
 
 const NAV_SECTIONS = ["Overview", "Content", "System"] as const;
@@ -473,10 +473,6 @@ export default function DryLayout({ children }: Props) {
     const colorSchemaType = contentTypes?.find((t) => t.name === "systemSettings");
     if (colorSchemaType && canAccess(colorSchemaType.id, "setting")) {
       items.push({ id: "color-schema", label: "Color schema", href: `${path}/settings/color-schema` });
-    }
-    const googleVerificationType = contentTypes?.find((t) => t.name === "googleVerification");
-    if (googleVerificationType && canAccess(googleVerificationType.id, "setting")) {
-      items.push({ id: "google-verification", label: "Google Verification", href: `${path}/settings/google-verification` });
     }
     const githubSyncType = contentTypes?.find((t) => t.name === "githubSync");
     if (githubSyncType && canAccess(githubSyncType.id, "setting")) {

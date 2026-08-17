@@ -38,7 +38,7 @@ describe("permission metadata", () => {
       expect(supportsMagic(named("collection", name))).toBe(false);
       expect(permissionActionsFor(named("collection", name))).toEqual(["view", "create", "update", "delete"]);
     }
-    for (const name of ["systemSettings", "siteSettings", "googleVerification"]) {
+    for (const name of ["systemSettings", "siteSettings", "githubSync"]) {
       expect(supportsMagic(named("singleton", name))).toBe(false);
       expect(permissionActionsFor(named("singleton", name))).toEqual(["setting"]);
     }

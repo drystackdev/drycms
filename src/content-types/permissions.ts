@@ -81,9 +81,9 @@ const UNGRANTABLE_TYPE_NAMES: ReadonlySet<string> = new Set(["memory"]);
 /** Content types that never expose Magic (AI) - configuration rather than
  * editorial content: credentials (`aiKey`), access control (`role`/`user`),
  * routing/navigation (`redirect`/`menu`), and the settings singletons
- * (`systemSettings`/`siteSettings`/`googleVerification`/`githubSync`). None of them hold
- * prose a model should be authoring - an API key, a permission set, a redirect
- * target, or a verification token is either exact or wrong.
+ * (`systemSettings`/`siteSettings`/`githubSync`). None of them hold
+ * prose a model should be authoring - an API key, a permission set, or a
+ * repo/branch target is either exact or wrong.
  *
  * Matched by `name`, not `id`: the seeded system types have fixed ids, but an
  * app's own settings singleton (`siteSettings`) gets a generated one, so `name`
@@ -97,7 +97,6 @@ const NO_MAGIC_TYPE_NAMES: ReadonlySet<string> = new Set([
   "menu",
   "systemSettings",
   "siteSettings",
-  "googleVerification",
   "githubSync",
 ]);
 

@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe("createSqliteContentEngineAdapter", () => {
-  it("seeds the built-in user/menu/menuItem/aiKey/role/redirect/memory/seoDefaults/systemSettings/googleVerification/githubSync defaults on first boot", async () => {
+  it("seeds the built-in user/menu/menuItem/aiKey/role/redirect/memory/seoDefaults/systemSettings/githubSync defaults on first boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -53,7 +53,6 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(types.map((t) => t.name).sort()).toEqual([
       "aiKey",
       "githubSync",
-      "googleVerification",
       "memory",
       "menu",
       "menuItem",
