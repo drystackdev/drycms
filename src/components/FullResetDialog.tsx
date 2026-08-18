@@ -52,10 +52,10 @@ interface Step {
 
 function initialSteps(): Step[] {
   return [
-    { id: "content", label: "Xoá & reset database (content type + dữ liệu, giữ lại tài khoản đang đăng nhập)", status: "pending" },
-    { id: "media", label: "Xoá toàn bộ media (storage/R2)", status: "pending" },
-    { id: "pages", label: "Reset trang về mock mặc định, build lại, đồng bộ Git nếu có", status: "pending" },
-    { id: "cache", label: "Xoá cache & IndexedDB của trình duyệt", status: "pending" },
+    { id: "content", label: "Delete & reset database (content types + data, keep the logged-in account, Git Sync config, and admin theme)", status: "pending" },
+    { id: "media", label: "Delete all media (storage/R2)", status: "pending" },
+    { id: "pages", label: "Reset pages to the default mock, rebuild, sync Git if configured", status: "pending" },
+    { id: "cache", label: "Clear browser cache & IndexedDB", status: "pending" },
   ];
 }
 
@@ -72,9 +72,11 @@ export interface FullResetDialogProps {
  * "Reset everything" - the destructive superset of the old "Reset All page"
  * action (`GithubSyncSettings.tsx`): resets the content database to the
  * built-in default types with no data (except the calling admin's own
- * account, kept so they don't get logged out - see `routes/full-reset.ts`),
- * wipes every uploaded media file, resets pages-source/build state to the
- * mock starter, and clears every browser-side cache. Two stages in one
+ * account, kept so they don't get logged out; and the `githubSync`/
+ * `systemSettings` singletons, kept as operator config rather than tenant
+ * content - see `routes/full-reset.ts`), wipes every uploaded media file,
+ * resets pages-source/build state to the mock starter, and clears every
+ * browser-side cache. Two stages in one
  * dialog: a typed `RESET-<token>` gate (the token is generated fresh per
  * open, shown on screen, and must be copied back - a plain Yes/No isn't
  * enough friction for something this irreversible), then a live step-by-step
@@ -136,7 +138,7 @@ export default function FullResetDialog({ open, adminPath, onClose, onDone }: Fu
       // before this ran.
       const freshTypes = await createContentTypesApi(`${adminPath}/api/content-types`).list();
       const published = await publishAllPages(adminPath, freshTypes);
-      if (published.error) throw new Error(`Trang đã reset nhưng build thất bại: ${published.error}`);
+      if (published.error) throw new Error(`Pages were reset but the build failed: ${published.error}`);
       setStepStatus("pages", "done");
 
       activeStep = "cache";
@@ -148,29 +150,29 @@ export default function FullResetDialog({ open, adminPath, onClose, onDone }: Fu
       onDone();
     } catch (cause) {
       setStepStatus(activeStep, "error");
-      setError(cause instanceof Error ? cause.message : "Reset thất bại.");
+      setError(cause instanceof Error ? cause.message : "Reset failed.");
     } finally {
       setRunning(false);
     }
   }
 
   return (
-    <dialog ref={ref} class="md" aria-label="Reset toàn bộ hệ thống">
+    <dialog ref={ref} class="md" aria-label="Reset the entire system">
       {open && (
         <>
           <header>
-            <h3>Reset toàn bộ hệ thống</h3>
+            <h3>Reset the entire system</h3>
           </header>
           <div class="stack">
             {!running && !finished && (
               <>
                 <p class="error">
-                  Thao tác này XOÁ VĨNH VIỄN: mọi content type &amp; dữ liệu (chỉ giữ lại tài khoản đang đăng nhập), toàn bộ media,
-                  trang/pages-source hiện tại (khôi phục về mock mặc định), build state, và cache/IndexedDB của trình duyệt này.
-                  Không thể hoàn tác.
+                  This action PERMANENTLY DELETES: all content types &amp; data (keeping only the logged-in account, Git Sync
+                  config, and admin theme settings), all media, the current pages/pages-source (restored to the default mock),
+                  build state, and this browser's cache/IndexedDB. This cannot be undone.
                 </p>
                 <p>
-                  Để xác nhận, gõ chính xác: <code class="mono">{expected}</code>
+                  To confirm, type exactly: <code class="mono">{expected}</code>
                 </p>
                 <input
                   type="text"
@@ -196,15 +198,15 @@ export default function FullResetDialog({ open, adminPath, onClose, onDone }: Fu
               </ul>
             )}
             {error && <p class="error">{error}</p>}
-            {finished && <p class="success">Đã reset xong. Trang sẽ tải lại…</p>}
+            {finished && <p class="success">Reset complete. The page will reload…</p>}
           </div>
           <footer>
             <button type="button" class="outline" disabled={running} onClick={onClose}>
-              {finished ? "Đóng" : "Huỷ"}
+              {finished ? "Close" : "Cancel"}
             </button>
             {!finished && (
               <button type="button" class="destructive" disabled={!confirmReady || running} aria-busy={running} onClick={() => void run()}>
-                Xoá vĩnh viễn &amp; Reset
+                Permanently delete &amp; reset
               </button>
             )}
           </footer>

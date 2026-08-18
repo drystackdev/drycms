@@ -58,13 +58,17 @@ async function resolveRawHandle(context: DryRouteContext): Promise<RawSqlHandle>
  * `routes/backup.ts`'s restore already uses, so this inherits its atomicity/
  * D1-recovery guarantees for free.
  *
- * The ONE thing kept: the calling admin's own `user` row, re-inserted
- * verbatim (same `id`, so the live session cookie - which maps to this exact
- * row - keeps working with no forced re-login) except `avatar` (cleared; the
- * file it pointed at is gone once the sibling `media` reset wipes `storage`),
- * plus a membership in the freshly-seeded "Super Admin" role - the same "you
- * become the first admin" outcome `new:project`'s "register the first admin"
- * step produces, minus having to actually re-register.
+ * Three things kept, re-inserted verbatim after the fresh dump is restored:
+ * the calling admin's own `user` row (same `id`, so the live session cookie -
+ * which maps to this exact row - keeps working with no forced re-login)
+ * except `avatar` (cleared; the file it pointed at is gone once the sibling
+ * `media` reset wipes `storage`), plus a membership in the freshly-seeded
+ * "Super Admin" role - the same "you become the first admin" outcome
+ * `new:project`'s "register the first admin" step produces, minus having to
+ * actually re-register; and the `githubSync`/`systemSettings` singleton rows
+ * (Git repo/branch/token, admin theme) - operator configuration, not tenant
+ * *content*, so "reset everything" leaves it alone same as it leaves the
+ * calling admin's own account alone.
  */
 async function resetContent(context: DryRouteContext): Promise<Response> {
   const denied = await requireSuperAdmin(context, "Only Super Admin can reset the database.");
@@ -80,6 +84,8 @@ async function resetContent(context: DryRouteContext): Promise<Response> {
     if (!preservedUser) {
       throw new ContentEngineError("not_found", "Your own user row could not be found - aborted before touching the database.");
     }
+    const preservedGithubSync = await rawHandle.queryAll("githubSync");
+    const preservedSystemSettings = await rawHandle.queryAll("systemSettings");
 
     const scratch = await resolveSqliteDriver(":memory:");
     bootstrapDefaultContentSchema(scratch);
@@ -115,11 +121,18 @@ async function resetContent(context: DryRouteContext): Promise<Response> {
       `INSERT INTO "user" (${userColumns.map(quoteIdent).join(", ")}) VALUES (${userValues.join(", ")});`,
       `INSERT INTO "user_roles" ("parent_id","position","target_id") VALUES (${sqlLiteral(preservedUser.id)}, 0, ${sqlLiteral(superAdminRoleId)});`,
     );
+    for (const [table, rows] of [["githubSync", preservedGithubSync], ["systemSettings", preservedSystemSettings]] as const) {
+      for (const row of rows) {
+        const columns = Object.keys(row);
+        const values = columns.map((column) => sqlLiteral(row[column]));
+        statements.push(`INSERT INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(", ")}) VALUES (${values.join(", ")});`);
+      }
+    }
 
     await restoreFromDump(rawHandle, statements);
     if (content.engine === "D1") await invalidateSchemaCache(context);
 
-    return jsonResponse({ ok: true, keptUserId: preservedUser.id });
+    return jsonResponse({ ok: true, keptUserId: preservedUser.id, keptGithubSync: preservedGithubSync.length > 0, keptSystemSettings: preservedSystemSettings.length > 0 });
   } catch (error) {
     return errorResponse(error);
   }
