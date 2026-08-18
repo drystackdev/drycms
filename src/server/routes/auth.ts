@@ -51,6 +51,29 @@ const STATUS_BY_CODE: Record<string, number> = {
 };
 
 let firstAdminRegistration: Promise<void> | undefined;
+const FIRST_ADMIN_LOCK_WAIT_MS = 10_000;
+
+/** Bounded wait on the previous lock holder, mirroring `auth-security.ts`'s
+ * `awaitPreviousLock`: a plain `await previous` would hang forever if that
+ * holder's request had its pending I/O canceled mid-flight before its own
+ * `finally` could `release()` (see `project_drycms_cross_request_promise_
+ * hang`) - every later registration attempt would then await a promise that
+ * can never settle, for the whole life of the isolate. Timing out costs one
+ * slow attempt and heals the chain: this waiter installs its own lock
+ * promise regardless, below. */
+async function awaitPreviousRegistrationLock(previous: Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      previous,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, FIRST_ADMIN_LOCK_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 function constantTimeEqual(left: string, right: string): boolean {
   let difference = left.length ^ right.length;
@@ -68,7 +91,7 @@ async function withFirstAdminRegistrationLock<T>(work: () => Promise<T>): Promis
     release = resolve;
   });
   firstAdminRegistration = current;
-  await previous;
+  await awaitPreviousRegistrationLock(previous);
   try {
     return await work();
   } finally {

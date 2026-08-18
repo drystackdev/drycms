@@ -21,7 +21,7 @@ const VERSION_PREFIX = "v1:";
 const IV_BYTES = 12;
 
 let cachedPassphrase: string | undefined;
-let cachedKeyPromise: Promise<CryptoKey> | undefined;
+let cachedKey: CryptoKey | undefined;
 
 /** Exported so `lib/password-hash.ts` doesn't need its own copy - both modules
  * store a self-contained "version tag + base64 payload" string for the same
@@ -43,7 +43,13 @@ export function base64Decode(text: string): Uint8Array {
  * passphrase string, hashed with SHA-256 - friendlier to configure than
  * requiring raw key bytes). The cache is tied to the effective passphrase,
  * rather than only to the process lifetime: Vite SSR/HMR and tests can reload
- * environment configuration without restarting the Node process. */
+ * environment configuration without restarting the Node process. Caches the
+ * resolved `CryptoKey`, never an in-flight `Promise` - on workerd a request
+ * whose pending I/O gets canceled mid-derivation would otherwise leave a
+ * dead promise cached at module scope for every later request (across
+ * requests, not just this one) to await forever (see
+ * `project_drycms_cross_request_promise_hang`). A canceled derivation here
+ * just means the next caller redoes it. */
 async function getKey(): Promise<CryptoKey> {
   const passphrase = readEnvVar("DRYCMS_SECRET_KEY");
   if (!passphrase) {
@@ -52,14 +58,12 @@ async function getKey(): Promise<CryptoKey> {
     );
   }
 
-  if (!cachedKeyPromise || cachedPassphrase !== passphrase) {
+  if (!cachedKey || cachedPassphrase !== passphrase) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passphrase));
+    cachedKey = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
     cachedPassphrase = passphrase;
-    cachedKeyPromise = (async () => {
-      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passphrase));
-      return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
-    })();
   }
-  return cachedKeyPromise;
+  return cachedKey;
 }
 
 /** Encrypts `plain` into a self-contained, storable string: a version tag (in

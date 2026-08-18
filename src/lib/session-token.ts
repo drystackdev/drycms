@@ -47,7 +47,7 @@ interface JwtPayload {
   kid: string;
 }
 
-let cachedKeyPromises = new Map<string, Promise<CryptoKey>>();
+let cachedKeys = new Map<string, CryptoKey>();
 
 interface KeyRing {
   activeKid: string;
@@ -86,18 +86,20 @@ function keyRing(): KeyRing {
 /** Derives an HMAC key from the same `DRYCMS_SECRET_KEY` env var
  * `secret-crypto.ts` already requires - one app secret, not a second env var
  * to configure. Cached for the life of the process, same as
- * `secret-crypto.ts`'s `getKey()`. */
-function getKey(kid: string): Promise<CryptoKey> {
-  const existing = cachedKeyPromises.get(kid);
+ * `secret-crypto.ts`'s `getKey()` - and for the same reason, caches the
+ * resolved `CryptoKey` per `kid`, never an in-flight `Promise`: a promise
+ * cached at module scope would survive a request whose pending I/O got
+ * canceled mid-derivation, wedging every later request that signs/verifies
+ * a session token (see `project_drycms_cross_request_promise_hang`). */
+async function getKey(kid: string): Promise<CryptoKey> {
+  const existing = cachedKeys.get(kid);
   if (existing) return existing;
-  const promise = (async () => {
-      const passphrase = keyRing().keys[kid];
-      if (!passphrase) throw new Error(`[drycms] Unknown JWT key id "${kid}".`);
-      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passphrase));
-      return crypto.subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
-    })();
-  cachedKeyPromises.set(kid, promise);
-  return promise;
+  const passphrase = keyRing().keys[kid];
+  if (!passphrase) throw new Error(`[drycms] Unknown JWT key id "${kid}".`);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passphrase));
+  const key = await crypto.subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+  cachedKeys.set(kid, key);
+  return key;
 }
 
 function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
