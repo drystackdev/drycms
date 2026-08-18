@@ -6251,10 +6251,22 @@
       }
     }
 
+    /* Flex column wrapping the scrollable tree + (while a drag is active)
+       the persistent `.page-components-tree-drop-root` footer below it -
+       `.page-components-tree` itself can't be that column, since
+       `useOverlayScrollbars` relocates ITS children into a generated
+       viewport, which would carry the footer along for the ride instead of
+       leaving it pinned outside the scrolled area. */
+    .page-components-tree-wrap {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
     .page-components-tree {
       flex: 1;
       min-height: 0;
-      overflow: auto;
       padding: 0.5rem;
       font-size: var(--dry-text-sm);
     }
@@ -6294,8 +6306,13 @@
         }
       }
 
+      /* Same tint `FileManager.tsx`'s own drag-over states use
+         (`tr.drag-over`/`.drag-over` below) - mixed against the themed
+         surface color rather than a literal-white tint like
+         `--dry-primary-lighter`, so it reads as a moderate highlight in
+         dark mode too instead of a bright, washed-out patch. */
       &.drop-target {
-        background-color: var(--dry-primary-lighter);
+        background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
         outline: 1.5px dashed var(--dry-primary);
         outline-offset: -1.5px;
       }
@@ -6482,23 +6499,53 @@
       background-color: var(--dry-accent);
     }
 
-    .page-components-tree-input {
-      all: unset;
-      box-sizing: border-box;
+    /* Inline create/rename box (`BubbleFileTree.tsx`'s `EditableName`) - a
+       `contentEditable` span, not an `<input>`, so it can sit right inside
+       the row it names (the file's real position in the tree) instead of a
+       separate form pinned above the tree. Outline instead of a border/
+       background so it reads as "this row is now editable" without a
+       jarring box appearing mid-row. */
+    .page-components-tree-edit {
+      display: inline-block;
       flex: 1;
-      min-width: 0;
-      padding-block: 0.25rem;
-      padding-inline: 0.375rem;
-      border: 1px solid var(--dry-primary);
+      min-width: 3rem;
+      max-width: 100%;
+      padding: 1px 4px;
       border-radius: var(--dry-radius-sm);
-      background-color: var(--dry-background);
+      outline: 1.5px solid var(--dry-primary);
+      outline-offset: 1px;
+      cursor: text;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      &:empty::before {
+        content: attr(data-placeholder);
+        color: var(--dry-muted-foreground);
+      }
     }
 
-    .page-components-tree-drop-root-hint {
-      height: 2px;
-      margin: 0.25rem;
-      border-radius: 999px;
-      background-color: var(--dry-primary);
+    /* Persistent "move to root" strip, shown only while a file from this
+       tree is actively being dragged (`BubbleFileTree.tsx`'s
+       `draggingPath`) - a real, generously-sized drop target rather than a
+       thin decorative line, since a row list that already fills the
+       popup's height leaves no "empty background" for the tree
+       container's own drop handling to ever be hovered. */
+    .page-components-tree-drop-root {
+      flex: none;
+      margin: 0.25rem 0.5rem;
+      padding: 0.5rem;
+      border-radius: var(--dry-radius-md);
+      border: 1.5px dashed var(--dry-border);
+      text-align: center;
+      font-size: var(--dry-text-xs);
+      color: var(--dry-muted-foreground);
+
+      &.drop-target {
+        border-color: var(--dry-primary);
+        color: var(--dry-foreground);
+        background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
+      }
     }
 
     .page-components-resize-handle {
@@ -7672,9 +7719,10 @@
     }
 
     /* `BubbleMenu.tsx` - the left-hand popup listing `PAGES_SOURCE_ROOTS`'s
-     * 4 tabs + an expandable folder tree (`BubbleFileTree.tsx`, reusing
-     * `ComponentTreePanel`'s own `page-components-tree*` CSS below), anchored
-     * above `Toolbar.tsx`'s bottom-left dock so neither covers the other. */
+     * 4 tabs + an expandable folder tree (`BubbleFileTree.tsx`, reusing the
+     * `page-components-tree*` CSS below - originally Page Editor's own
+     * `ComponentTreePanel`, since removed), anchored above `Toolbar.tsx`'s
+     * bottom-left dock so neither covers the other. */
     .page-builder-bubble-menu {
       position: fixed;
       left: 1rem;
@@ -7691,11 +7739,18 @@
       overflow: hidden;
     }
 
+    /* No padding of its own - the tab/+/close icon buttons carry their own
+       hit area, and sitting flush against the popup's top edge reads as one
+       continuous toolbar rather than a padded bar floating inside it. Icons
+       sized up from the base `.icon.sm` (0.75rem/1.75rem) to `--dry-text-base`
+       at a 2.25rem ("md") box - `.icon.sm` still wins the class match, so
+       this has to out-specify it (`.sm` repeated) rather than just add a
+       sibling rule. */
     .page-builder-bubble-tabs {
       display: flex;
       align-items: center;
       gap: 0.25rem;
-      padding: 0.5rem;
+      padding: 0;
       border-bottom: 1px solid var(--dry-border);
       flex: none;
 
@@ -7703,31 +7758,15 @@
         margin: 0 !important;
       }
 
+      & button.icon.sm {
+        width: 2.25rem;
+        height: 2.25rem;
+        font-size: var(--dry-text-base);
+      }
+
       & [role="tab"][aria-selected="true"] {
         background: var(--dry-accent);
         color: var(--dry-foreground);
-      }
-    }
-
-    /* `BubbleMenu.tsx`'s create/rename row - one line under the tabs, so the
-       tree below never shifts sideways while it's open. The error wraps onto
-       its own line (`flex-basis: 100%`) instead of squeezing the input. */
-    .page-builder-bubble-form {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.5rem;
-      border-bottom: 1px solid var(--dry-border);
-      flex: none;
-
-      & input {
-        flex: 1;
-        min-width: 0;
-      }
-
-      & .error {
-        flex-basis: 100%;
       }
     }
 

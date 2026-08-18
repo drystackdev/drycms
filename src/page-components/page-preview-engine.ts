@@ -46,6 +46,13 @@ export const PREVIEW_INSPECTOR_HOVER_MESSAGE = "dry-page-preview-inspector-hover
  * code panel closed, or the cursor moved to a file with nothing rendered in
  * this preview). */
 export const PREVIEW_INSPECTOR_CURSOR_MESSAGE = "dry-page-preview-inspector-cursor";
+/** `postMessage` type the preview iframe's bridge script sends on a click
+ * landing inside a `data-dry-loc`-marked element while inspector mode is on -
+ * "click preview -> open that file", the click counterpart to
+ * `PREVIEW_INSPECTOR_HOVER_MESSAGE`'s hover direction. The click is
+ * `preventDefault`'d so it never also fires the page's own click handling or
+ * the anchor-navigate branch below it. */
+export const PREVIEW_INSPECTOR_CLICK_MESSAGE = "dry-page-preview-inspector-click";
 
 export interface PreviewInspectorLoc {
   path: string;
@@ -189,8 +196,15 @@ export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiTo
   const inspectorCursorSupport = inspectorEnabled
     ? `window.addEventListener("message",function(event){if(!event.data||event.data.type!==${JSON.stringify(PREVIEW_INSPECTOR_CURSOR_MESSAGE)})return;var loc=event.data.loc;if(!loc){hideInspectorHighlight();return;}var el=findLocContaining(loc.path,loc.line,loc.column);if(!el){hideInspectorHighlight();return;}el.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});showInspectorHighlight(el);});`
     : "";
+  // Click preview -> open file: same shift-key escape hatch as hover, and
+  // runs BEFORE the anchor-navigate branch below (same `veiBranch`
+  // precedence/`return` pattern) since a marked element is very often
+  // itself, or nested inside, an `<a href>`.
+  const inspectorClickBranch = inspectorEnabled
+    ? `if(!event.shiftKey){var marked=findLocMarked(event.target);if(marked){event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_INSPECTOR_CLICK_MESSAGE)},loc:marked.loc},"*");return;}}`
+    : "";
 
-  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${focusListener}${shiftSupport}${parseLoc}${inspectorHighlightSupport}${inspectorHoverSupport}${inspectorCursorSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
+  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${focusListener}${shiftSupport}${parseLoc}${inspectorHighlightSupport}${inspectorHoverSupport}${inspectorCursorSupport}document.addEventListener("click",function(event){${veiBranch}${inspectorClickBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 export interface BuildPreviewSrcdocInput {

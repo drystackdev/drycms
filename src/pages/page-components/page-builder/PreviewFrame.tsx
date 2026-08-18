@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import {
   buildPreviewSrcdoc,
+  PREVIEW_INSPECTOR_CLICK_MESSAGE,
   PREVIEW_INSPECTOR_CURSOR_MESSAGE,
   PREVIEW_INSPECTOR_HOVER_MESSAGE,
   PREVIEW_NAVIGATE_MESSAGE,
@@ -55,6 +56,10 @@ export interface PreviewFrameProps {
    * element) - the "hover preview -> highlight code" direction. Only fires
    * when `inspectorEnabled`. */
   onInspectorHover: (loc: PreviewInspectorLoc | null) => void;
+  /** A click landed on a `data-dry-loc`-marked element while the inspector is
+   * on ("click preview -> open file") - only fires when `inspectorEnabled`.
+   */
+  onInspectorClick: (loc: PreviewInspectorLoc) => void;
   /** The Code panel's current cursor position, posted INTO the iframe to
    * highlight whatever it falls on - the reverse direction. `null` clears
    * any standing highlight (panel closed, or nothing under the cursor). */
@@ -155,12 +160,16 @@ export default function PreviewFrame(props: PreviewFrameProps) {
         props.onInspectorHover((event.data.loc ?? null) as PreviewInspectorLoc | null);
         return;
       }
+      if (event.data.type === PREVIEW_INSPECTOR_CLICK_MESSAGE) {
+        if (event.data.loc) props.onInspectorClick(event.data.loc as PreviewInspectorLoc);
+        return;
+      }
       if (event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
       if (typeof event.data.pathname === "string") props.onNavigate(event.data.pathname);
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [props.onSave, props.onNavigate, props.onVeiClick, props.onInspectorHover]);
+  }, [props.onSave, props.onNavigate, props.onVeiClick, props.onInspectorHover, props.onInspectorClick]);
 
   // Code cursor -> highlight preview: posted on every change, including
   // `null` (the panel closed, or the cursor left this file) so the bridge

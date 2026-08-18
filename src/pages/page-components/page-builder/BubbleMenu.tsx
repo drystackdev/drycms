@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
-import { PAGES_SOURCE_ROOTS, PAGES_ROOT, COMPONENT_ROOT, STYLES_ROOT, MD_ROOT, isCoreStyleFilePath, rootOf } from "../../../server/app-router/source-roots.js";
-import { AddIcon, CloseIcon } from "../../../components/icons/index.js";
+import { PAGES_SOURCE_ROOTS, PAGES_ROOT, COMPONENT_ROOT, STYLES_ROOT, MD_ROOT, isCoreStyleFilePath } from "../../../server/app-router/source-roots.js";
+import { PlusIcon, XIcon } from "../../../components/icons/index.js";
 import { FolderComponentsIcon, FolderCssIcon, FolderMarkdownIcon, FolderRoutesIcon } from "../file-type-icons.js";
 import ConfirmDialog from "../../../components/ConfirmDialog.js";
 import SystemFilesPanel from "../core-styles/SystemFilesPanel.js";
@@ -20,28 +20,6 @@ function sourceRootIcon(rootId: string) {
     default:
       return <FolderRoutesIcon />;
   }
-}
-
-/** The extension `routes/pages-source.ts`'s `requirePageSourceFileName`
- * accepts for each root - offered as the default so the common case is one
- * word typed, not a path with an extension the server would reject. */
-function defaultExtension(rootId: string): string {
-  if (rootId === STYLES_ROOT) return ".css";
-  if (rootId === MD_ROOT) return ".md";
-  return ".tsx";
-}
-
-/** Starter content for a brand new file, so a just-created page/component
- * renders something instead of failing the build on an empty module. */
-function fileTemplate(rootId: string, path: string): string {
-  if (rootId === STYLES_ROOT || rootId === MD_ROOT) return "";
-  const leaf = path.slice(path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
-  if (rootId === PAGES_ROOT) {
-    if (leaf === "layout") return `export default function Layout({ children }: { children?: unknown }) {\n  return <div>{children}</div>;\n}\n`;
-    return `export default function Page() {\n  return <main>New page</main>;\n}\n`;
-  }
-  const componentName = /^[A-Za-z_][\w]*$/.test(leaf) ? leaf : "Component";
-  return `export default function ${componentName}() {\n  return <div>${componentName}</div>;\n}\n`;
 }
 
 export interface BubbleMenuProps {
@@ -82,12 +60,12 @@ export interface BubbleMenuProps {
  * path and confirms a destructive action.
  */
 export default function BubbleMenu(props: BubbleMenuProps) {
-  /** `{ from: null }` = create, `{ from: path }` = rename. `null` = neither
-   * form is open. */
-  const [form, setForm] = useState<{ from: string | null; value: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  /** Bumped on every "+" click - `BubbleFileTree` owns the actual create UI
+   * (which folder it targets, the inline text box) since that's a tree
+   * rendering concern, not this header's. */
+  const [createSignal, setCreateSignal] = useState(0);
 
   function handleSelectFile(path: string) {
     // `page.tsx` navigates the preview to it; every other `.tsx`
@@ -98,53 +76,6 @@ export default function BubbleMenu(props: BubbleMenuProps) {
     if (props.activeRoot === PAGES_ROOT && /(^|\/)page\.tsx$/.test(path)) props.onSelectPageFile(path);
     else if (path.endsWith(".tsx")) props.onSelectComponentFile(path);
     else props.onSelectOtherFile(path);
-  }
-
-  function openCreate() {
-    setError(null);
-    setForm({ from: null, value: `${props.activeRoot}/` });
-  }
-
-  function openRename(path: string) {
-    setError(null);
-    setForm({ from: path, value: path });
-  }
-
-  async function submitForm(event: Event) {
-    event.preventDefault();
-    if (!form || busy) return;
-    const target = form.value.trim().replace(/^\/+|\/+$/g, "");
-    if (!target || target === form.from) {
-      setForm(null);
-      return;
-    }
-    // Any of the four roots is fair game, not just the tab that happens to
-    // be open - a path typed here names where the file goes, and the tree
-    // follows it (`onRootChange` below) rather than the other way round.
-    const targetRoot = rootOf(target)?.id;
-    if (!targetRoot || target === targetRoot) {
-      setError(`Path must start with one of: ${PAGES_SOURCE_ROOTS.map((root) => `${root.id}/`).join(", ")}.`);
-      return;
-    }
-    if (form.from === null && target in props.sourceByPath) {
-      setError(`"${target}" already exists.`);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      // Switch tabs BEFORE the write, not after: creating a file closes this
-      // menu (the caller opens the new file instead), and switching after
-      // that would pop it straight back open.
-      if (targetRoot !== props.activeRoot) props.onRootChange(targetRoot);
-      if (form.from === null) await props.onCreateFile(target, fileTemplate(targetRoot, target));
-      else await props.onRenameFile(form.from, target);
-      setForm(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The operation failed.");
-    } finally {
-      setBusy(false);
-    }
   }
 
   return (
@@ -164,37 +95,13 @@ export default function BubbleMenu(props: BubbleMenuProps) {
           </button>
         ))}
         <span class="spacer" />
-        <button type="button" class="icon ghost sm" aria-label="New file" title={`New file in ${props.activeRoot}/`} onClick={openCreate}>
-          <AddIcon />
+        <button type="button" class="icon ghost sm" aria-label="New file" title={`New file in ${props.activeRoot}/`} onClick={() => setCreateSignal((n) => n + 1)}>
+          <PlusIcon />
         </button>
         <button type="button" class="icon ghost sm" aria-label="Close menu" onClick={props.onClose}>
-          <CloseIcon />
+          <XIcon />
         </button>
       </div>
-
-      {form && (
-        <form class="page-builder-bubble-form" onSubmit={(event) => void submitForm(event)}>
-          <input
-            type="text"
-            autoFocus
-            value={form.value}
-            placeholder={form.from === null ? `${props.activeRoot}/about/page${defaultExtension(props.activeRoot)}` : undefined}
-            aria-label={form.from === null ? "New file path" : "New path"}
-            aria-invalid={error ? "true" : undefined}
-            onInput={(event) => setForm({ ...form, value: (event.target as HTMLInputElement).value })}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setForm(null);
-            }}
-          />
-          <button type="submit" class="sm" disabled={busy}>
-            {form.from === null ? "Create" : "Rename"}
-          </button>
-          <button type="button" class="ghost sm" disabled={busy} onClick={() => setForm(null)}>
-            Cancel
-          </button>
-          {error && <small class="error">{error}</small>}
-        </form>
-      )}
 
       {props.activeRoot === STYLES_ROOT && props.recoveredCoreFiles.length > 0 && (
         <SystemFilesPanel recovered={props.recoveredCoreFiles} onOpen={props.onSelectOtherFile} />
@@ -205,7 +112,9 @@ export default function BubbleMenu(props: BubbleMenuProps) {
         activeRoot={props.activeRoot}
         activePath={props.activePath}
         onSelectFile={handleSelectFile}
-        onRenameFile={openRename}
+        onCreateFile={props.onCreateFile}
+        onRenameFile={props.onRenameFile}
+        createSignal={createSignal}
         // `globals.css`/`theme.css`/`base.css` are delete-locked server-side
         // too (`routes/pages-source.ts`) - hiding the button keeps the UI
         // from offering an action that can only ever fail.

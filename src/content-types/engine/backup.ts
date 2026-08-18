@@ -83,7 +83,12 @@ export function d1RawHandle(db: D1Database): RawSqlHandle {
   };
 }
 
-function sqlLiteral(value: unknown): string {
+/** Exported for `routes/full-reset.ts`, which hand-builds a few extra
+ * `INSERT` statements (the preserved admin's `user`/`role`/`user_roles` rows)
+ * to append to a fresh-boot dump before replaying it via `restoreFromDump` -
+ * reuses the exact same literal-escaping `buildSqlDump` uses for everything
+ * else, rather than a second implementation that could drift from it. */
+export function sqlLiteral(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
   if (typeof value === "boolean") return value ? "1" : "0";

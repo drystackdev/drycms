@@ -35,6 +35,7 @@ import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import * as backupRoute from "./routes/backup.js";
 import * as storageBackupRoute from "./routes/storage-backup.js";
+import * as fullResetRoute from "./routes/full-reset.js";
 import { requirePermission, requirePermissionOrVeiAccess } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
@@ -126,6 +127,11 @@ const API_ROUTES: Record<string, RouteModule> = {
   // `backup` above - a Media storage backup/restore has no Role toggle
   // either.
   "storage-backup": storageBackupRoute,
+  // Same self-gating (no dispatcher-level check, no Role toggle) as
+  // `backup`/`storage-backup` above - "Reset everything"
+  // (`GithubSyncSettings.tsx`) is Super Admin only, enforced inside each of
+  // this route's own `content`/`media` sub-operations.
+  "full-reset": fullResetRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {

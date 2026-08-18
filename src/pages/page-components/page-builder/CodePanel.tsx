@@ -33,6 +33,8 @@ export interface CodePanelProps {
    * to `Editer`. */
   highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number } | null;
   onCursorMove?: (loc: { line: number; column: number }) => void;
+  /** Ctrl/Cmd+click a JSX component tag - passed straight through to `Editer`. */
+  onGoToDefinition?: (identifier: string) => void;
 }
 
 /**
@@ -98,6 +100,7 @@ export default function CodePanel(props: CodePanelProps) {
           readOnly={props.readOnly}
           highlightLoc={props.highlightLoc}
           onCursorMove={props.onCursorMove}
+          onGoToDefinition={props.onGoToDefinition}
         />
       </div>
       {diagnosticsOpen && (

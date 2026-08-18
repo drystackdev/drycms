@@ -12,10 +12,11 @@ import { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { fetchJson, type AssetHrefs } from "../page-components/pages-source-http.js";
 import { usePageBuilderSource } from "../page-components/use-page-builder-source.js";
-import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import { resolveModulePath } from "../page-components/page-build.js";
+import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths, type SourceRouteMatch } from "../server/app-router/route-manifest.js";
 import { fetchPreviewEntries } from "../page-components/dynamic-routes.js";
 import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
-import { MD_ROOT, PAGES_ROOT, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
+import { COMPONENT_ROOT, MD_ROOT, PAGES_ROOT, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import { PREVIEW_VEI_FOCUS_MESSAGE, type PreviewInspectorLoc, type PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
 import { decodeEntryId, encodeEntryId } from "../lib/id-hash.js";
@@ -282,6 +283,19 @@ export default function PageBuilder() {
 
   const restoredState = useMemo(readBuilderState, []);
   const [bubbleRoot, setBubbleRoot] = useState<string | null>(null);
+  /** The file the bubble menu's tree last selected - a component or layout,
+   * reflected in the URL for a shareable/bookmarkable link. Independent of
+   * `path` (the previewed SITE route): selecting a file never changes
+   * `path`, and navigating `path` away clears this instead (see the effect
+   * below). */
+  const [fileParam, setFileParam] = useParam<string>("file");
+  /** Set only while previewing a component/layout NOT reachable from the
+   * currently previewed route (`buildStandalonePreview` below) - overrides
+   * `match` for the iframe (`match` half) and supplies the synthetic wrapper
+   * file that match's `entryPath` points at (`extraSource` half), so the
+   * admin can see it rendered without leaving the page they were on. `null`
+   * means the real route match applies. */
+  const [previewOverride, setPreviewOverride] = useState<{ match: SourceRouteMatch; extraSource: { path: string; code: string } } | null>(null);
   // Start on the route's own page.tsx as soon as the manifest resolves;
   // preview navigation then keeps this same panel focused on the newly
   // matched entry path without requiring a second file-menu selection.
@@ -382,7 +396,22 @@ export default function PageBuilder() {
     ...Object.keys(veiOverrides),
   ]).size;
 
+  /** Ends whatever `handleSelectComponentFile` started: closes `CodePanel`,
+   * drops any standalone preview override, and removes `file=` from the URL.
+   * `path` is never touched here - it was never touched to enter this state
+   * either (see `buildStandalonePreview`/`previewOverride`'s own comments),
+   * so there is nothing to restore it from. */
+  function closeCodePanel() {
+    setPanelMode(null);
+    setPreviewOverride(null);
+    setFileParam(undefined);
+  }
+
   function togglePanel(mode: Exclude<BuilderPanelMode, null>) {
+    if (mode === "code" && panelMode === "code") {
+      closeCodePanel();
+      return;
+    }
     setPanelMode((current) => {
       const next = current === mode ? null : mode;
       // Re-entering VEI starts from its empty selection state. Reload still
@@ -414,6 +443,30 @@ export default function PageBuilder() {
   useEffect(() => {
     if (activePagePath) setOpenFilePath(activePagePath);
   }, [activePagePath]);
+  // A real route navigation (preview iframe nav, picking a page from the
+  // menu, ...) ends whatever standalone preview `handleSelectComponentFile`
+  // started - `pathname` itself is never the thing that put it there, so any
+  // change to it is a reliable "the admin moved on" signal. Skipped on
+  // mount (nothing to clear yet) via the ref, same pattern
+  // `BubbleFileTree.tsx`'s `initialCreateSignal` uses for its own signal.
+  const initialPathnameRef = useRef(pathname);
+  useEffect(() => {
+    if (pathname === initialPathnameRef.current) return;
+    initialPathnameRef.current = pathname;
+    if (previewOverride) setPreviewOverride(null);
+    if (fileParam) setFileParam(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-fire on a real pathname change, not on override/fileParam churn.
+  }, [pathname]);
+  /** What the preview iframe actually renders - the real route match, unless
+   * a standalone file preview (`buildStandalonePreview`) is currently
+   * overriding it. */
+  const effectiveMatch = previewOverride?.match ?? match;
+  /** `effectiveSource` plus the standalone preview's own synthetic wrapper
+   * file, when one is active - `effectiveMatch.entryPath` points at it, so
+   * the iframe build needs it in its own source map to find it. */
+  const previewSourceByPath = previewOverride
+    ? { ...effectiveSource, [previewOverride.extraSource.path]: previewOverride.extraSource.code }
+    : effectiveSource;
   /** Same condition the `<CodePanel>` render below is gated on. */
   const codePanelOpen = canEditCode && panelMode === "code" && !!openFilePath;
   // Hover preview -> highlight code: only when the hovered element's OWN
@@ -483,14 +536,148 @@ export default function PageBuilder() {
     setBubbleRoot(null);
   }
 
+  /** Whether `filePath` is already part of the currently previewed route's
+   * own layout chain - the only "is this in use" signal available without a
+   * real import graph (`saveAndPublish`'s own comment on why one doesn't
+   * exist yet). A plain `component/*.tsx` is never in this list, since
+   * layouts/pages import components dynamically and nothing here tracks
+   * that - so it always falls to the standalone-preview branch below, which
+   * matches what was asked: components are the common "not in use" case. */
+  function isFileInUseByRoute(filePath: string): boolean {
+    return match?.layoutPaths.includes(filePath) ?? false;
+  }
+
+/** A synthetic `SourceRouteMatch` PLUS the extra (never-persisted, iframe-only)
+   * source file it depends on, for previewing a file that ISN'T reachable
+   * from the currently previewed route - wrapped by the site's root
+   * `pages/layout.tsx` if one exists (and isn't `filePath` itself).
+   *
+   * `filePath` can NOT be used as `entryPath` directly: `resolve-match.ts`'s
+   * `resolveMatchToVNode` calls whatever sits at `entryPath`/`layoutPaths`
+   * as a plain, un-dispatched function (`PageComponent(props)`, no `h(...)`)
+   * - the same "server component" contract every real `page.tsx`/`layout.tsx`
+   * already follows (async, no hooks). A `component/*.tsx` file is an
+   * ORDINARY client component and very often uses hooks (`ThemeToggle.tsx`'s
+   * `useEffect`, for one) - calling it that way crashes with Preact's
+   * `Cannot read properties of null (reading '__H')`, since hooks require a
+   * real Preact-dispatched render to have `currentComponent` set. A thin
+   * synthetic wrapper page that just returns `<Target />` (JSX, a nested
+   * vnode) sidesteps this entirely: `resolveMatchToVNode`'s own doc comment
+   * confirms any nested, ordinary child is "left untouched... Preact's own
+   * dispatch... invokes those, hooks and all." Placed in the SAME directory
+   * as `filePath` so the relative import always resolves with zero path
+   * math. Good enough for a component/orphaned layout to render with the
+   * site's real chrome without needing a full import graph to find its
+   * actual usage site. */
+  function buildStandalonePreview(filePath: string): { match: SourceRouteMatch; extraSource: { path: string; code: string } } {
+    const rootLayout = `${PAGES_ROOT}/layout.tsx`;
+    const existing = sourceByPath ?? {};
+    const dir = filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : "";
+    const targetName = filePath.slice(filePath.lastIndexOf("/") + 1).replace(/\.tsx?$/, "");
+    let wrapperPath = dir ? `${dir}/__standalone_preview__.tsx` : "__standalone_preview__.tsx";
+    for (let suffix = 1; wrapperPath in existing; suffix += 1) {
+      wrapperPath = dir ? `${dir}/__standalone_preview_${suffix}__.tsx` : `__standalone_preview_${suffix}__.tsx`;
+    }
+    // `component/*.tsx` follows the `export const defaultProps = {...}`
+    // convention `component-preview.ts`'s own doc comment establishes -
+    // honor it here too, so the preview shows the component the way its
+    // author intended instead of every prop blank/undefined. `defaultProps`
+    // may be an ARRAY, rendering one instance per entry, same contract that
+    // convention already sets - a plain namespace import (`* as
+    // targetModule`) reads it without needing the real default export to
+    // run first. A centering stage (`flex justify-center items-center`)
+    // keeps a component with no layout opinion of its own (most of them)
+    // from just hugging the page's top-left corner. `layout.tsx`/other
+    // non-component files skip both: they aren't authored against this
+    // convention and already carry their own layout.
+    const code = rootOf(filePath)?.id === COMPONENT_ROOT
+      ? `import Target, * as targetModule from "./${targetName}";
+
+const dryDefaultProps = (targetModule as { defaultProps?: unknown }).defaultProps;
+const dryPropsList = Array.isArray(dryDefaultProps) ? dryDefaultProps : [dryDefaultProps ?? {}];
+
+export default function StandalonePreview() {
+  return (
+    <div class="flex justify-center items-center">
+      {dryPropsList.map((props: unknown, index: number) => (
+        <Target key={index} {...(props as Record<string, unknown>)} />
+      ))}
+    </div>
+  );
+}
+`
+      : `import Target from "./${targetName}";\n\nexport default function StandalonePreview() {\n  return <Target />;\n}\n`;
+    return {
+      match: {
+        entryPath: wrapperPath,
+        layoutPaths: filePath !== rootLayout && rootLayout in existing ? [rootLayout] : [],
+        params: {},
+      },
+      extraSource: { path: wrapperPath, code },
+    };
+  }
+
+  /** The module specifier `identifier` is imported from in `source` (matches
+   * a default import - `import Identifier from "spec"` - or a named one,
+   * including an aliased one - `import { Foo as Identifier } from "spec"`),
+   * or `null` if `source` never imports that name. Regex-based rather than a
+   * real AST parse: good enough for "go to definition" on an ordinary
+   * top-of-file import, which is the only shape a JSX component reference
+   * ever comes from in this codebase's own source (`docs/APP-ROUTER.md`). */
+  function findImportSpecifier(source: string, identifier: string): string | null {
+    const importRe = /import\s+([\w$]+)?\s*,?\s*(?:\{([^}]*)\})?\s*from\s*["']([^"']+)["']/g;
+    for (const match of source.matchAll(importRe)) {
+      const [, defaultName, namedClause, specifier] = match;
+      if (defaultName === identifier) return specifier!;
+      if (!namedClause) continue;
+      const bindings = namedClause.split(",").map((entry) => {
+        const parts = entry.trim().split(/\s+as\s+/);
+        return parts[parts.length - 1];
+      });
+      if (bindings.includes(identifier)) return specifier!;
+    }
+    return null;
+  }
+
+  /** "Ctrl/Cmd+click a JSX component tag -> open that file" (`Editer`'s
+   * `onGoToDefinition`) - follows the currently open file's own imports
+   * (`findImportSpecifier`) through the same alias/relative resolution the
+   * real build uses (`page-build.ts`'s `resolveModulePath`), then opens the
+   * result exactly like picking it from the bubble menu would. Silent on
+   * anything that doesn't resolve (not imported at all, an npm package, a
+   * plain lowercase tag `identifierAtOffset` already filtered out) - a
+   * modifier-click is exploratory by nature, not a claim the target exists. */
+  function handleGoToDefinition(identifier: string) {
+    if (!openFilePath) return;
+    const source = effectiveSource[openFilePath];
+    if (source === undefined) return;
+    const specifier = findImportSpecifier(source, identifier);
+    if (!specifier) return;
+    let resolved;
+    try {
+      resolved = resolveModulePath(openFilePath, specifier, sourceByPath ?? {});
+    } catch {
+      return;
+    }
+    if (resolved.kind === "local") handleSelectComponentFile(resolved.path);
+  }
+
   /** A `.tsx` file that ISN'T a route's own `page.tsx` - a layout,
    * `404.tsx`/`500.tsx`, or a `component/*.tsx` - opens in the SAME
    * `CodePanel` now, without touching the preview's own pathname: none of
    * these have one route of their own to navigate to, and the whole point
-   * is editing them while watching whatever page currently renders them. */
+   * is editing them while watching whatever page currently renders them.
+   *
+   * `file=` is set here for every pick so the URL reflects the tree's
+   * selection; if the picked file isn't already part of what the preview is
+   * showing, `previewOverride` takes over the iframe (`buildStandalonePreview`)
+   * until the panel is closed (`closeCodePanel`) or the admin navigates the
+   * preview elsewhere (the `pathname`-keyed effect below). */
   function handleSelectComponentFile(componentPath: string) {
     setOpenFilePath(componentPath);
     setPanelMode("code");
+    setFileParam(componentPath);
+    setPreviewOverride(isFileInUseByRoute(componentPath) ? null : buildStandalonePreview(componentPath));
     setBubbleRoot(null);
   }
 
@@ -557,6 +744,18 @@ export default function PageBuilder() {
   }
 
   const handleVeiClick = useCallback((ref: PreviewVeiClickRef) => setVeiTarget(ref), []);
+  /** "Click preview -> open file": a click landed on a marked element while
+   * the inspector is on (only possible while `codePanelOpen`, since that's
+   * what `inspectorEnabled` below is gated on). Switches `CodePanel` to that
+   * element's own file without touching the preview at all - unlike
+   * `handleSelectComponentFile`, this file is proven to already be part of
+   * what's rendering (the click landed inside it), so `previewOverride` is
+   * left exactly as it was. */
+  const handleInspectorClick = useCallback((loc: PreviewInspectorLoc) => {
+    setOpenFilePath(loc.path);
+    setPanelMode("code");
+    setFileParam(loc.path);
+  }, [setFileParam]);
   const handleVeiFocus = useCallback((detail: FieldFocusEventDetail) => {
     const type = allTypes?.find((candidate) => candidate.name === detail.typeSlug);
     const decodedId = detail.entryId === null ? null : decodeEntryId(detail.entryId);
@@ -800,8 +999,8 @@ export default function PageBuilder() {
       <PreviewFrame
         iframeRef={iframeRef}
         pathname={pathname}
-        match={match}
-        sourceByPath={effectiveSource}
+        match={effectiveMatch}
+        sourceByPath={previewSourceByPath}
         allTypes={allTypes}
         assetHrefs={assetHrefs}
         origin={origin}
@@ -821,6 +1020,7 @@ export default function PageBuilder() {
         veiOverrides={veiOverrides}
         inspectorEnabled={codePanelOpen}
         onInspectorHover={setInspectorHoverLoc}
+        onInspectorClick={handleInspectorClick}
         cursorLoc={previewCursorLoc}
       />
 
@@ -863,7 +1063,7 @@ export default function PageBuilder() {
       {panelMode === "code" && (
         <div
           class="page-builder-drawer-backdrop"
-          onClick={() => setPanelMode(null)}
+          onClick={closeCodePanel}
         />
       )}
 
@@ -878,15 +1078,16 @@ export default function PageBuilder() {
           onChange={(code) => updateSource(openFilePath, code)}
           autosaving={autosaving}
           onReset={() => void reset(openFilePath)}
-          onClose={() => setPanelMode(null)}
+          onClose={closeCodePanel}
           onWidthChange={setCodePanelWidth}
           initialWidth={codePanelWidth}
-          layoutPaths={match?.layoutPaths ?? []}
+          layoutPaths={effectiveMatch?.layoutPaths ?? []}
           onOpenLayout={handleSelectComponentFile}
           readOnly={review !== null}
           onOpenHistory={gitState.value.phase === "unconfigured" || review ? undefined : () => setHistoryPath(openFilePath)}
           highlightLoc={highlightLoc}
           onCursorMove={setCodeCursor}
+          onGoToDefinition={handleGoToDefinition}
         />
       )}
 

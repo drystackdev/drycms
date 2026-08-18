@@ -35,46 +35,60 @@ function bumpResourceVersion(handle: SqliteHandle, resource: string): number {
   return next;
 }
 
+/**
+ * Creates `metadata`/`_versions` (if missing), seeds whichever default
+ * content types aren't already present (`seed.ts`'s `pendingSeedStatements`,
+ * idempotent by name), and seeds the permanent Super Admin role - exactly
+ * what a brand-new `.dry/content.sqlite` gets on its very first `getHandle()`
+ * call below. Exported so `routes/full-reset.ts` can run this SAME sequence
+ * against a throwaway in-memory handle to produce a "fresh boot" dump
+ * (`engine/backup.ts`'s `buildSqlDump`) to restore the real database to,
+ * rather than re-deriving the default schema/seed some other way that could
+ * drift from what a real fresh boot actually produces.
+ */
+export function bootstrapDefaultContentSchema(handle: SqliteHandle): void {
+  handle.exec(
+    `CREATE TABLE IF NOT EXISTS "metadata" (\n` +
+      `  "id" TEXT PRIMARY KEY,\n` +
+      `  "kind" TEXT NOT NULL,\n` +
+      `  "name" TEXT NOT NULL,\n` +
+      `  "definition" TEXT NOT NULL,\n` +
+      `  "version" INTEGER NOT NULL\n` +
+      `);`,
+  );
+  handle.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`);
+  handle.exec(
+    `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+      `  "resource" TEXT PRIMARY KEY,\n` +
+      `  "version" INTEGER NOT NULL,\n` +
+      `  "updated_at" INTEGER NOT NULL\n` +
+      `);`,
+  );
+
+  const existing = handle.all<{ name: string }>('SELECT "name" FROM "metadata";');
+  const statements = pendingSeedStatements(new Set(existing.map((row) => row.name.toLowerCase())));
+  if (statements.length > 0) {
+    handle.exec("BEGIN IMMEDIATE;");
+    try {
+      runStatements(handle, statements);
+      bumpResourceVersion(handle, CONTENT_TYPES_RESOURCE);
+      handle.exec("COMMIT;");
+    } catch (error) {
+      handle.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  handle.run(superAdminSeedStatement().sql, superAdminSeedStatement().params ?? []);
+}
+
 export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOption): ContentEngineAdapter {
   let handlePromise: Promise<SqliteHandle> | undefined;
 
   async function getHandle(): Promise<SqliteHandle> {
     if (!handlePromise) {
       handlePromise = resolveSqliteDriver(option.file).then((handle) => {
-        handle.exec(
-          `CREATE TABLE IF NOT EXISTS "metadata" (\n` +
-            `  "id" TEXT PRIMARY KEY,\n` +
-            `  "kind" TEXT NOT NULL,\n` +
-            `  "name" TEXT NOT NULL,\n` +
-            `  "definition" TEXT NOT NULL,\n` +
-            `  "version" INTEGER NOT NULL\n` +
-            `);`,
-        );
-        handle.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`);
-        handle.exec(
-          `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
-            `  "resource" TEXT PRIMARY KEY,\n` +
-            `  "version" INTEGER NOT NULL,\n` +
-            `  "updated_at" INTEGER NOT NULL\n` +
-            `);`,
-        );
-
-        const existing = handle.all<{ name: string }>('SELECT "name" FROM "metadata";');
-        const statements = pendingSeedStatements(new Set(existing.map((row) => row.name.toLowerCase())));
-        if (statements.length > 0) {
-          handle.exec("BEGIN IMMEDIATE;");
-          try {
-            runStatements(handle, statements);
-            bumpResourceVersion(handle, CONTENT_TYPES_RESOURCE);
-            handle.exec("COMMIT;");
-          } catch (error) {
-            handle.exec("ROLLBACK;");
-            throw error;
-          }
-        }
-
-        handle.run(superAdminSeedStatement().sql, superAdminSeedStatement().params ?? []);
-
+        bootstrapDefaultContentSchema(handle);
         return handle;
       });
     }

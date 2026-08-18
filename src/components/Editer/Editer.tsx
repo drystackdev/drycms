@@ -104,6 +104,13 @@ export interface EditerProps {
    * while its own preview is live, and a `postMessage` per cursor move is
    * cheap. */
   onCursorMove?: (loc: { line: number; column: number }) => void;
+  /** Ctrl/Cmd+click on a capitalized identifier (a JSX component tag, e.g.
+   * `<Button`) - "go to definition" for wherever that component's own file
+   * lives. `"tsx"` language only, fires with just the clicked identifier
+   * text; resolving it to an actual file (following the current file's own
+   * imports) is the caller's job - this editor has no notion of a project's
+   * other files beyond `extraFiles`' raw content. */
+  onGoToDefinition?: (identifier: string) => void;
   class?: string;
   style?: JSX.CSSProperties;
 }
@@ -522,6 +529,22 @@ function offsetFromPoint(editor: PrismEditor, clientX: number, clientY: number, 
   return absoluteOffset(lineTexts, lineNumber, Math.min(column, lineText.length) + 1);
 }
 
+/** The identifier run containing `offset`, or `null` if `offset` doesn't sit
+ * inside one - used to resolve a Ctrl/Cmd+click into a symbol name
+ * (`onGoToDefinition`). Restricted to a CAPITALIZED first letter: a lowercase
+ * run is either a plain HTML tag (`<div>`) or an ordinary variable/prop, and
+ * neither has a source file of its own to jump to - only PascalCase JSX
+ * component references do. */
+function identifierAtOffset(text: string, offset: number): string | null {
+  let start = offset;
+  while (start > 0 && WORD_CHAR_RE.test(text[start - 1]!)) start--;
+  let end = offset;
+  while (end < text.length && WORD_CHAR_RE.test(text[end]!)) end++;
+  if (start === end) return null;
+  const word = text.slice(start, end);
+  return /^[A-Z]/.test(word) ? word : null;
+}
+
 /** Renders `code` with the same TSX token colors as the editor itself (`.token.*`
  * classes styled by the theme CSS already loaded into the shadow root - no ancestor
  * scoping needed) instead of a flat, single-color string. */
@@ -696,6 +719,7 @@ export default function Editer({
   readOnly = false,
   highlightLoc = null,
   onCursorMove,
+  onGoToDefinition,
   class: className,
   style,
 }: EditerProps) {
@@ -705,6 +729,8 @@ export default function Editer({
   onChangeRef.current = onChange;
   const onCursorMoveRef = useRef(onCursorMove);
   onCursorMoveRef.current = onCursorMove;
+  const onGoToDefinitionRef = useRef(onGoToDefinition);
+  onGoToDefinitionRef.current = onGoToDefinition;
   const extraFilesRef = useRef(extraFiles ?? {});
   extraFilesRef.current = extraFiles ?? {};
   const tailwindLoadGenerationRef = useRef(0);
@@ -940,6 +966,22 @@ export default function Editer({
     };
     host.addEventListener("click", onClick);
 
+    /** Ctrl/Cmd+click "go to definition" (`onGoToDefinition`) - resolved the
+     * same geometric way as diagnostic clicks/hover above, since the real
+     * `<textarea>` sitting on top always wins hit-testing against anything
+     * this editor might otherwise put under the pointer. Left un-prevented
+     * (the native click still moves the caret too) - simpler than fighting
+     * the textarea's own mousedown-driven caret placement for a click that's
+     * about to navigate the admin away from this file anyway. */
+    const onGoToDefinitionClick = (event: MouseEvent) => {
+      if (!onGoToDefinitionRef.current || !(event.ctrlKey || event.metaKey)) return;
+      const pos = offsetFromPoint(editor, event.clientX, event.clientY, getChPx());
+      if (pos === null) return;
+      const identifier = identifierAtOffset(editor.value, pos);
+      if (identifier) onGoToDefinitionRef.current(identifier);
+    };
+    host.addEventListener("click", onGoToDefinitionClick);
+
     const onFormatKeydown = bindFormatKeydown(editor, "tsx", readOnly, (newText, start, end) =>
       commitEdits([{ start, length: end - start, newText }]),
     );
@@ -1117,6 +1159,7 @@ export default function Editer({
       host.removeEventListener("mousemove", onMouseMove);
       host.removeEventListener("mouseleave", hideHover);
       host.removeEventListener("click", onClick);
+      host.removeEventListener("click", onGoToDefinitionClick);
       editor.textarea.removeEventListener("keydown", onFormatKeydown);
       editor.textarea.removeEventListener("keydown", onKeyboardHoverKeydown);
       autocompleteObserver.disconnect();
