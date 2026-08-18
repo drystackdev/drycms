@@ -73,7 +73,7 @@ const MCP_INSTRUCTIONS = [
   'This is drycms, a headless CMS. Page/layout/component source lives under 4 roots inside "pages-source": "pages/" (routes - page.tsx/layout.tsx/404.tsx/500.tsx), "component/" (reusable .tsx components, imported as @component/Name), "styles/" (Tailwind CSS), and "md/" (this project\'s own admin-authored Markdown notes for AI - read "md/README.md" first via read_page_source if it exists).',
   "Before writing or editing any dry() call in a page/component, call read_dry_types to see this project's REAL, current collection/singleton names and field shapes - never guess a field name, it changes as the content schema evolves. list_content_types/list_entries/get_entry preview the actual data a dry() call would render.",
   'For drycms\'s own developer documentation (routing conventions, the dry() API, styling rules, the content-type model, deployment), call list_docs then read_doc - read "docs/APP-ROUTER.md" before writing any page-source code.',
-  "write_page_source saves straight to storage immediately - unlike the admin's own Page Editor UI there is no draft/review step here - but the change still needs a Build (from the admin's Page Editor) before it reaches the live site. Use preview_page_source to confirm a static page.tsx compiles and renders before considering a change done.",
+  "write_page_source saves straight to storage immediately - unlike the admin's own Page Editor UI there is no draft/review step here - and, when this project has Git Sync configured, also commits that exact change directly to the configured branch (no working copy, no PR). Either way the change still needs a Build (from the admin's Page Editor) before it reaches the live site. Use preview_page_source to confirm a static page.tsx compiles and renders before considering a change done.",
   "propose_content_type is the ONE exception to \"applies immediately\": it never touches the live schema - it saves a pending draft the admin reviews and applies themselves under Content Types -> Apply and build, matching by \"name\" to propose an update to an existing type or a new one otherwise.",
 ].join("\n\n");
 
@@ -195,7 +195,7 @@ const TOOLS: ToolDefinition[] = [
   {
     name: "write_page_source",
     description:
-      "Create or overwrite one page-source file's raw text. Writes immediately to storage - unlike the Page Editor's own UI, there is no separate draft/Save step here.",
+      "Create or overwrite one page-source file's raw text. Writes immediately to storage - unlike the Page Editor's own UI, there is no separate draft/Save step here. If this project has Git Sync configured, also commits that same change straight to the configured branch.",
     inputSchema: {
       type: "object",
       properties: {
@@ -598,7 +598,28 @@ async function runWritePageSourceTool(context: DryRouteContext, rawPath: string 
     // - until a real Build/Publish of a `page.tsx`, or the next explicit Save
     // of this exact path by any session, clears it.
     await markAiPageSourceWrite(path, context.env);
-    return { text: `Wrote "${path}" (${code.length.toLocaleString()} characters). This is saved to storage already - it still needs a Build from the admin's Page Editor to reach the live site. Use preview_page_source first to check that a static page compiles and renders.` };
+
+    const buildNote = "It still needs a Build from the admin's Page Editor to reach the live site. Use preview_page_source first to check that a static page compiles and renders.";
+    const wroteNote = `Wrote "${path}" (${code.length.toLocaleString()} characters) to storage.`;
+
+    // Git Sync is per-project config (a `githubSync`/`gitlabSync` singleton
+    // with a server-stored PAT - `git-config.ts`'s `loadGitConfig`), so this
+    // needs no browser working copy: same server-side commit-via-REST-API
+    // path `routes/pages-source.ts`'s own POST "commit" action and the
+    // admin's Build-time snapshot push (`pages-source-github-sync.ts`) already
+    // use. Not configured is an ordinary state for a project that hasn't set
+    // one up, not a failure - fall back to the storage-only message.
+    const [{ loadGithubSyncConfig }, { commitPagesSourceChanges }] = await Promise.all([
+      import("./pages-source-github-sync.js"),
+      import("../git-source-sync.js"),
+    ]);
+    const loaded = await loadGithubSyncConfig(context);
+    if ("error" in loaded) return { text: `${wroteNote} Git Sync isn't configured for this project, so this change was not committed to git. ${buildNote}` };
+
+    const author = { name: context.session?.name || "drycms", email: context.session?.email || "mcp@page-builder.drycms" };
+    const committed = await commitPagesSourceChanges(loaded.config, { [path]: code }, `[CODE] Update ${path}`, author);
+    if (!committed.ok) return { text: `${wroteNote} Committing to git failed: ${committed.reason}. ${buildNote}`, isError: true };
+    return { text: `${wroteNote} Committed to git (${committed.commitSha}). ${buildNote}` };
   } catch (error) {
     return { text: `Could not write "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
   }
