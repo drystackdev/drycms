@@ -16,7 +16,7 @@ import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, sta
 import { fetchPreviewEntries } from "../page-components/dynamic-routes.js";
 import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
 import { MD_ROOT, PAGES_ROOT, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
-import { PREVIEW_VEI_FOCUS_MESSAGE, type PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
+import { PREVIEW_VEI_FOCUS_MESSAGE, type PreviewInspectorLoc, type PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
 import { decodeEntryId, encodeEntryId } from "../lib/id-hash.js";
 import type { FieldFocusEventDetail } from "./content-entry-editor/field-events.js";
@@ -50,6 +50,10 @@ interface ReviewState {
 interface PersistedBuilderState {
   panelMode: BuilderPanelMode;
   panelWidth: number;
+  /** `styles/*.css`/`md/*.md` only - every `.tsx` file (page, layout, or
+   * component) opens in the main `CodePanel` now (`openFilePath`, not
+   * persisted - always defaults to the currently previewed route's own
+   * `page.tsx`, see its own doc comment). */
   fileDialogPath: string | null;
   veiTarget: PreviewVeiClickRef | null;
 }
@@ -295,7 +299,21 @@ export default function PageBuilder() {
   });
   const [codePanelWidth, setCodePanelWidth] = useState(restoredState.panelWidth);
   const [fileDialogPath, setFileDialogPath] = useState<string | null>(canEditCode ? restoredState.fileDialogPath : null);
+  /** The file the main `CodePanel` shows - ANY `.tsx` file (page, layout, or
+   * component), not just the currently previewed route's own `page.tsx`
+   * (`plans/new-ui-page-builder.md`'s original one-file-at-a-time cut,
+   * revised: only `.css`/`.md` still open in `FileDialog` now). Not
+   * persisted - the sync effect below always resets it to the previewed
+   * route's `page.tsx` on load/navigation; picking a layout/component from
+   * the file menu (`handleSelectComponentFile`) pins it there until the
+   * next navigation. */
+  const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [veiTarget, setVeiTarget] = useState<PreviewVeiClickRef | null>(restoredState.veiTarget);
+  /** Hover/cursor sync between the Code panel and the preview
+   * (`status/page-builder-code-preview-sync.md`) - not persisted, both reset
+   * to `null` on every load/navigation like `bubbleRoot`. */
+  const [inspectorHoverLoc, setInspectorHoverLoc] = useState<PreviewInspectorLoc | null>(null);
+  const [codeCursor, setCodeCursor] = useState<{ line: number; column: number } | null>(null);
   const [contentRevision, setContentRevision] = useState(0);
   const [veiOverrides, setVeiOverrides] = useState<DryVeiOverrideMap>({});
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -386,20 +404,50 @@ export default function PageBuilder() {
   const manifest = useMemo(() => buildManifestRouteTree(Object.keys(sourceByPath ?? {})), [sourceByPath]);
   const match = useMemo(() => matchSourceRoute(manifest, pathname), [manifest, pathname]);
   const activePagePath = match?.entryPath ?? null;
+  // `openFilePath` defaults to (and, on every later navigation, follows)
+  // whichever `page.tsx` the preview currently resolves to - the same
+  // implicit "browsing the site follows the code along" behavior this
+  // component always had, back when `CodePanel` just read `match.entryPath`
+  // directly. Picking a layout/component file from the menu
+  // (`handleSelectComponentFile`) overrides this UNTIL the next navigation,
+  // since nothing here re-fires just because that state changed.
+  useEffect(() => {
+    if (activePagePath) setOpenFilePath(activePagePath);
+  }, [activePagePath]);
+  /** Same condition the `<CodePanel>` render below is gated on. */
+  const codePanelOpen = canEditCode && panelMode === "code" && !!openFilePath;
+  // Hover preview -> highlight code: only when the hovered element's OWN
+  // file is the one currently open (never auto-switches tabs - matches what
+  // was asked for).
+  const highlightLoc = codePanelOpen && inspectorHoverLoc && inspectorHoverLoc.path === openFilePath ? inspectorHoverLoc : null;
+  // Code cursor -> highlight preview.
+  //
+  // `useMemo`'d (not a plain const like `highlightLoc` above) because this
+  // builds a NEW object literal on every render - without memoizing on the
+  // actual line/column, `PreviewFrame`'s `postMessage` effect (keyed on
+  // reference) refired on every unrelated re-render this component makes
+  // (e.g. a hover-loc update), resending a stale cursor position into the
+  // iframe and immediately clobbering whatever the hover direction had just
+  // shown - found live: the preview outline appeared then vanished within
+  // one frame every time.
+  const previewCursorLoc = useMemo(
+    () => (codePanelOpen && codeCursor && openFilePath ? { path: openFilePath, line: codeCursor.line, column: codeCursor.column } : null),
+    [codePanelOpen, codeCursor?.line, codeCursor?.column, openFilePath],
+  );
   const codePanelExtraFiles = useMemo(
-    () => (activePagePath ? extraFilesExcluding(activePagePath) : baseExtraFiles),
-    [activePagePath, baseExtraFiles],
+    () => (openFilePath ? extraFilesExcluding(openFilePath) : baseExtraFiles),
+    [openFilePath, baseExtraFiles],
   );
   const fileDialogExtraFiles = useMemo(
     () => (fileDialogPath ? extraFilesExcluding(fileDialogPath) : baseExtraFiles),
     [fileDialogPath, baseExtraFiles],
   );
   /** What Magic Chat treats as "the file the admin is looking at" - the
-   * dialog's file when one is open, otherwise the previewed route's own
-   * entry file. `""` when neither resolves (a route with no page source
-   * yet), which the chat accepts: `path` is context, never a limit on what
-   * it may write. */
-  const magicPath = fileDialogPath ?? match?.entryPath ?? "";
+   * dialog's file when one is open, else whatever `CodePanel` has open, else
+   * the previewed route's own entry file. `""` when nothing resolves (a
+   * route with no page source yet), which the chat accepts: `path` is
+   * context, never a limit on what it may write. */
+  const magicPath = fileDialogPath ?? openFilePath ?? match?.entryPath ?? "";
 
   async function resolvePageFilePathname(entryPath: string): Promise<string | null> {
     for (const candidate of staticPagePaths(manifest)) {
@@ -426,11 +474,27 @@ export default function PageBuilder() {
     const resolved = await resolvePageFilePathname(entryPath);
     if (resolved) {
       setPathname(resolved);
+      // Set directly (not left to the `activePagePath` sync effect) so
+      // `CodePanel` switches the instant this resolves, not one render
+      // later once `match` catches up with the new `pathname`.
+      setOpenFilePath(entryPath);
       setPanelMode("code");
     }
     setBubbleRoot(null);
   }
 
+  /** A `.tsx` file that ISN'T a route's own `page.tsx` - a layout,
+   * `404.tsx`/`500.tsx`, or a `component/*.tsx` - opens in the SAME
+   * `CodePanel` now, without touching the preview's own pathname: none of
+   * these have one route of their own to navigate to, and the whole point
+   * is editing them while watching whatever page currently renders them. */
+  function handleSelectComponentFile(componentPath: string) {
+    setOpenFilePath(componentPath);
+    setPanelMode("code");
+    setBubbleRoot(null);
+  }
+
+  /** `styles/*.css`/`md/*.md` only now - opens `FileDialog`. */
   function handleSelectOtherFile(otherPath: string) {
     setFileDialogPath(otherPath);
     setBubbleRoot(null);
@@ -443,8 +507,13 @@ export default function PageBuilder() {
   async function handleCreateFile(filePath: string, code: string) {
     await createFile(filePath, code);
     setBubbleRoot(null);
-    if (rootOf(filePath)?.id !== PAGES_ROOT || !/(^|\/)page\.tsx$/.test(filePath)) {
-      setFileDialogPath(filePath);
+    const isPageRouteFile = rootOf(filePath)?.id === PAGES_ROOT && /(^|\/)page\.tsx$/.test(filePath);
+    if (!isPageRouteFile) {
+      // Any other `.tsx` (a new layout/component) opens in `CodePanel`, same
+      // as picking an existing one from the menu; only `.css`/`.md` still go
+      // to `FileDialog`.
+      if (filePath.endsWith(".tsx")) handleSelectComponentFile(filePath);
+      else setFileDialogPath(filePath);
       return;
     }
     // NOT `handleSelectPageFile` for a brand-new page: that resolves through
@@ -460,12 +529,14 @@ export default function PageBuilder() {
       return;
     }
     setPathname(directPathname);
+    setOpenFilePath(filePath);
     setPanelMode("code");
   }
 
   async function handleRenameFile(from: string, to: string) {
     await renameFile(from, to);
     if (fileDialogPath === from) setFileDialogPath(to);
+    if (openFilePath === from) setOpenFilePath(to);
     // The previewed route is derived from the manifest, which the rename
     // just changed - re-resolving keeps the preview on the same FILE rather
     // than on a pathname that no longer maps to anything.
@@ -478,6 +549,10 @@ export default function PageBuilder() {
   async function handleDeleteFile(filePath: string) {
     await deleteFile(filePath);
     if (fileDialogPath === filePath) setFileDialogPath(null);
+    // Falls back to whatever the preview currently shows - if THAT was also
+    // the deleted file, the `setPathname("/")` below changes it a moment
+    // later and the `activePagePath` sync effect follows along.
+    if (openFilePath === filePath) setOpenFilePath(activePagePath);
     if (match?.entryPath === filePath) setPathname("/");
   }
 
@@ -548,11 +623,14 @@ export default function PageBuilder() {
 
   async function previewChangedCode(filePath: string) {
     setSaveDialogOpen(false);
-    if (rootOf(filePath)?.id === PAGES_ROOT) {
+    if (rootOf(filePath)?.id === PAGES_ROOT && /(^|\/)page\.tsx$/.test(filePath)) {
       const resolved = await resolvePageFilePathname(filePath);
       if (resolved) setPathname(resolved);
+      setOpenFilePath(filePath);
       setPanelMode("code");
       setVeiTarget(null);
+    } else if (filePath.endsWith(".tsx")) {
+      handleSelectComponentFile(filePath);
     } else {
       setFileDialogPath(filePath);
     }
@@ -741,6 +819,9 @@ export default function PageBuilder() {
         codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
         contentRevision={contentRevision}
         veiOverrides={veiOverrides}
+        inspectorEnabled={codePanelOpen}
+        onInspectorHover={setInspectorHoverLoc}
+        cursorLoc={previewCursorLoc}
       />
 
       {!previewReady && <PageBuilderLoadingLayer pathname={pathname} />}
@@ -766,9 +847,10 @@ export default function PageBuilder() {
         <BubbleMenu
           sourceByPath={sourceByPath}
           activeRoot={bubbleRoot}
-          activePath={activePagePath}
+          activePath={openFilePath}
           onRootChange={setBubbleRoot}
           onSelectPageFile={(entryPath) => void handleSelectPageFile(entryPath)}
+          onSelectComponentFile={handleSelectComponentFile}
           onSelectOtherFile={handleSelectOtherFile}
           recoveredCoreFiles={recoveredCoreFiles}
           onCreateFile={handleCreateFile}
@@ -785,24 +867,26 @@ export default function PageBuilder() {
         />
       )}
 
-      {canEditCode && panelMode === "code" && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
+      {codePanelOpen && openFilePath && (
         <CodePanel
-          path={match.entryPath}
-          source={effectiveSource[match.entryPath] ?? ""}
-          dirty={isDirty(match.entryPath)}
-          canDiscard={canDiscard(match.entryPath)}
+          path={openFilePath}
+          source={effectiveSource[openFilePath] ?? ""}
+          dirty={isDirty(openFilePath)}
+          canDiscard={canDiscard(openFilePath)}
           saving={saving}
           extraFiles={codePanelExtraFiles}
-          onChange={(code) => updateSource(match.entryPath, code)}
+          onChange={(code) => updateSource(openFilePath, code)}
           autosaving={autosaving}
-          onReset={() => void reset(match.entryPath)}
+          onReset={() => void reset(openFilePath)}
           onClose={() => setPanelMode(null)}
           onWidthChange={setCodePanelWidth}
           initialWidth={codePanelWidth}
-          layoutPaths={match.layoutPaths}
-          onOpenLayout={setFileDialogPath}
+          layoutPaths={match?.layoutPaths ?? []}
+          onOpenLayout={handleSelectComponentFile}
           readOnly={review !== null}
-          onOpenHistory={gitState.value.phase === "unconfigured" || review ? undefined : () => setHistoryPath(match.entryPath)}
+          onOpenHistory={gitState.value.phase === "unconfigured" || review ? undefined : () => setHistoryPath(openFilePath)}
+          highlightLoc={highlightLoc}
+          onCursorMove={setCodeCursor}
         />
       )}
 
@@ -810,7 +894,6 @@ export default function PageBuilder() {
         <FileDialog
           path={fileDialogPath}
           source={effectiveSource[fileDialogPath] ?? ""}
-          sourceByPath={effectiveSource}
           extraFiles={fileDialogExtraFiles}
           dirty={isDirty(fileDialogPath)}
           canDiscard={canDiscard(fileDialogPath)}
@@ -819,14 +902,6 @@ export default function PageBuilder() {
           autosaving={autosaving}
           onReset={() => void reset(fileDialogPath)}
           onClose={() => setFileDialogPath(null)}
-          allTypes={allTypes}
-          assetHrefs={assetHrefs}
-          origin={origin}
-          adminPath={path}
-          previewPathname={pathname}
-          previewEntryPath={match?.entryPath ?? null}
-          previewLayoutPaths={match?.layoutPaths ?? []}
-          previewParams={match?.params ?? {}}
           readOnly={review !== null}
           onOpenHistory={gitState.value.phase === "unconfigured" || review ? undefined : () => setHistoryPath(fileDialogPath)}
         />

@@ -59,20 +59,25 @@ function sandboxPreviewModuleCorsPlugin(): Plugin {
           response.setHeader("Vary", "Origin");
           // Vite serves optimized deps (`/node_modules/.vite/deps/*.js?v=…`)
           // with `max-age=31536000, immutable`, and the preview iframe has
-          // its own opaque cache partition. So a copy this middleware cached
-          // WITHOUT the header above - anything fetched before it existed,
-          // or before its match list covered that URL - is replayed inside
-          // the preview for a year, failing every load with "No
-          // 'Access-Control-Allow-Origin' header is present" that no
-          // server-side fix can reach (found live: `preact.js?v=…` imported
-          // by `hydrate-built.ts`'s own dev module graph). Everything this
-          // middleware marks is therefore revalidated instead: dev is
-          // localhost, the ETag makes it a 304, and that 304 comes back
-          // through here with the header attached. `/src/*` already behaves
-          // exactly this way under Vite's own defaults.
-          response.setHeader("Cache-Control", "no-cache");
+          // its own opaque cache partition. A previous version of this
+          // middleware only downgraded that to `no-cache` (store + revalidate
+          // via ETag), which still recurred live: an entry module like
+          // `hydrate-built.ts` has a bare `import "preact"` that Vite
+          // dev-rewrites to the CURRENT optimize-deps hash on every transform,
+          // but the entry module's OWN ETag is derived from its source bytes,
+          // which don't change across a dependency re-optimize - so a 304
+          // replays the BODY cached from before the re-optimize, complete
+          // with the now-dead old hash baked into its rewritten import
+          // statement, and the srcdoc iframe has no `@vite/client` HMR socket
+          // to receive Vite's usual "stale dep, hard-reload" signal and
+          // self-heal the way a normal tab would. `no-store` closes that gap
+          // by never letting the browser keep ANY copy - no ETag, no 304, no
+          // replay - so every load of a sandbox-preview module always gets
+          // Vite's live transform output. Dev-only, opaque-iframe-only: the
+          // perf cost of skipping caching here is a non-issue.
+          response.setHeader("Cache-Control", "no-store");
           const setHeader = response.setHeader.bind(response);
-          response.setHeader = function keepNoCache(name, value) {
+          response.setHeader = function keepNoStore(name, value) {
             return String(name).toLowerCase() === "cache-control" ? response : setHeader(name, value);
           } as typeof response.setHeader;
         }

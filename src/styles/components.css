@@ -7699,6 +7699,10 @@
       border-bottom: 1px solid var(--dry-border);
       flex: none;
 
+      & > * {
+        margin: 0 !important;
+      }
+
       & [role="tab"][aria-selected="true"] {
         background: var(--dry-accent);
         color: var(--dry-foreground);

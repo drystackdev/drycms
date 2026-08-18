@@ -28,6 +28,11 @@ export interface CodePanelProps {
   onOpenLayout: (path: string) => void;
   readOnly?: boolean;
   onOpenHistory?: () => void;
+  /** Page Builder's hover/cursor sync with the preview
+   * (`status/page-builder-code-preview-sync.md`) - passed straight through
+   * to `Editer`. */
+  highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number } | null;
+  onCursorMove?: (loc: { line: number; column: number }) => void;
 }
 
 /**
@@ -91,6 +96,8 @@ export default function CodePanel(props: CodePanelProps) {
           language="tsx"
           style={{ height: "100%" }}
           readOnly={props.readOnly}
+          highlightLoc={props.highlightLoc}
+          onCursorMove={props.onCursorMove}
         />
       </div>
       {diagnosticsOpen && (

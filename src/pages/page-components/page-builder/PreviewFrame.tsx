@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import {
   buildPreviewSrcdoc,
+  PREVIEW_INSPECTOR_CURSOR_MESSAGE,
+  PREVIEW_INSPECTOR_HOVER_MESSAGE,
   PREVIEW_NAVIGATE_MESSAGE,
   PREVIEW_SAVE_MESSAGE,
   PREVIEW_TITLE_MESSAGE,
   PREVIEW_VEI_CLICK_MESSAGE,
   PREVIEW_VEI_MODE_MESSAGE,
+  type PreviewInspectorLoc,
   type PreviewVeiClickRef,
 } from "../../../page-components/page-preview-engine.js";
 import type { SourceRouteMatch } from "../../../server/app-router/route-manifest.js";
@@ -44,6 +47,18 @@ export interface PreviewFrameProps {
    * `dry()` render even though no page-source code changed. */
   contentRevision: number;
   veiOverrides: DryVeiOverrideMap;
+  /** Page Builder's hover/cursor sync with the Code panel
+   * (`status/page-builder-code-preview-sync.md`) - `true` while the panel is
+   * open on this same route's `page.tsx`. Independent of `veiEnabled`. */
+  inspectorEnabled: boolean;
+  /** Reports every hover-target change (or `null` on leaving every marked
+   * element) - the "hover preview -> highlight code" direction. Only fires
+   * when `inspectorEnabled`. */
+  onInspectorHover: (loc: PreviewInspectorLoc | null) => void;
+  /** The Code panel's current cursor position, posted INTO the iframe to
+   * highlight whatever it falls on - the reverse direction. `null` clears
+   * any standing highlight (panel closed, or nothing under the cursor). */
+  cursorLoc: { path: string; line: number; column: number } | null;
 }
 
 export default function PreviewFrame(props: PreviewFrameProps) {
@@ -103,6 +118,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
           editLauncherHref: assetHrefs.editLauncherHref,
           veiEnabled: true,
           runtimeVeiToggle: true,
+          inspectorEnabled: props.inspectorEnabled,
         });
         if (seq !== seqRef.current) return;
         if (iframeRef.current) {
@@ -120,7 +136,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, 400);
     return () => clearTimeout(timer);
-  }, [match?.entryPath, match?.layoutPaths.join(","), JSON.stringify(match?.params), sourceByPath, allTypes, assetHrefs, origin, adminPath, props.contentRevision, props.veiOverrides]);
+  }, [match?.entryPath, match?.layoutPaths.join(","), JSON.stringify(match?.params), sourceByPath, allTypes, assetHrefs, origin, adminPath, props.contentRevision, props.veiOverrides, props.inspectorEnabled]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -135,12 +151,23 @@ export default function PreviewFrame(props: PreviewFrameProps) {
         if (event.data.ref) props.onVeiClick(event.data.ref as PreviewVeiClickRef);
         return;
       }
+      if (event.data.type === PREVIEW_INSPECTOR_HOVER_MESSAGE) {
+        props.onInspectorHover((event.data.loc ?? null) as PreviewInspectorLoc | null);
+        return;
+      }
       if (event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
       if (typeof event.data.pathname === "string") props.onNavigate(event.data.pathname);
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [props.onSave, props.onNavigate, props.onVeiClick]);
+  }, [props.onSave, props.onNavigate, props.onVeiClick, props.onInspectorHover]);
+
+  // Code cursor -> highlight preview: posted on every change, including
+  // `null` (the panel closed, or the cursor left this file) so the bridge
+  // script's own standing highlight clears with it.
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_CURSOR_MESSAGE, loc: props.cursorLoc }, "*");
+  }, [props.cursorLoc]);
 
   return (
     <div class="page-builder-preview" style={{ right: `${props.codePanelWidth}px` }}>

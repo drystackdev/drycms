@@ -92,6 +92,18 @@ export interface EditerProps {
    * reviewing generated/example code with type errors surfaced) - only typing,
    * `Shift+Alt+F`, and applying a quick fix are disabled. @default false */
   readOnly?: boolean;
+  /** Page Builder's "hover preview -> highlight code" direction
+   * (`status/page-builder-code-preview-sync.md`) - a whole-line highlight
+   * decoration on `[startLine, endLine]`, scrolled into view. `"tsx"`
+   * language only (there's no preview to sync a `"css"`/`"md"` file
+   * against); ignored otherwise. Live-updatable, `null` clears it. */
+  highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number } | null;
+  /** Fires on every cursor/selection change - the reverse direction, "code
+   * cursor -> highlight preview". `"tsx"` language only, same reasoning as
+   * `highlightLoc`. Not debounced here - the caller already only acts on it
+   * while its own preview is live, and a `postMessage` per cursor move is
+   * cheap. */
+  onCursorMove?: (loc: { line: number; column: number }) => void;
   class?: string;
   style?: JSX.CSSProperties;
 }
@@ -317,6 +329,13 @@ function ensureCompletionsRegistered() {
 
 const DIAGNOSTIC_CLASS = "editer-diagnostic";
 const ERROR_CLASS = "editer-diagnostic-error";
+/** Page Builder's "hover preview -> highlight code" direction
+ * (`status/page-builder-code-preview-sync.md`) - a whole-line background/
+ * outline on `editor.lines[startLine..endLine]`, applied by the
+ * `highlightLoc` prop's own effect below. Separate from `DIAGNOSTIC_CLASS`'s
+ * squiggly underline - this marks a RANGE the admin is pointing at in the
+ * preview, not an error. */
+const INSPECTOR_HIGHLIGHT_CLASS = "editer-inspector-highlight-line";
 const WARNING_CLASS = "editer-diagnostic-warning";
 
 function clearDiagnostics(editor: PrismEditor): void {
@@ -332,6 +351,36 @@ function absoluteOffset(lineTexts: string[], line: number, column: number): numb
   let offset = 0;
   for (let i = 0; i < line - 1; i++) offset += (lineTexts[i]?.length ?? 0) + 1;
   return offset + (column - 1);
+}
+
+/** Inverse of `absoluteOffset` - the `{line, column}` (both 1-indexed) an
+ * absolute character offset into the full text falls on. Used to report the
+ * editor's own cursor position out to `onCursorMove` (`status/
+ * page-builder-code-preview-sync.md`'s "code cursor -> highlight preview"
+ * direction) in the same 1-indexed convention `ts-worker.ts`'s diagnostics
+ * already use everywhere else in this file. */
+function lineColumnFromOffset(lineTexts: string[], offset: number): { line: number; column: number } {
+  let remaining = offset;
+  for (let i = 0; i < lineTexts.length; i++) {
+    const lineLength = lineTexts[i]!.length;
+    if (remaining <= lineLength) return { line: i + 1, column: remaining + 1 };
+    remaining -= lineLength + 1;
+  }
+  const lastLine = lineTexts.length;
+  return { line: lastLine, column: (lineTexts[lastLine - 1]?.length ?? 0) + 1 };
+}
+
+/** Clears any standing `highlightLoc` decoration - both branches of its own
+ * effect (a new range, or `null`) start from a clean slate rather than
+ * diffing against whatever was highlighted before. */
+function clearInspectorHighlightLines(editor: PrismEditor): void {
+  for (let i = 1; i < editor.lines.length; i++) editor.lines[i]?.classList.remove(INSPECTOR_HIGHLIGHT_CLASS);
+}
+
+function applyInspectorHighlight(editor: PrismEditor, loc: { startLine: number; endLine: number }): void {
+  clearInspectorHighlightLines(editor);
+  for (let line = loc.startLine; line <= loc.endLine; line++) editor.lines[line]?.classList.add(INSPECTOR_HIGHLIGHT_CLASS);
+  editor.lines[loc.startLine]?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 /**
@@ -611,6 +660,7 @@ const shadowStyles = `.prism-code-editor{height:100%;--pce-bg:var(--dry-muted) !
 .editer-quickfix-menu button{all:unset;cursor:pointer;padding:.3em .5em;border-radius:.2em;white-space:nowrap;font:12px ui-sans-serif,system-ui,sans-serif}
 .editer-quickfix-menu button:hover,.editer-quickfix-menu button:focus-visible{background:var(--pce-widget-bg-hover)}
 .editer-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.${INSPECTOR_HIGHLIGHT_CLASS}{background:color-mix(in srgb, #3b82f6 14%, transparent);outline:1px solid color-mix(in srgb, #3b82f6 55%, transparent);outline-offset:-1px}
 ${autocompleteCss}
 ${autocompleteIconsCss}
 ${tailwindSwatchIconsCss}`;
@@ -644,6 +694,8 @@ export default function Editer({
   tailwindCompletions = true,
   tailwindStylesheet,
   readOnly = false,
+  highlightLoc = null,
+  onCursorMove,
   class: className,
   style,
 }: EditerProps) {
@@ -651,6 +703,8 @@ export default function Editer({
   const editorRef = useRef<PrismEditor>();
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onCursorMoveRef = useRef(onCursorMove);
+  onCursorMoveRef.current = onCursorMove;
   const extraFilesRef = useRef(extraFiles ?? {});
   extraFilesRef.current = extraFiles ?? {};
   const tailwindLoadGenerationRef = useRef(0);
@@ -946,6 +1000,13 @@ export default function Editer({
       });
     }
     editor.on("selectionChange", (selection) => checkSignatureHelp(selection[0]));
+    // Page Builder's "code cursor -> highlight preview" direction
+    // (`status/page-builder-code-preview-sync.md`) - reported on every move,
+    // not just while typing, so hitting an arrow key alone (no `onUpdate`)
+    // still updates the preview highlight.
+    editor.on("selectionChange", (selection) => {
+      onCursorMoveRef.current?.(lineColumnFromOffset(editor.value.split("\n"), selection[0]));
+    });
 
     let hoverTimer: ReturnType<typeof setTimeout> | undefined;
     let hoverToken = 0;
@@ -1112,6 +1173,13 @@ export default function Editer({
     const worker = editor && instances.get(editor)?.worker;
     if (editor && worker) worker.client.update(editor.value, extraFilesRef.current);
   }, [extraFiles]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (highlightLoc) applyInspectorHighlight(editor, highlightLoc);
+    else clearInspectorHighlightLines(editor);
+  }, [highlightLoc]);
 
   return (
     <div

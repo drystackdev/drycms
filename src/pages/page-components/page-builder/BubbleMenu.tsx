@@ -49,12 +49,16 @@ export interface BubbleMenuProps {
   activeRoot: string;
   activePath: string | null;
   onRootChange: (root: string) => void;
-  /** A file in the `pages/` root - the caller resolves it to a real `?path=`
-   * pathname (static match, or the dynamic-template + entry-picker fallback,
-   * `plans/new-ui-page-builder.md` mục 6/cạm bẫy 4) since that needs the
-   * route manifest this component doesn't own. */
+  /** A `pages/**\/page.tsx` route file - the caller resolves it to a real
+   * `?path=` pathname (static match, or the dynamic-template +
+   * entry-picker fallback, `plans/new-ui-page-builder.md` mục 6/cạm bẫy 4)
+   * since that needs the route manifest this component doesn't own. */
   onSelectPageFile: (entryPath: string) => void;
-  /** A file in `component/`/`styles/`/`md/` - opens `FileDialog`. */
+  /** Any OTHER `.tsx` file - a layout/`404.tsx`/`500.tsx` under `pages/`, or
+   * a `component/*.tsx` - opens in the same `CodePanel` the page.tsx flow
+   * above uses, without touching the preview's own pathname. */
+  onSelectComponentFile: (path: string) => void;
+  /** A `styles/*.css`/`md/*.md` file - opens `FileDialog`. */
   onSelectOtherFile: (path: string) => void;
   /** Built-in `styles/` files this session had to recreate - announced above
    * the styles tree (`core-styles/SystemFilesPanel.tsx`), nowhere else. */
@@ -86,11 +90,13 @@ export default function BubbleMenu(props: BubbleMenuProps) {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   function handleSelectFile(path: string) {
-    // Only `page.tsx` files go to the preview+CodePanel flow -
-    // `layout.tsx`/`404.tsx`/`500.tsx` (also under `pages/`) have no single
-    // pathname of their own to preview against, so they open in `FileDialog`
-    // like every other non-page file.
+    // `page.tsx` navigates the preview to it; every other `.tsx`
+    // (`layout.tsx`/`404.tsx`/`500.tsx`, or a `component/*.tsx`) still opens
+    // in the SAME `CodePanel` but leaves the preview's pathname alone - it
+    // has no single route of its own to navigate to. Only `.css`/`.md`
+    // still go to `FileDialog`.
     if (props.activeRoot === PAGES_ROOT && /(^|\/)page\.tsx$/.test(path)) props.onSelectPageFile(path);
+    else if (path.endsWith(".tsx")) props.onSelectComponentFile(path);
     else props.onSelectOtherFile(path);
   }
 

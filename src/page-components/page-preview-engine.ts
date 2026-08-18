@@ -1,4 +1,5 @@
 import { buildPage, builtAssetUrlForJsPath, type PageBuildInput, type PageBuildResult } from "./page-build.js";
+import { instrumentSourceLocations } from "./inspector-instrument-client.js";
 
 /**
  * The part of `PageBuilder.tsx`'s live preview (`refreshPreview`) that has
@@ -32,6 +33,27 @@ export const PREVIEW_VEI_CLICK_MESSAGE = "dry-page-preview-vei-click";
 export const PREVIEW_VEI_MODE_MESSAGE = "dry-page-preview-vei-mode";
 export const PREVIEW_VEI_FOCUS_MESSAGE = "dry-page-preview-vei-focus";
 export const PREVIEW_TITLE_MESSAGE = "dry-page-preview-title";
+
+/** `postMessage` type the preview iframe's bridge script sends whenever the
+ * hovered/marked-under-cursor `data-dry-loc` element changes -
+ * `status/page-builder-code-preview-sync.md`'s "hover preview -> highlight
+ * code" direction. `loc: null` means the pointer left every marked element
+ * (or preview inspector mode found nothing under it), not "no change". */
+export const PREVIEW_INSPECTOR_HOVER_MESSAGE = "dry-page-preview-inspector-hover";
+/** `postMessage` type the PARENT sends INTO the iframe with the code
+ * editor's current cursor position - the reverse direction, "code cursor ->
+ * highlight preview". `loc: null` clears any standing highlight (e.g. the
+ * code panel closed, or the cursor moved to a file with nothing rendered in
+ * this preview). */
+export const PREVIEW_INSPECTOR_CURSOR_MESSAGE = "dry-page-preview-inspector-cursor";
+
+export interface PreviewInspectorLoc {
+  path: string;
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
+}
 
 export interface PreviewVeiClickRef {
   kind: "collection" | "singleton";
@@ -71,6 +93,24 @@ html.dry-vei-shift .dry-vei-preview-highlight {
 }
 `;
 
+/** Separate box/class from `.dry-vei-preview-highlight` - code-inspector
+ * hover/cursor sync (`status/page-builder-code-preview-sync.md`) is
+ * independent of VEI content-edit mode (either can be on without the
+ * other), and a visually distinct color keeps the two from being confused
+ * when both happen to highlight the same element. */
+const INSPECTOR_PREVIEW_MARKER_CSS = `
+.dry-inspector-preview-highlight {
+  position: fixed;
+  z-index: 2147483000;
+  display: none;
+  pointer-events: none;
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+  background: color-mix(in srgb, #3b82f6 10%, transparent);
+  border-radius: 2px;
+}
+`;
+
 /** Opaque-origin sandbox frames are intentionally denied the browser's real
  * Storage objects. Tenant components still commonly use localStorage for
  * harmless UI state (theme toggles, dismissed banners), so give the preview
@@ -93,8 +133,9 @@ export function buildPreviewStorageShimScript(): string {
  * same precedence the deleted public-site overlay's own `intercept` gives a marked
  * click over the page's native behavior.
  */
-export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiToggle?: boolean }): string {
+export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiToggle?: boolean; inspector?: boolean }): string {
   const veiEnabled = options?.vei === true;
+  const inspectorEnabled = options?.inspector === true;
   const veiBranch = veiEnabled
     ? `if(veiMode&&!event.shiftKey){var marked=findMarked(event.target);if(marked){var parts=marked.raw.trim().split(/\\s+/)[0].split(":");if(parts.length===5){event.preventDefault();window.parent.postMessage({type:${JSON.stringify(
         PREVIEW_VEI_CLICK_MESSAGE,
@@ -116,7 +157,40 @@ export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiTo
   const shiftSupport = veiEnabled
     ? `function syncShift(event){document.documentElement.classList.toggle("dry-vei-shift",veiMode&&event.shiftKey===true);}window.addEventListener("keydown",syncShift,true);window.addEventListener("keyup",syncShift,true);window.addEventListener("blur",function(){document.documentElement.classList.remove("dry-vei-shift");hideHighlight();});`
     : "";
-  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${focusListener}${shiftSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
+
+  // `data-dry-loc="path:startLine:startCol:endLine:endCol"` marks a JSX host
+  // element's ORIGINAL source range (`inspector-instrument.ts`). Split from
+  // the right (last 4 colon-separated parts are numbers) rather than the
+  // left, so a path is never mistaken for part of the numeric suffix.
+  const parseLoc = inspectorEnabled
+    ? `function parseLoc(raw){var parts=raw.split(":");if(parts.length<5)return null;var nums=parts.slice(-4).map(Number);if(nums.some(isNaN))return null;return{path:parts.slice(0,-4).join(":"),startLine:nums[0],startCol:nums[1],endLine:nums[2],endCol:nums[3]};}function locContains(loc,line,column){if(line<loc.startLine||line>loc.endLine)return false;if(line===loc.startLine&&column<loc.startCol)return false;if(line===loc.endLine&&column>loc.endCol)return false;return true;}function findLocMarked(node){while(node){if(node.getAttribute){var raw=node.getAttribute("data-dry-loc");if(raw){var loc=parseLoc(raw);if(loc)return{el:node,loc:loc};}}node=node.parentElement;}return null;}function findLocContaining(path,line,column){var nodes=document.querySelectorAll("[data-dry-loc]");var best=null;var bestSize=Infinity;for(var i=0;i<nodes.length;i++){var loc=parseLoc(nodes[i].getAttribute("data-dry-loc"));if(!loc||loc.path!==path||!locContains(loc,line,column))continue;var size=(loc.endLine-loc.startLine)*100000+Math.abs(loc.endCol-loc.startCol);if(size<bestSize){bestSize=size;best=nodes[i];}}return best;}`
+    : "";
+  // Deliberately its own box/class, not `showHighlight`/`hideHighlight`
+  // above - independent of VEI content-edit mode (either can be on
+  // without the other), see `INSPECTOR_PREVIEW_MARKER_CSS`'s own comment.
+  const inspectorHighlightSupport = inspectorEnabled
+    ? `var inspectorHighlight=document.createElement("div");inspectorHighlight.className="dry-inspector-preview-highlight";(document.body||document.documentElement).appendChild(inspectorHighlight);function hideInspectorHighlight(){inspectorHighlight.style.display="none";}function showInspectorHighlight(el){var rect=el.getBoundingClientRect();inspectorHighlight.style.left=rect.left+"px";inspectorHighlight.style.top=rect.top+"px";inspectorHighlight.style.width=rect.width+"px";inspectorHighlight.style.height=rect.height+"px";inspectorHighlight.style.borderRadius=getComputedStyle(el).borderRadius;inspectorHighlight.style.display="block";}`
+    : "";
+  // Hover preview -> highlight code: reports only on CHANGE (not every
+  // mousemove tick) - `PageBuilder.tsx` only cares about "what's under the
+  // pointer now", and a message per pixel would be wasted work on both ends.
+  // Shift is the escape hatch - held down, hovering (or a stray keydown with
+  // the mouse already resting on a marked element) reports/shows nothing, so
+  // the element's own native behavior (hover states, a link's title tooltip,
+  // text selection) isn't fought by the highlight box sitting on top of it -
+  // same convention `shiftSupport`'s `dry-vei-shift` already uses for VEI.
+  const inspectorHoverSupport = inspectorEnabled
+    ? `var lastHoverLocEl=null;function reportHover(marked){lastHoverLocEl=marked?marked.el:null;if(marked){showInspectorHighlight(marked.el);window.parent.postMessage({type:${JSON.stringify(PREVIEW_INSPECTOR_HOVER_MESSAGE)},loc:marked.loc},"*");}else{hideInspectorHighlight();window.parent.postMessage({type:${JSON.stringify(PREVIEW_INSPECTOR_HOVER_MESSAGE)},loc:null},"*");}}document.addEventListener("mousemove",function(event){if(event.shiftKey){if(lastHoverLocEl)reportHover(null);return;}var marked=findLocMarked(event.target);var el=marked?marked.el:null;if(el===lastHoverLocEl)return;reportHover(marked);},true);document.addEventListener("mouseleave",function(){if(lastHoverLocEl)reportHover(null);},true);document.addEventListener("keydown",function(event){if(event.shiftKey&&lastHoverLocEl)reportHover(null);},true);`
+    : "";
+  // Code cursor -> highlight preview: the parent posts the editor's current
+  // {path,line,column}; the smallest `data-dry-loc` range containing that
+  // point is the most specific (deepest) element, the same "which element
+  // is this" question hover answers in the other direction.
+  const inspectorCursorSupport = inspectorEnabled
+    ? `window.addEventListener("message",function(event){if(!event.data||event.data.type!==${JSON.stringify(PREVIEW_INSPECTOR_CURSOR_MESSAGE)})return;var loc=event.data.loc;if(!loc){hideInspectorHighlight();return;}var el=findLocContaining(loc.path,loc.line,loc.column);if(!el){hideInspectorHighlight();return;}el.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});showInspectorHighlight(el);});`
+    : "";
+
+  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${focusListener}${shiftSupport}${parseLoc}${inspectorHighlightSupport}${inspectorHoverSupport}${inspectorCursorSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 export interface BuildPreviewSrcdocInput {
@@ -135,6 +209,15 @@ export interface BuildPreviewSrcdocInput {
    * function doesn't assume that. */
   veiEnabled?: boolean;
   runtimeVeiToggle?: boolean;
+  /** Instruments every `.tsx` file with `data-dry-loc` markers before
+   * building (`inspector-instrument.ts`) and injects the hover/cursor sync
+   * bridge script - `status/page-builder-code-preview-sync.md`. Independent
+   * of `veiEnabled`: `PageBuilder.tsx` sets this from "is the Code panel
+   * open", not from VEI content-edit mode. Costs one off-main-thread parse
+   * pass per `.tsx` file per rebuild - skip it (leave `false`) for any
+   * preview where nothing will ever read `data-dry-loc` back
+   * (`FileDialog.tsx`'s standalone file preview, for instance). */
+  inspectorEnabled?: boolean;
 }
 
 export interface BuildPreviewSrcdocResult {
@@ -169,7 +252,13 @@ function previewModuleDataUrl(source: string): string {
  * every caller before this was extracted.
  */
 export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promise<BuildPreviewSrcdocResult> {
-  const result = await buildPage(input.buildInput);
+  // A throwaway COPY of `sourceByPath` for THIS build only - never written
+  // back anywhere, so `data-dry-loc` markers never reach the real store
+  // (`use-page-builder-source.ts`) or a published page's HTML.
+  const buildInput = input.inspectorEnabled
+    ? { ...input.buildInput, sourceByPath: await instrumentSourceLocations(input.buildInput.sourceByPath) }
+    : input.buildInput;
+  const result = await buildPage(buildInput);
 
   const importMap = { imports: {} as Record<string, string> };
   for (const asset of result.jsAssets) {
@@ -194,14 +283,16 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
   const withoutVei = result.html.replace(`<script type="module" src="${input.editLauncherHref}"></script>`, "");
 
   const veiStyle = input.veiEnabled ? `<style>${VEI_PREVIEW_MARKER_CSS}</style>` : "";
+  const inspectorStyle = input.inspectorEnabled ? `<style>${INSPECTOR_PREVIEW_MARKER_CSS}</style>` : "";
   const headExtras =
     `<base href="${input.buildInput.origin}/">` +
     buildPreviewStorageShimScript() +
     (result.jsAssets.length > 0 ? `<script type="importmap">${JSON.stringify(importMap).replace(/</g, "\\u003c")}</script>` : "") +
-    veiStyle;
+    veiStyle +
+    inspectorStyle;
   const withBase = withoutVei.replace("<head>", `<head>${headExtras}`);
 
-  const bridgeScript = buildPreviewBridgeScript({ vei: input.veiEnabled, runtimeVeiToggle: input.runtimeVeiToggle });
+  const bridgeScript = buildPreviewBridgeScript({ vei: input.veiEnabled, runtimeVeiToggle: input.runtimeVeiToggle, inspector: input.inspectorEnabled });
   const withBridgeScript = withBase.includes("</body>") ? withBase.replace("</body>", `${bridgeScript}</body>`) : withBase + bridgeScript;
 
   return { html: withBridgeScript, jsAssets: result.jsAssets, deps: result.deps, inSitemap: result.inSitemap, blobUrls: [] };
