@@ -304,5 +304,26 @@ export default defineConfig(({ isSsrBuild, command }) => ({
     // re-optimizes, which forces a full page reload right in the middle of a
     // clone. Naming them here gets them pre-bundled at startup instead.
     include: ["isomorphic-git", "isomorphic-git/http/web", "buffer", "@zenfs/core", "@zenfs/dom"],
+    // Same root cause, different graph: the Page Builder/App Router preview
+    // iframe's own dev entries (`assets.ts`'s DEV `HYDRATE_ENTRY_HREF`/
+    // `EDIT_LAUNCHER_HREF`/`HYDRATE_BUILT_HREF`) are only ever reached by a
+    // raw browser request FROM INSIDE the sandboxed `srcdoc` iframe
+    // (`page-preview-engine.ts`) - never via a static `import` anywhere in
+    // the admin's own `index.html`/`main.tsx` graph, so Vite's default
+    // crawl (index.html only) never sees them or their transitive deps.
+    // First contact happens live, mid-session, inside the iframe - which has
+    // no `@vite/client` HMR socket to receive the "stale dep, reload" signal
+    // a normal tab would get, so it just fails (`CORS`/`504 Outdated
+    // Optimize Dep`/`net::ERR_FAILED` depending on the exact race) instead
+    // of recovering (found live: `status/page-builder-code-preview-sync.md`,
+    // `preact.js` via `media-src-hook.ts`'s bare `import ... from "preact"`
+    // - a package the ADMIN'S own entry also imports, so even an
+    // already-discovered dep's shared `browserHash` gets bumped out from
+    // under the iframe the moment some other iframe-only dependency is
+    // discovered late). Listing these as EXTRA entries (alongside the
+    // default `index.html`, which `entries` fully replaces once set) makes
+    // Vite crawl them at cold start too, so the whole closure is pre-bundled
+    // up front - no mid-session discovery, no bump, no race.
+    entries: ["index.html", "src/apps/hydrate-client.ts", "src/apps/edit-launcher.ts", "src/apps/hydrate-built.ts"],
   },
 }));

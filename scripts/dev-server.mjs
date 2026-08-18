@@ -21,11 +21,21 @@ import { createServer as createViteServer } from "vite";
  * while a normal `bun run dev` was up silently killed that unrelated,
  * still-wanted session. Confirmed live: an e2e run took down a concurrent
  * `bun run dev` on :5173 this way.
+ *
+ * `-sTCP:LISTEN` (not a bare `lsof -ti :port`) - `lsof -ti` without a state
+ * filter matches EVERY process with any socket referencing this port,
+ * including a browser tab or an editor's own dev-tools connection that's
+ * merely a CLIENT of it (even one already CLOSED at the TCP level still
+ * shows up). Confirmed live, twice in one debugging session: a bare
+ * `lsof -ti :5173` handed this function a Chrome process's PID and a VS
+ * Code Helper's PID alongside the real dev server's, and it SIGTERM'd all
+ * of them. Only the process actually LISTENing on the port is a previous
+ * instance of this same server - everything else is an innocent bystander.
  */
 function closeExistingDevServer(port) {
   let output;
   try {
-    output = execSync(`lsof -ti :${port}`, { encoding: "utf8" });
+    output = execSync(`lsof -ti :${port} -sTCP:LISTEN`, { encoding: "utf8" });
   } catch {
     return; // Nothing bound to this port yet, or `lsof` isn't available.
   }

@@ -148,11 +148,60 @@ cache bị nhiễm mà không cần user tự tay xoá cache trình duyệt.
 Verify: curl hash mới → 200 + CORS header đúng; Playwright load lại
 `/dry/page-builder` → 0 lỗi/warning console kể từ lần điều hướng.
 
+**Vẫn tái phát sau đó (user báo lại, kèm `net::ERR_FAILED` - đúng hash
+`aeffcb54` quay lại)**: lần "xoá deps + restart" ở trên chỉ che triệu chứng
+tạm thời, KHÔNG sửa root cause thật. So sánh kỹ hơn: `preact` (bare
+`import ... from "preact"`) được `src/main.tsx` - entry thật của admin -
+import tĩnh, nên Vite ĐÃ pre-bundle nó từ đầu; nhưng `browserHash` là MỘT
+mã chung cho TOÀN BỘ thư mục pre-bundle, không phải per-package - nên chỉ
+cần một dependency KHÁC bị phát hiện muộn cũng đủ bump lại hash của
+`preact` dù bản thân nó không đổi gì.
+
+Root cause thật (structural, không phải cache): 3 entry file preview iframe
+dùng ở dev (`assets.ts`: `HYDRATE_ENTRY_HREF=/src/apps/hydrate-client.ts`,
+`EDIT_LAUNCHER_HREF=/src/apps/edit-launcher.ts`,
+`HYDRATE_BUILT_HREF=/src/apps/hydrate-built.ts`) chỉ được request qua URL
+thô TỪ BÊN TRONG iframe cô lập (`page-preview-engine.ts` build srcdoc) -
+không hề nằm trong đồ thị `import` tĩnh nào Vite crawl được từ
+`index.html`/`main.tsx`. Nên dependency riêng của nhánh preview (mọi thứ
+`hydrate-built.ts` kéo theo mà admin's own bundle không chạm tới) chỉ được
+Vite phát hiện MUỘN, đúng lúc runtime, kích hoạt re-optimize giữa phiên -
+bump `browserHash` chung, và vì iframe không có socket `@vite/client` HMR
+nên không nhận được tín hiệu tự reload như tab thường - y hệt pattern
+`isomorphic-git` đã note sẵn trong `optimizeDeps.include` (dynamic
+`import()` không được crawl tĩnh), chỉ khác object bị "phát hiện muộn" lần
+này là CẢ MỘT NHÁNH ENTRY riêng, không phải 1 package lẻ.
+
+Fix thật (structural, `vite.config.ts`): thêm
+`optimizeDeps.entries: ["index.html", "src/apps/hydrate-client.ts",
+"src/apps/edit-launcher.ts", "src/apps/hydrate-built.ts"]` - Vite crawl
+CẢ 4 gốc này ngay từ cold start (lưu ý `entries` THAY THẾ hoàn toàn crawl
+mặc định index.html-only nên phải liệt kê lại `"index.html"`), pre-bundle
+trọn vẹn closure của nhánh preview cùng lúc với admin - không còn phát
+hiện muộn giữa phiên, không còn bump hash, không còn race.
+
+Verify: `browserHash` ổn định qua 5 request liên tiếp tới cả 2 file dùng
+bare `import "preact"` (`media-src-hook.ts`, `vei-marker-hook.ts`) - cùng
+1 hash mỗi lần; Playwright load lại `/dry/page-builder` 3 lần liên tiếp
+(fresh navigation mỗi lần) → 0 lỗi CORS/preact ở cả 3 lần.
+
+**Sự cố ngoài lề #3 - đã fix**: trong lúc restart lần này phát hiện có 1
+process VS Code Helper đang giữ kết nối ESTABLISHED (không phải CLOSED như
+2 lần trước) tới cổng 5173 - nếu restart tiếp mà không sửa
+`closeExistingDevServer` thì gần như chắc chắn sẽ kill nhầm process đang
+hoạt động thật. Đã sửa `scripts/dev-server.mjs`: đổi `lsof -ti :$port`
+thành `lsof -ti :$port -sTCP:LISTEN` (lọc theo state LISTEN thay vì bắt
+mọi socket tham chiếu tới port) - restart sau đó xác nhận chỉ kill đúng
+process dev server cũ, VS Code Helper (72807) vẫn sống nguyên.
+
 ## Status
 
-Hoàn thành, đã verify live. `bun run typecheck` sạch, `bun run test` 1448
-tests pass (150 files). CORS fix (no-store) đã verify qua curl trực tiếp
-với dev server thật.
+Hoàn thành, đã verify live qua 3 lần reload liên tiếp không lỗi.
+`bun run typecheck` sạch, `bun run test` 1448 tests pass (150 files). CORS
+fix ban đầu (no-store) vẫn giữ (đúng hướng, không sai) nhưng root cause
+thật là `optimizeDeps.entries` thiếu nhánh preview - đã bổ sung.
+`closeExistingDevServer` cũng đã fix (chỉ match LISTEN, không bắt nhầm
+process khác) sau khi gây sự cố 3 lần trong 1 phiên.
 
 ## Speed
 
