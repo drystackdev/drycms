@@ -119,6 +119,20 @@ describe("buildSqlDump / parseSqlDump / restoreFromDump (sqlite)", () => {
     expect(() => target.all(`SELECT * FROM "orphan";`)).toThrow();
   });
 
+  it("preserves standalone indexes (e.g. unique constraints), not just tables", async () => {
+    const source = await freshSqliteHandle();
+    seedContent(source);
+    source.exec(`CREATE UNIQUE INDEX "ux_tag_name" ON "tag"("name");`);
+
+    const dump = await buildSqlDump(sqliteRawHandle(source));
+    const statements = parseSqlDump(dump);
+
+    const target = await freshSqliteHandle();
+    await restoreFromDump(sqliteRawHandle(target), statements);
+
+    expect(() => target.run(`INSERT INTO "tag" ("id","name") VALUES (?,?);`, [3, "News"])).toThrow();
+  });
+
   it("rejects a statement outside the fixed allowlist", () => {
     expect(() => parseSqlDump(`-- drycms content backup\nDROP TABLE IF EXISTS "post";\nATTACH DATABASE 'evil.db' AS evil;`)).toThrow(
       /Unsupported statement/,

@@ -22,6 +22,15 @@ export interface RawSqlHandle {
   /** Whether one `execAll` call is guaranteed to roll back as a whole. */
   atomicExecAll: boolean;
   listTables(): Promise<{ name: string; sql: string }[]>;
+  /** Every standalone index (`CREATE [UNIQUE] INDEX ...`) - critically
+   * including unique indexes migration.ts creates for `unique: true`
+   * fields (`ux_user_email`, `ux_role_name`, ...), which live OUTSIDE the
+   * owning table's own `CREATE TABLE` statement and so are invisible to
+   * `listTables()`. Excludes sqlite's own auto-indexes for inline PK/UNIQUE
+   * column constraints (`sql IS NULL` in `sqlite_master` for those - they
+   * come back for free with the table's own `CREATE TABLE`, re-explaining
+   * them here would be redundant at best). */
+  listIndexes(): Promise<{ name: string; sql: string }[]>;
   queryAll(table: string): Promise<Record<string, unknown>[]>;
   /** Runs every statement as one all-or-nothing unit where the underlying
    * engine supports it (a real transaction locally); D1 has no
@@ -39,6 +48,12 @@ export function sqliteRawHandle(handle: SqliteHandle): RawSqlHandle {
         `SELECT "name", "sql" FROM "sqlite_master" WHERE "type" = 'table' ORDER BY "name";`,
       );
       return rows.filter((row) => !isInternalTable(row.name));
+    },
+    async listIndexes() {
+      const rows = handle.all<{ name: string; sql: string | null }>(
+        `SELECT "name", "sql" FROM "sqlite_master" WHERE "type" = 'index' AND "sql" IS NOT NULL ORDER BY "name";`,
+      );
+      return rows.filter((row): row is { name: string; sql: string } => !isInternalTable(row.name));
     },
     async queryAll(table) {
       return handle.all<Record<string, unknown>>(`SELECT * FROM ${quoteIdent(table)};`);
@@ -67,6 +82,12 @@ export function d1RawHandle(db: D1Database): RawSqlHandle {
     async listTables() {
       const result = await db
         .prepare(`SELECT "name", "sql" FROM "sqlite_master" WHERE "type" = 'table' ORDER BY "name";`)
+        .all<{ name: string; sql: string }>();
+      return (result.results ?? []).filter((row) => !isInternalTable(row.name));
+    },
+    async listIndexes() {
+      const result = await db
+        .prepare(`SELECT "name", "sql" FROM "sqlite_master" WHERE "type" = 'index' AND "sql" IS NOT NULL ORDER BY "name";`)
         .all<{ name: string; sql: string }>();
       return (result.results ?? []).filter((row) => !isInternalTable(row.name));
     },
@@ -102,9 +123,11 @@ export function sqlLiteral(value: unknown): string {
  * script - `DROP TABLE IF EXISTS` + the table's own `CREATE TABLE` (verbatim
  * from `sqlite_master`) + one `INSERT INTO ... VALUES (...)` per row, values
  * inlined as literals rather than parameterized (this is a static file, not
- * a live query). Both `content.engine` values produce this exact same
- * format, and it's the only format `restoreFromDump` accepts back - this is
- * a drycms-to-drycms round trip, not a general-purpose SQL dump importer.
+ * a live query), followed by every standalone index (`listIndexes()`) -
+ * emitted last, once every table it could reference already exists. Both
+ * `content.engine` values produce this exact same format, and it's the only
+ * format `restoreFromDump` accepts back - this is a drycms-to-drycms round
+ * trip, not a general-purpose SQL dump importer.
  */
 export async function buildSqlDump(handle: RawSqlHandle): Promise<string> {
   const tables = await handle.listTables();
@@ -121,6 +144,11 @@ export async function buildSqlDump(handle: RawSqlHandle): Promise<string> {
     }
     lines.push("");
   }
+  const indexes = await handle.listIndexes();
+  for (const index of indexes) {
+    lines.push(`${index.sql.trim().replace(/;\s*$/, "")};`);
+  }
+  if (indexes.length > 0) lines.push("");
   return lines.join("\n");
 }
 

@@ -18,6 +18,12 @@ import {
 } from "../../content-types/engine/backup.js";
 import { quoteIdent } from "../../content-types/naming.js";
 import { ContentEngineError } from "../../content-types/engine/types.js";
+import {
+  FRESH_BOOT_DUMP,
+  FRESH_BOOT_GITHUB_SYNC_COLUMNS,
+  FRESH_BOOT_SUPER_ADMIN_ROLE_ID,
+  FRESH_BOOT_SYSTEM_SETTINGS_COLUMNS,
+} from "../../content-types/engine/fresh-boot-dump.generated.js";
 
 function errorResponse(error: unknown): Response {
   if (error instanceof ContentEngineError) {
@@ -48,13 +54,20 @@ async function resolveRawHandle(context: DryRouteContext): Promise<RawSqlHandle>
  * `PUT {path}/api/full-reset/content` - the database half of "Reset
  * everything" (`GithubSyncSettings.tsx`'s Reset section, `status/full-reset.md`).
  * Wipes EVERY real table (every app-defined content type, and all 11 built-in
- * ones) and replaces them with a genuine fresh-boot schema+seed:
- * `sqlite.ts`'s `bootstrapDefaultContentSchema` is run against a throwaway
- * IN-MEMORY database so the dump taken from it (`engine/backup.ts`'s
- * `buildSqlDump`) is byte-identical to what a brand-new project actually
- * boots with, rather than re-deriving the default schema/seed some other way
- * that could silently drift from it. That dump is then replayed onto the
- * REAL database via `restoreFromDump` - the exact same primitive
+ * ones) and replaces them with a genuine fresh-boot schema+seed. Under the
+ * local sqlite content engine, `sqlite.ts`'s `bootstrapDefaultContentSchema`
+ * is run live against a throwaway IN-MEMORY database so the dump taken from
+ * it (`engine/backup.ts`'s `buildSqlDump`) is byte-identical to what a
+ * brand-new project actually boots with, rather than re-deriving the default
+ * schema/seed some other way that could silently drift from it. Under D1 -
+ * a Cloudflare Worker has no `bun:sqlite`/`node:sqlite`/`better-sqlite3` to
+ * build that live, ever - the same dump is used precomputed instead:
+ * `fresh-boot-dump.generated.ts`, produced by `scripts/build-fresh-boot-
+ * dump.ts` (chained into `build:worker`) by running that exact same live
+ * bootstrap under bun/node ahead of time, so it carries the same
+ * no-drift guarantee without needing a request-time sqlite driver that
+ * Workers simply doesn't have. Either dump is then replayed onto the REAL
+ * database via `restoreFromDump` - the exact same primitive
  * `routes/backup.ts`'s restore already uses, so this inherits its atomicity/
  * D1-recovery guarantees for free.
  *
@@ -87,13 +100,30 @@ async function resetContent(context: DryRouteContext): Promise<Response> {
     const preservedGithubSync = await rawHandle.queryAll("githubSync");
     const preservedSystemSettings = await rawHandle.queryAll("systemSettings");
 
-    const scratch = await resolveSqliteDriver(":memory:");
-    bootstrapDefaultContentSchema(scratch);
-    const superAdminRoleId = scratch.all<{ id: number }>(`SELECT "id" FROM "role" WHERE "name" = 'Super Admin';`)[0]?.id;
-    if (superAdminRoleId === undefined) {
-      throw new ContentEngineError("unsupported", "The fresh schema has no Super Admin role - aborted before touching the database.");
+    let superAdminRoleId: number;
+    let statements: string[];
+    let githubSyncColumns: string[];
+    let systemSettingsColumns: string[];
+    if (content.engine === "D1") {
+      // No bun:sqlite/node:sqlite/better-sqlite3 in a Worker - use the dump
+      // precomputed at build time instead of building one live (see this
+      // function's own doc comment).
+      superAdminRoleId = FRESH_BOOT_SUPER_ADMIN_ROLE_ID;
+      statements = parseSqlDump(FRESH_BOOT_DUMP);
+      githubSyncColumns = FRESH_BOOT_GITHUB_SYNC_COLUMNS;
+      systemSettingsColumns = FRESH_BOOT_SYSTEM_SETTINGS_COLUMNS;
+    } else {
+      const scratch = await resolveSqliteDriver(":memory:");
+      bootstrapDefaultContentSchema(scratch);
+      const roleId = scratch.all<{ id: number }>(`SELECT "id" FROM "role" WHERE "name" = 'Super Admin';`)[0]?.id;
+      if (roleId === undefined) {
+        throw new ContentEngineError("unsupported", "The fresh schema has no Super Admin role - aborted before touching the database.");
+      }
+      superAdminRoleId = roleId;
+      statements = parseSqlDump(await buildSqlDump(sqliteRawHandle(scratch)));
+      githubSyncColumns = scratch.all<{ name: string }>(`PRAGMA table_info("githubSync");`).map((row) => row.name);
+      systemSettingsColumns = scratch.all<{ name: string }>(`PRAGMA table_info("systemSettings");`).map((row) => row.name);
     }
-    const statements = parseSqlDump(await buildSqlDump(sqliteRawHandle(scratch)));
 
     // `_pages`/`_page_deps` (the page-build registry) live in this SAME
     // physical database, so `restoreFromDump` below drops them too - but
@@ -121,9 +151,19 @@ async function resetContent(context: DryRouteContext): Promise<Response> {
       `INSERT INTO "user" (${userColumns.map(quoteIdent).join(", ")}) VALUES (${userValues.join(", ")});`,
       `INSERT INTO "user_roles" ("parent_id","position","target_id") VALUES (${sqlLiteral(preservedUser.id)}, 0, ${sqlLiteral(superAdminRoleId)});`,
     );
-    for (const [table, rows] of [["githubSync", preservedGithubSync], ["systemSettings", preservedSystemSettings]] as const) {
+    // Filtered against the FRESH table's own columns, not the live row's -
+    // a live tenant's table can carry columns the current built-in default
+    // definition no longer has (schema drift), and inserting those against
+    // the just-recreated fresh table would fail with "has no column named
+    // ...". Extra live-only values are simply dropped; every fresh column
+    // this loop doesn't supply already has its own default/nullability from
+    // the fresh `CREATE TABLE` itself.
+    for (const [table, rows, freshColumns] of [
+      ["githubSync", preservedGithubSync, githubSyncColumns],
+      ["systemSettings", preservedSystemSettings, systemSettingsColumns],
+    ] as const) {
       for (const row of rows) {
-        const columns = Object.keys(row);
+        const columns = Object.keys(row).filter((column) => freshColumns.includes(column));
         const values = columns.map((column) => sqlLiteral(row[column]));
         statements.push(`INSERT INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(", ")}) VALUES (${values.join(", ")});`);
       }
