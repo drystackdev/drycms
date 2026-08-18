@@ -29,9 +29,18 @@ function isDuplicateColumnError(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
-/** Same per-binding memoization as `d1.ts`/`entries-d1.ts` - one bootstrap
- * per live binding for the isolate's lifetime, not one per request. */
-const bootstrapByBinding = new WeakMap<D1Database, Promise<void>>();
+/** Same per-binding memoization as `d1.ts`'s `bootstrappedBindings` - marks
+ * COMPLETED bootstraps only, never an in-flight `Promise`. A `WeakMap<D1Database,
+ * Promise<void>>` here previously cached the promise itself: if the request
+ * that created it had its pending I/O canceled mid-bootstrap (workerd cancels
+ * pending I/O for a request that's gone away), that promise would never
+ * settle, and `.catch()` never fires for a promise that neither resolves nor
+ * rejects - every later request awaiting it via `ensureBootstrap()` (which
+ * gates every operation below) would then hang forever for the isolate's
+ * whole life (see `project_drycms_cross_request_promise_hang`). A `WeakSet`
+ * marked only after success has no such window: racing requests before the
+ * first success just re-run an idempotent bootstrap. */
+const bootstrappedBindings = new WeakSet<D1Database>();
 
 export function createD1PagesRegistryAdapter(
   option: ResolvedD1ContentOption,
@@ -47,62 +56,56 @@ export function createD1PagesRegistryAdapter(
   const db: D1Database = maybeDb;
 
   async function ensureBootstrap(): Promise<void> {
-    let bootstrapped = bootstrapByBinding.get(db);
-    if (!bootstrapped) {
-      bootstrapped = (async () => {
-        // `publish_at` used to back a page-level "schedule" build - removed
-        // in favor of the entry-level `features.schedule` gate alone
-        // (`entry-where.ts`'s `buildPublishedOnlyClause`). Not dropped from
-        // any EXISTING D1 database (no migration runs here), just no longer
-        // read/written - a pre-existing column sits unused, harmless.
-        await db
-          .prepare(
-            `CREATE TABLE IF NOT EXISTS "_pages" (\n` +
-              `  "path" TEXT PRIMARY KEY,\n` +
-              `  "object_key" TEXT NOT NULL,\n` +
-              `  "build_id" TEXT NOT NULL,\n` +
-              `  "built_at" INTEGER NOT NULL,\n` +
-              `  "in_sitemap" INTEGER NOT NULL\n` +
-              `);`,
-          )
-          .run();
-        // Added after the table already existed on real deployed tenants -
-        // `CREATE TABLE IF NOT EXISTS` above never adds a column to an
-        // already-existing table, so this runs unconditionally on every
-        // isolate cold start; `isDuplicateColumnError` swallows the
-        // expected no-op case on every boot after the first.
-        try {
-          await db.prepare('ALTER TABLE "_pages" ADD COLUMN "source_hash" TEXT;').run();
-        } catch (error) {
-          if (!isDuplicateColumnError(error)) throw error;
-        }
-        await db
-          .prepare(
-            `CREATE TABLE IF NOT EXISTS "_page_deps" (\n` +
-              `  "path" TEXT NOT NULL,\n` +
-              `  "resource" TEXT NOT NULL,\n` +
-              `  "version" INTEGER NOT NULL,\n` +
-              `  PRIMARY KEY ("path", "resource")\n` +
-              `);`,
-          )
-          .run();
-        await db.prepare(`CREATE INDEX IF NOT EXISTS "ix_page_deps_resource" ON "_page_deps"("resource");`).run();
-        // Own copy, same reasoning as the sqlite adapter's - see that
-        // file's doc comment.
-        await db
-          .prepare(
-            `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
-              `  "resource" TEXT PRIMARY KEY,\n` +
-              `  "version" INTEGER NOT NULL,\n` +
-              `  "updated_at" INTEGER NOT NULL\n` +
-              `);`,
-          )
-          .run();
-      })();
-      bootstrapByBinding.set(db, bootstrapped);
-      bootstrapped.catch(() => bootstrapByBinding.delete(db));
+    if (bootstrappedBindings.has(db)) return;
+    // `publish_at` used to back a page-level "schedule" build - removed
+    // in favor of the entry-level `features.schedule` gate alone
+    // (`entry-where.ts`'s `buildPublishedOnlyClause`). Not dropped from
+    // any EXISTING D1 database (no migration runs here), just no longer
+    // read/written - a pre-existing column sits unused, harmless.
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "_pages" (\n` +
+          `  "path" TEXT PRIMARY KEY,\n` +
+          `  "object_key" TEXT NOT NULL,\n` +
+          `  "build_id" TEXT NOT NULL,\n` +
+          `  "built_at" INTEGER NOT NULL,\n` +
+          `  "in_sitemap" INTEGER NOT NULL\n` +
+          `);`,
+      )
+      .run();
+    // Added after the table already existed on real deployed tenants -
+    // `CREATE TABLE IF NOT EXISTS` above never adds a column to an
+    // already-existing table, so this runs unconditionally on every
+    // isolate cold start; `isDuplicateColumnError` swallows the
+    // expected no-op case on every boot after the first.
+    try {
+      await db.prepare('ALTER TABLE "_pages" ADD COLUMN "source_hash" TEXT;').run();
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
     }
-    return bootstrapped;
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "_page_deps" (\n` +
+          `  "path" TEXT NOT NULL,\n` +
+          `  "resource" TEXT NOT NULL,\n` +
+          `  "version" INTEGER NOT NULL,\n` +
+          `  PRIMARY KEY ("path", "resource")\n` +
+          `);`,
+      )
+      .run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS "ix_page_deps_resource" ON "_page_deps"("resource");`).run();
+    // Own copy, same reasoning as the sqlite adapter's - see that
+    // file's doc comment.
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+          `  "resource" TEXT PRIMARY KEY,\n` +
+          `  "version" INTEGER NOT NULL,\n` +
+          `  "updated_at" INTEGER NOT NULL\n` +
+          `);`,
+      )
+      .run();
+    bootstrappedBindings.add(db);
   }
 
   return {
