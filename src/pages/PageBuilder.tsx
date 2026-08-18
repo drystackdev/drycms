@@ -598,7 +598,7 @@ const dryPropsList = Array.isArray(dryDefaultProps) ? dryDefaultProps : [dryDefa
 
 export default function StandalonePreview() {
   return (
-    <div class="flex justify-center items-center">
+    <div class="flex justify-center items-center p-5 min-h-64">
       {dryPropsList.map((props: unknown, index: number) => (
         <Target key={index} {...(props as Record<string, unknown>)} />
       ))}
