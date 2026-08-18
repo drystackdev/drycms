@@ -48,7 +48,11 @@ interface Row extends Record<string, unknown> {
   path: string;
   status: "not-built" | "stale" | "live";
   builtAt: number | null;
-  staleResource: string | null;
+  /** Why `status` is "stale", for the badge's tooltip - a changed content
+   * dependency (`staleResource`) or a source-code change not yet reflected
+   * in `PageStatusRow.sourceHash` (e.g. a `git pull` that landed new code
+   * this session, see `computeSourceHash`/`sourceHashByPath` below). */
+  staleReason: string | null;
 }
 
 /** Survives a closed tab (`plans/app-r2.md` mục 11 - "đóng tab giữa chừng
@@ -144,6 +148,12 @@ export default function PageBuild() {
   // don't overlap in the UI.
   const [resumableQueue, setResumableQueue] = useState<PersistedBuildQueue | null>(null);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
+  /** Each target's CURRENT source-closure hash (`computeSourceHash`), kept
+   * in sync with `targets`/`sourceByPath` below - lets the Status column
+   * catch a page whose CODE changed (e.g. a `git pull`) even though nothing
+   * about its content changed `staleResource`. Cheap (a few digests, no real
+   * build) so it's fine to recompute on every source/target change. */
+  const [sourceHashByPath, setSourceHashByPath] = useState<Map<string, string>>(new Map());
 
   /** Returns the freshly fetched map (in addition to updating state, for the
    * UI's own reactive `rows`) - `buildAll`/`resumeBuildAll` need the REAL
@@ -202,6 +212,25 @@ export default function PageBuild() {
     const fromRegistry = [...statusByPath.keys()];
     return [...new Set([...fromTargets, ...fromRegistry])].sort();
   }, [targets, statusByPath]);
+
+  // Recomputes whenever the loaded source or resolved targets change - a
+  // fresh `git pull` (picked up on the next full reload, see `ensureRepoReady`)
+  // changes `sourceByPath` without touching `statusByPath`, so this needs its
+  // own dependency list rather than piggybacking on `reloadStatus`.
+  useEffect(() => {
+    if (!sourceByPath || targets.size === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const next = new Map<string, string>();
+      for (const [pathname, target] of targets) {
+        next.set(pathname, await computeSourceHash(target, sourceByPath));
+      }
+      if (!cancelled) setSourceHashByPath(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targets, sourceByPath]);
 
   /** Compiles (never publishes) one page - shared by `buildOne` below
    * (single-page, publishes immediately) and `runBuildQueue` further down
@@ -446,11 +475,20 @@ export default function PageBuild() {
   const rows: Row[] = pathnames.map((pathname) => {
     const status = statusByPath.get(pathname);
     let state: Row["status"] = "not-built";
+    let staleReason: string | null = null;
     if (status) {
-      if (status.staleResource) state = "stale";
-      else state = "live";
+      const currentSourceHash = sourceHashByPath.get(pathname);
+      if (status.staleResource) {
+        state = "stale";
+        staleReason = `"${status.staleResource}" changed since last build`;
+      } else if (currentSourceHash && status.sourceHash && currentSourceHash !== status.sourceHash) {
+        state = "stale";
+        staleReason = "Source code changed since last build";
+      } else {
+        state = "live";
+      }
     }
-    return { path: pathname, status: state, builtAt: status?.builtAt ?? null, staleResource: status?.staleResource ?? null };
+    return { path: pathname, status: state, builtAt: status?.builtAt ?? null, staleReason };
   });
 
   const columns: DataTableColumn<Row>[] = [
@@ -461,8 +499,7 @@ export default function PageBuild() {
       render: (value, row) => {
         const state = value as Row["status"];
         const labels: Record<Row["status"], string> = { "not-built": "Not built", stale: "Stale", live: "Live" };
-        const title = state === "stale" && row.staleResource ? `"${row.staleResource}" changed since last build` : undefined;
-        return <span class={`badge ${state}`} title={title}>{labels[state]}</span>;
+        return <span class={`badge ${state}`} title={row.staleReason ?? undefined}>{labels[state]}</span>;
       },
     },
     {
