@@ -454,6 +454,30 @@ async function runFetchTool(
   return { text: result.resultText };
 }
 
+/** `create_entry`/`update_entry_fields` normally share Magic Chat's
+ * `supportsMagic` gate (see this file's header comment) - correct for every
+ * `NO_MAGIC_TYPE_NAMES` type EXCEPT `menu`: that gate exists to stop an AI
+ * from freely authoring prose/credentials/access-control it shouldn't
+ * (`permissions.ts`'s own reasoning), but an MCP `create_entry`/
+ * `update_entry_fields` call is an explicit, caller-specified field write -
+ * the same shape as an admin typing exact values into the Save form, not
+ * open-ended AI generation - so for `menu` specifically it's gated by the
+ * ordinary create/update permission instead, same as every Magic-eligible
+ * type already is. `user`/`role`/`aiKey`/`redirect`/the settings singletons
+ * stay exactly as blocked as before - this is a single, deliberate carve-out
+ * for `menu`, not a loosening of the shared gate. */
+function isMcpDirectWriteEligible(type: ContentTypeDefinition): boolean {
+  return supportsMagic(type) || type.name === "menu";
+}
+
+/** Whether this write still needs the separate `"magic"` permission grant on
+ * top of ordinary create/update - true for every Magic-eligible type (as
+ * before), false for the `menu` carve-out above, which relies solely on the
+ * ordinary create/update permission. */
+function requiresMagicGrant(type: ContentTypeDefinition): boolean {
+  return supportsMagic(type);
+}
+
 async function runCreateTool(
   context: DryRouteContext,
   entries: ContentEntryEngineAdapter,
@@ -464,10 +488,12 @@ async function runCreateTool(
   const type = findType(allTypes, typeSlug);
   if (!type) return { text: `No content type named "${typeSlug}" exists.`, isError: true };
   if (type.kind === "singleton") return { text: `"${typeSlug}" is a singleton - it always has exactly one entry, there's nothing to create.`, isError: true };
-  if (!supportsMagic(type)) return { text: `Magic isn't available for "${type.label}".`, isError: true };
+  if (!isMcpDirectWriteEligible(type)) return { text: `Magic isn't available for "${type.label}".`, isError: true };
 
-  const deniedMagic = await checkAccess(context, entries, allTypes, type, "magic");
-  if (deniedMagic) return { text: `You don't have permission to use Magic on "${type.name}".`, isError: true };
+  if (requiresMagicGrant(type)) {
+    const deniedMagic = await checkAccess(context, entries, allTypes, type, "magic");
+    if (deniedMagic) return { text: `You don't have permission to use Magic on "${type.name}".`, isError: true };
+  }
   const deniedCreate = await checkAccess(context, entries, allTypes, type, "create");
   if (deniedCreate) return { text: `You don't have permission to create "${type.name}" entries.`, isError: true };
 
@@ -491,10 +517,12 @@ async function runUpdateTool(
 ): Promise<ToolResult> {
   const type = findType(allTypes, typeSlug);
   if (!type) return { text: `No content type named "${typeSlug}" exists.`, isError: true };
-  if (!supportsMagic(type)) return { text: `Magic isn't available for "${type.label}".`, isError: true };
+  if (!isMcpDirectWriteEligible(type)) return { text: `Magic isn't available for "${type.label}".`, isError: true };
 
-  const deniedMagic = await checkAccess(context, entries, allTypes, type, "magic");
-  if (deniedMagic) return { text: `You don't have permission to use Magic on "${type.name}".`, isError: true };
+  if (requiresMagicGrant(type)) {
+    const deniedMagic = await checkAccess(context, entries, allTypes, type, "magic");
+    if (deniedMagic) return { text: `You don't have permission to use Magic on "${type.name}".`, isError: true };
+  }
   const deniedUpdate = await checkAccess(context, entries, allTypes, type, type.kind === "singleton" ? "setting" : "update");
   if (deniedUpdate) return { text: `You don't have permission to update "${type.name}" entries.`, isError: true };
 
