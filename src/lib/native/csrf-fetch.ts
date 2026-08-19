@@ -15,6 +15,24 @@ function isAuthEndpoint(pathname: string): boolean {
   return pathname.startsWith(`${path}/api/auth/`);
 }
 
+/** `routes/git.ts`'s `proxy()` relays GitHub/GitLab's own 401/403 verbatim
+ * (`error: "git_unauthorized"`) when the tenant's stored token is bad - a
+ * completely different failure than OUR session expiring, which just
+ * happens to reuse the same HTTP status. Treating it as a session signal
+ * forced a real, valid session through the refresh dance (occasionally
+ * losing the race against the single-use refresh token's reuse-detection,
+ * per `store/auth.ts`'s own doc comment) and logged the admin out every
+ * time a git operation ran against an expired PAT - confirmed live on
+ * `dev.drystack.dev` 2026-08-19, `e2e-org/e2e-repo`'s stored token. */
+async function isGitUpstreamAuthError(response: Response): Promise<boolean> {
+  try {
+    const body = (await response.clone().json()) as { error?: string };
+    return body?.error === "git_unauthorized";
+  } catch {
+    return false;
+  }
+}
+
 /** Shares `store/auth.ts`'s own refresh path (Web Locks + cross-tab
  * coalescing) rather than posting to `/api/auth/refresh` directly - that
  * function is also called on mount by `loadSession()`, so a second,
@@ -52,7 +70,7 @@ export function installCsrfFetch(): void {
     const securedRequest = new Request(request, { headers });
     let response = await originalFetch(securedRequest.clone());
 
-    if (response.status === 401 && !isAuthEndpoint(url.pathname)) {
+    if (response.status === 401 && !isAuthEndpoint(url.pathname) && !(await isGitUpstreamAuthError(response))) {
       if (await refreshOnce()) {
         const retryHeaders = new Headers(securedRequest.headers);
         const retryCsrf = csrfToken();
