@@ -30,8 +30,15 @@ function openDb(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       request.result.createObjectStore(STORE_NAME, { keyPath: "sha" });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error as unknown);
+    // Fires instead of onsuccess/onerror when another tab holds a connection
+    // blocking this upgrade - without this the promise would hang forever.
+    request.onblocked = () => reject(new Error("[drycms] IndexedDB open blocked by another tab."));
   });
   return dbPromise;
 }
