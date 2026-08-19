@@ -56,6 +56,7 @@
   },
   "private": true,
   "scripts": {
+    "postinstall": "bun scripts/ensure-generated-files.ts",
     "dev": "node scripts/dev-server.mjs",
     "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server && bun scripts/build-seed-assets.ts",
     "start": "node dist/server/entry-node.js",

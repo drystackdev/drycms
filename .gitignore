@@ -40,6 +40,18 @@ pnpm-debug.log*
 /components/
 /richtext-components/
 
+# Build-time-generated modules something statically `import`s (so a
+# placeholder must exist on disk before any real build ever runs -
+# `scripts/ensure-generated-files.ts`, wired into `postinstall`). Never
+# committed on purpose: a committed real value can only ever be as fresh as
+# whichever commit last remembered to rerun the generator, and that drift is
+# exactly what let a deployed Worker's baked-in asset hash outlive the
+# actual built assets it pointed at. Every real `bun run build`/
+# `build:worker` regenerates both fresh, in the same run that produces
+# whatever they describe.
+/src/server/app-router/generated-asset-hrefs.ts
+/src/content-types/engine/fresh-boot-dump.generated.ts
+
 # `src/apps/schema.json`/`src/apps/seed.json` - `bun run seed:sync`'s output
 # (an app's own content types + singleton/menu data, built-in system
 # defaults excluded - see `scripts/lib/schema-sync.ts`). Never imported by
