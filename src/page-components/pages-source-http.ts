@@ -70,7 +70,16 @@ export async function listAllFilesRecursive(adminPath: string, folder = "", cach
  * is included because Page Builder uses this same snapshot for its source
  * menu and Markdown editor, even though the build itself ignores those files. */
 export async function loadAllPagesSource(adminPath: string, cache: RequestCache = "default"): Promise<Record<string, string>> {
-  const tree = await fetchJson<{ supported: boolean; entries?: TreeEntry[] }>(`${adminPath}/api/pages-source?tree`, cache);
+  // `?content` bundles every file's text into this one response - the
+  // server now always supports this (walks the tree itself even on a
+  // backend with no `listAll()`, `routes/pages-source.ts`'s `walkAll`), so
+  // this is the only round trip a normal load needs. `content` is checked
+  // rather than trusted blindly so an older/different server (still
+  // possible mid-deploy, or a test double) falls back to the previous
+  // per-folder-list + per-file-fetch path instead of silently loading zero
+  // files.
+  const tree = await fetchJson<{ supported: boolean; entries?: TreeEntry[]; content?: Record<string, string> }>(`${adminPath}/api/pages-source?tree&content`, cache);
+  if (tree.supported && tree.content) return tree.content;
   const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive(adminPath, "", cache);
   const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts|css|md)$/i.test(e.name));
   const sources: Record<string, string> = {};

@@ -4,7 +4,7 @@ import { errorResponse, jsonResponse, readLeafName, readSlug } from "../route-he
 import { toFileEntry } from "../../storage/entry.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath } from "../../storage/path.js";
-import { StorageError, type StorageAdapter } from "../../storage/types.js";
+import { StorageError, type StorageAdapter, type StorageStatEntry } from "../../storage/types.js";
 import { isCoreStyleFilePath, MD_ROOT, rootOf, STYLES_ROOT } from "../app-router/source-roots.js";
 import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
 
@@ -26,10 +26,46 @@ import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
  * render a VEI preview, even though it can never write any; every write
  * method stays exclusively behind the code-edit permission, no exception.
  */
-async function handleTree(adapter: StorageAdapter): Promise<Response> {
-  if (!adapter.listAll) return jsonResponse({ supported: false });
-  const all = await adapter.listAll();
-  return jsonResponse({ supported: true, entries: all.map((entry) => toFileEntry(entry)) });
+async function readFileText(adapter: StorageAdapter, path: string): Promise<string> {
+  const file = await adapter.read(path);
+  const chunks: Buffer[] = [];
+  for await (const chunk of file.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
+/** Recursive `list()` walk, siblings fetched in parallel - the fallback for
+ * a backend with no `listAll()` (R2/S3, `storage/types.ts`'s own doc on why
+ * that's never implemented there). Page source is one small, bounded tree
+ * (a tenant's own pages/component/styles/md files), nothing like the
+ * unbounded media buckets that restriction exists to protect - and doing the
+ * walk here, Worker-to-storage, replaces what `pages-source-http.ts`'s
+ * `listAllFilesRecursive` used to do one browser round trip PER FOLDER,
+ * serially. */
+async function walkAll(adapter: StorageAdapter, folder = ""): Promise<StorageStatEntry[]> {
+  const children = await adapter.list(folder);
+  const nested = await Promise.all(
+    children.map((child) => (child.kind === "folder" ? walkAll(adapter, child.path) : Promise.resolve([child]))),
+  );
+  return nested.flat();
+}
+
+/** `?content` bundles every source file's text into this same response -
+ * one browser round trip for the whole tree instead of one per file
+ * (`pages-source-http.ts`'s `loadAllPagesSource`, which `PageBuilder.tsx`
+ * and `PageBuild.tsx` both gate their initial load on). */
+async function handleTree(adapter: StorageAdapter, withContent: boolean): Promise<Response> {
+  const all = adapter.listAll ? await adapter.listAll() : await walkAll(adapter);
+  const entries = all.map((entry) => toFileEntry(entry));
+  if (!withContent) return jsonResponse({ supported: true, entries });
+  const content: Record<string, string> = {};
+  await Promise.all(
+    entries
+      .filter((entry) => entry.kind === "file" && /\.(tsx|ts|css|md)$/i.test(entry.name))
+      .map(async (entry) => {
+        content[entry.id] = await readFileText(adapter, entry.id);
+      }),
+  );
+  return jsonResponse({ supported: true, entries, content });
 }
 
 /** A page/layout/component source file - the same `.tsx`/`.ts`-only rule
@@ -59,7 +95,7 @@ export const GET: DryRouteHandler = async (context) => {
     const path = readSlug(context);
     if (context.url.searchParams.has("tree")) {
       if (path !== "") return errorResponse(new Error('"?tree" is only valid at the pages-source root.'));
-      return await handleTree(adapter);
+      return await handleTree(adapter, context.url.searchParams.has("content"));
     }
 
     const stat = await adapter.stat(path);
