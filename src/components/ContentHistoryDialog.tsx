@@ -65,7 +65,7 @@ export default function ContentHistoryDialog(props: Props) {
     if (details[sha] || busy.has(sha)) return;
     setBusy((current) => new Set(current).add(sha));
     try {
-      const detail = await getContentHistoryCommit(props.adminPath, sha);
+      const detail = await getContentHistoryCommit(props.adminPath, props.target, sha);
       setDetails((current) => ({ ...current, [sha]: detail.files }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load commit.");

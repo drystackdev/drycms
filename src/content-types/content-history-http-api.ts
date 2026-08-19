@@ -27,8 +27,8 @@ async function get<T>(adminPath: string, operation: string, params: Record<strin
 export function listContentHistory(adminPath: string, target: ContentHistoryTarget, options: { limit?: number; page?: number } = {}) {
   return get<{ configured: boolean; commits: ContentHistoryCommit[]; reason?: string }>(adminPath, "", { ...targetParams(target), ...options });
 }
-export function getContentHistoryCommit(adminPath: string, sha: string) {
-  return get<ContentHistoryCommit & { files: ContentHistoryCommitFile[] }>(adminPath, "commit", { sha });
+export function getContentHistoryCommit(adminPath: string, target: ContentHistoryTarget, sha: string) {
+  return get<ContentHistoryCommit & { files: ContentHistoryCommitFile[] }>(adminPath, "commit", { ...targetParams(target), sha });
 }
 export function getContentHistoryFile(adminPath: string, target: ContentHistoryTarget, sha: string) {
   return get<{ content?: string; missing?: true }>(adminPath, "file", { ...targetParams(target), sha });
