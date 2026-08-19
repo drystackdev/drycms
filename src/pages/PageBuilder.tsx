@@ -332,10 +332,12 @@ export default function PageBuilder() {
   const [veiOverrides, setVeiOverrides] = useState<DryVeiOverrideMap>({});
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveDrafts, setSaveDrafts] = useState<EntryDraftRecord[]>([]);
-  const [draftsHydrated, setDraftsHydrated] = useState(false);
   const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null);
   const [recoveredCoreFiles, setRecoveredCoreFiles] = useState<string[]>([]);
 
+  // Independent of the render gate below - the preview builds fine before
+  // this resolves, it just means the Save panel's draft/override list fills
+  // in a moment after first paint instead of gating the whole builder on it.
   useEffect(() => {
     void getAllEntryDraftRecords().then((records) => {
       setSaveDrafts(records);
@@ -344,7 +346,6 @@ export default function PageBuilder() {
         restoredOverrides[dryVeiOverrideKey(draft.typeSlug, draft.entryId)] = { ...draft.value };
       }
       setVeiOverrides((current) => ({ ...restoredOverrides, ...current }));
-      setDraftsHydrated(true);
     });
   }, []);
 
@@ -985,7 +986,7 @@ export default function StandalonePreview() {
   // on it, so checking permission any earlier would flash this at a
   // VEI-only role on every load, before its own access can be seen.
   if (allTypes && !canEnterBuilder) return <span class="error">You don't have permission to use the Page Builder.</span>;
-  if (loading || !sourceByPath || !allTypes || !assetHrefs || !draftsHydrated) {
+  if (loading || !sourceByPath || !allTypes || !assetHrefs) {
     return (
       <div class="page-builder-root">
         <PageBuilderLoadingLayer pathname={pathname} />
