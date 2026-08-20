@@ -35,13 +35,15 @@ import { executeMagicFetch } from "./ai-magic-write-fetch.js";
 import { readGeneratedDryTypes, writeGeneratedDryTypes } from "../../content-types/types-cache.js";
 import { generateDryTypes } from "../../content-types/codegen.js";
 import { PAGE_SOURCE_DOCS } from "../../page-components/ai-page-source-docs.js";
-import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
+import { buildEntryFieldTree, type EntryColumnNode, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { applyMagicWriteFields, type AllowedRelationIds } from "../../content-types/ai-magic-write-fields.js";
+import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { supportsMagic, PAGE_BUILDER_RESOURCE_ID, CONTENT_TYPES_RESOURCE_ID } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition, FieldDefinition } from "../../content-types/types.js";
 import { fieldTypes } from "../../content-types/field-registry.js";
+import type { SelectFieldConfig } from "../../content-types/field-registry.js";
 import type { MagicWriteFetchTurn, MagicWriteRawFields, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
 import { requirePermission } from "../admin-access.js";
 import { getStorageAdapter } from "../storage-adapters.js";
@@ -170,6 +172,44 @@ const TOOLS: ToolDefinition[] = [
         typeSlug: { type: "string", description: "The content type's name." },
         id: { type: "string", description: "The entry's numeric id. Omit for a singleton." },
         fields: { type: "object", description: "Field name -> value. For a relation field, a target entry id (or array/comma-list of ids) - see create_entry's description.", additionalProperties: true },
+      },
+      required: ["typeSlug", "fields"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_entry_raw",
+    description:
+      "Like create_entry, but writes REAL typed JSON values directly - no string coercion. Use this when a field needs an actual number/boolean, or a nested object/array (a non-repeatable component field's value, or a repeatable component field's array of item objects), which create_entry's string-based dialect can't represent. Same field kinds as create_entry (text/richtext/number/boolean/date/select, plain or nested inside a component field, plus relation fields by real target entry id, same rules as create_entry) - image/avatar/file/icon/password/secretkey fields are still not supported by this tool. Same eligibility as create_entry: content types where Magic is turned off (siteSettings, systemSettings, aiKey, role, user, redirect, githubSync) are still blocked.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        typeSlug: { type: "string", description: "The target collection's name." },
+        fields: {
+          type: "object",
+          description:
+            "Field name -> real JSON value: a number as a number, a boolean as a boolean, a nested object for a non-repeatable component field, an array of item objects for a repeatable component field, a target entry id (or array of ids) for a relation field - see this tool's description.",
+          additionalProperties: true,
+        },
+      },
+      required: ["typeSlug", "fields"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_entry_fields_raw",
+    description:
+      "Like update_entry_fields, but writes REAL typed JSON values directly - no string coercion. The raw-value counterpart to update_entry_fields, most useful for a singleton holding structured data (a component field's nested object/array - e.g. a navigation tree, a homepage's sections) that the string-based tool can't represent faithfully. Same field kinds and eligibility as update_entry_fields (see create_entry_raw's description) - image/avatar/file/icon/password/secretkey fields still unsupported, siteSettings/systemSettings/aiKey/role/user/redirect/githubSync still blocked.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        typeSlug: { type: "string", description: "The content type's name." },
+        id: { type: "string", description: "The entry's numeric id. Omit for a singleton." },
+        fields: {
+          type: "object",
+          description: "Field name -> real JSON value - see create_entry_raw's description.",
+          additionalProperties: true,
+        },
       },
       required: ["typeSlug", "fields"],
       additionalProperties: false,
@@ -560,6 +600,197 @@ async function runUpdateTool(
     return { text: `No usable fields were given - nothing was updated. Image fields aren't supported by this tool; set those afterward in the admin UI. A relation field's id must belong to a real, viewable entry in its target collection - look one up with list_entries/get_entry first.`, isError: true };
   }
   const merged = { ...existingValue, ...decodeRelationIdsPartial(nodes, applied.value) };
+  const saved = type.kind === "singleton"
+    ? await entries.saveSingletonEntry(type, allTypes, merged)
+    : await entries.updateEntry(type, allTypes, existingId!, merged);
+  return { text: `Updated ${type.label} (${type.name})${type.kind === "singleton" ? "" : ` #${saved.id}`} - ${applied.writtenFieldNames.join(", ")}.` };
+}
+
+/**
+ * `create_entry_raw`/`update_entry_fields_raw`'s own value pass - the raw
+ * counterpart to `ai-magic-write-fields.ts`'s `coerceScalar`/`coerceNodeValue`:
+ * same per-node-kind shape (so `flatten`/`component-repeat`/`relation`
+ * recursion, `relation-mirror` exclusion, and "drop on wrong shape" all match
+ * exactly), but the caller's value is trusted to already be the right JS
+ * type (a real `number`/`boolean`, a real nested object/array) instead of a
+ * string the model wrote that needs parsing - the whole reason this tool
+ * pair exists (see `TOOLS`' own description: structured singleton data like a
+ * navigation tree or a homepage's sections can't round-trip through the
+ * string dialect `applyMagicWriteFields` speaks). `richtext` is still run
+ * through `sanitizeAiRichTextHtml` (with an empty allowed-image-srcs set, so
+ * any `<img>` it contains is stripped - same as the coerced path when no
+ * turn ever populated that set) - HTML injection is a real risk independent
+ * of "raw JSON vs. string coercion", so that check isn't something "raw"
+ * gets to skip. `image`/`avatar`/`file`/`icon` stay unsupported here for the
+ * same reason `create_entry`/`update_entry_fields` never write them either -
+ * verifying a storage-path reference needs the same closed-allowlist check
+ * `coerceScalar`'s `image` case does, which this tool doesn't populate;
+ * `password`/`secretkey` stay unsupported because they're never meant to be
+ * writable through an AI-facing surface (`WRITABLE_COLUMN_TYPES`'s own doc
+ * comment) - "raw" widens the VALUE shape these tools accept, not the set of
+ * field types they trust a client to set blind.
+ */
+function coerceRawColumnValue(node: EntryColumnNode, raw: unknown): unknown {
+  switch (node.fieldType) {
+    case "text":
+      return typeof raw === "string" ? raw : undefined;
+    case "richtext":
+      return typeof raw === "string" ? sanitizeAiRichTextHtml(raw, new Set()) : undefined;
+    case "number":
+      return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+    case "boolean":
+      return typeof raw === "boolean" ? raw : undefined;
+    case "date": {
+      if (typeof raw !== "string") return undefined;
+      const date = new Date(raw.trim());
+      return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+    }
+    case "select": {
+      if (typeof raw !== "string") return undefined;
+      const options = (node.fieldConfig as SelectFieldConfig | undefined)?.options ?? [];
+      return options.includes(raw) ? raw : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function coerceNodeValueRaw(node: EntryFieldNode, raw: unknown, allowedRelationIds: AllowedRelationIds): unknown {
+  if (node.kind === "column") return coerceRawColumnValue(node, raw);
+  if (node.kind === "relation") {
+    const allowed = allowedRelationIds.get(node.targetTypeId);
+    if (!allowed || allowed.size === 0) return undefined;
+    if (node.columnName) {
+      const id = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.trim()) : NaN;
+      return Number.isFinite(id) && allowed.has(id) ? id : undefined;
+    }
+    const ids = extractRequestedRelationIds(raw).filter((id) => allowed.has(id));
+    return ids.length > 0 ? ids : undefined;
+  }
+  if (node.kind === "flatten") {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const record = raw as Record<string, unknown>;
+    const nested: EntryValue = {};
+    let wroteAny = false;
+    for (const child of node.children) {
+      if (!(child.fieldName in record)) continue;
+      const value = coerceNodeValueRaw(child, record[child.fieldName], allowedRelationIds);
+      if (value === undefined) continue;
+      nested[child.fieldName] = value as EntryValue[string];
+      wroteAny = true;
+    }
+    return wroteAny ? nested : undefined;
+  }
+  if (node.kind === "component-repeat") {
+    if (!Array.isArray(raw)) return undefined;
+    const items: EntryValue[] = [];
+    for (const rawItem of raw) {
+      if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) continue;
+      const record = rawItem as Record<string, unknown>;
+      const item: EntryValue = {};
+      let wroteAny = false;
+      for (const child of node.itemFields) {
+        if (!(child.fieldName in record)) continue;
+        const value = coerceNodeValueRaw(child, record[child.fieldName], allowedRelationIds);
+        if (value === undefined) continue;
+        item[child.fieldName] = value as EntryValue[string];
+        wroteAny = true;
+      }
+      if (wroteAny) items.push(item);
+    }
+    return items.length > 0 ? items : undefined;
+  }
+  return undefined; // relation-mirror - read-only, never a write target.
+}
+
+function applyRawFields(nodes: EntryFieldNode[], raw: Record<string, unknown>, allowedRelationIds: AllowedRelationIds): { value: EntryValue; writtenFieldNames: string[] } {
+  const value: EntryValue = {};
+  const writtenFieldNames: string[] = [];
+  for (const node of nodes) {
+    if (node.kind === "relation-mirror") continue;
+    if (!(node.fieldName in raw)) continue;
+    const coerced = coerceNodeValueRaw(node, raw[node.fieldName], allowedRelationIds);
+    if (coerced === undefined) continue;
+    value[node.fieldName] = coerced as EntryValue[string];
+    writtenFieldNames.push(node.fieldName);
+  }
+  return { value, writtenFieldNames };
+}
+
+const RAW_UNSUPPORTED_FIELDS_NOTE =
+  "image/avatar/file/icon/password/secretkey fields aren't supported by this tool; set those afterward in the admin UI. A relation field's id must belong to a real, viewable entry in its target collection - look one up with list_entries/get_entry first.";
+
+async function runCreateRawTool(
+  context: DryRouteContext,
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  typeSlug: string,
+  rawFields: unknown,
+): Promise<ToolResult> {
+  const type = findType(allTypes, typeSlug);
+  if (!type) return { text: `No content type named "${typeSlug}" exists.`, isError: true };
+  if (type.kind === "singleton") return { text: `"${typeSlug}" is a singleton - it always has exactly one entry, there's nothing to create.`, isError: true };
+  if (!isMcpDirectWriteEligible(type)) return { text: `Direct writes aren't available for "${type.label}".`, isError: true };
+  if (!rawFields || typeof rawFields !== "object" || Array.isArray(rawFields)) return { text: '"fields" must be an object.', isError: true };
+
+  if (requiresMagicGrant(type)) {
+    const deniedMagic = await checkAccess(context, entries, allTypes, type, "magic");
+    if (deniedMagic) return { text: `You don't have permission to use Magic on "${type.name}".`, isError: true };
+  }
+  const deniedCreate = await checkAccess(context, entries, allTypes, type, "create");
+  if (deniedCreate) return { text: `You don't have permission to create "${type.name}" entries.`, isError: true };
+
+  const nodes = buildEntryFieldTree(type, allTypes);
+  const allowedRelationIds = await resolveAllowedRelationIds(context, entries, allTypes, nodes, rawFields);
+  const applied = applyRawFields(nodes, rawFields as Record<string, unknown>, allowedRelationIds);
+  if (Object.keys(applied.value).length === 0) {
+    return { text: `No usable fields were given for the new "${type.name}" entry - nothing was created. ${RAW_UNSUPPORTED_FIELDS_NOTE}`, isError: true };
+  }
+  const created = await entries.createEntry(type, allTypes, applied.value);
+  return { text: `Created ${type.label} (${type.name}) #${created.id} - ${applied.writtenFieldNames.join(", ")}.` };
+}
+
+async function runUpdateRawTool(
+  context: DryRouteContext,
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  typeSlug: string,
+  id: string | undefined,
+  rawFields: unknown,
+): Promise<ToolResult> {
+  const type = findType(allTypes, typeSlug);
+  if (!type) return { text: `No content type named "${typeSlug}" exists.`, isError: true };
+  if (!isMcpDirectWriteEligible(type)) return { text: `Direct writes aren't available for "${type.label}".`, isError: true };
+  if (!rawFields || typeof rawFields !== "object" || Array.isArray(rawFields)) return { text: '"fields" must be an object.', isError: true };
+
+  if (requiresMagicGrant(type)) {
+    const deniedMagic = await checkAccess(context, entries, allTypes, type, "magic");
+    if (deniedMagic) return { text: `You don't have permission to use Magic on "${type.name}".`, isError: true };
+  }
+  const deniedUpdate = await checkAccess(context, entries, allTypes, type, type.kind === "singleton" ? "setting" : "update");
+  if (deniedUpdate) return { text: `You don't have permission to update "${type.name}" entries.`, isError: true };
+
+  const nodes = buildEntryFieldTree(type, allTypes);
+  let existingId: number | undefined;
+  let existingValue: EntryValue;
+  if (type.kind === "singleton") {
+    const row = await entries.getSingletonEntry(type, allTypes);
+    existingValue = row?.value ?? {};
+  } else {
+    const numericId = Number(id);
+    if (!id || !Number.isFinite(numericId)) return { text: `A valid entry id is required to update "${type.name}".`, isError: true };
+    const row = await entries.getEntry(type, allTypes, numericId);
+    if (!row) return { text: `No "${type.name}" entry with id ${id}.`, isError: true };
+    existingId = row.id;
+    existingValue = row.value;
+  }
+
+  const allowedRelationIds = await resolveAllowedRelationIds(context, entries, allTypes, nodes, rawFields);
+  const applied = applyRawFields(nodes, rawFields as Record<string, unknown>, allowedRelationIds);
+  if (Object.keys(applied.value).length === 0) {
+    return { text: `No usable fields were given - nothing was updated. ${RAW_UNSUPPORTED_FIELDS_NOTE}`, isError: true };
+  }
+  const merged = { ...existingValue, ...applied.value };
   const saved = type.kind === "singleton"
     ? await entries.saveSingletonEntry(type, allTypes, merged)
     : await entries.updateEntry(type, allTypes, existingId!, merged);
@@ -1050,6 +1281,18 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
       const typeSlug = stringArg(args, "typeSlug");
       if (!typeSlug) { outcome = { text: "\"typeSlug\" is required.", isError: true }; break; }
       outcome = await runUpdateTool(context, entries, allTypes, typeSlug, stringArg(args, "id"), args.fields);
+      break;
+    }
+    case "create_entry_raw": {
+      const typeSlug = stringArg(args, "typeSlug");
+      if (!typeSlug) { outcome = { text: "\"typeSlug\" is required.", isError: true }; break; }
+      outcome = await runCreateRawTool(context, entries, allTypes, typeSlug, args.fields);
+      break;
+    }
+    case "update_entry_fields_raw": {
+      const typeSlug = stringArg(args, "typeSlug");
+      if (!typeSlug) { outcome = { text: "\"typeSlug\" is required.", isError: true }; break; }
+      outcome = await runUpdateRawTool(context, entries, allTypes, typeSlug, stringArg(args, "id"), args.fields);
       break;
     }
     case "list_page_source":
