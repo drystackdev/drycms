@@ -41,6 +41,15 @@ client can never do anything the token's owner couldn't already do by hand.
   check it works. `dry()` resolves to empty/null here, so this checks
   compile/render correctness, not real content.
 
+**History** (read-only - see `Settings -> Versions` in the admin for the
+restore side, which is deliberately not a tool):
+- `list_versions` - every commit on this project's branch, newest first, code
+  and content together. A `[CONTENT] `-prefixed message is a content change
+  (entries or the content-type document); anything else is page-source code.
+- `read_version` - one commit's message/author/date plus every file it
+  changed inside the two roots drycms owns, with the diffs.
+- `read_version_file` - one file's full contents AS IT WAS at a commit.
+
 **Reference:**
 - `read_dry_types` - this project's generated `dry()` ambient types
   (`dry.generated.d.ts`) - the REAL, current collection/singleton names and

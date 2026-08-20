@@ -1,24 +1,36 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { createContentEntriesApi, ContentEntriesApiError } from "../content-types/entries-http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import TextField from "../components/fields/TextField.js";
-import SelectField from "../components/fields/SelectField.js";
+import CheckField from "../components/fields/CheckField.js";
 import SecretKeyField from "../components/fields/SecretKeyField.js";
+import Combobox from "../components/Combobox.js";
 import { toast } from "../components/Toast.js";
 import { authState, canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 import FullResetDialog from "../components/FullResetDialog.js";
-import { DEFAULT_GITLAB_URL, parseGitRepositorySetting, serializeGitRepositorySetting, type GitProvider } from "../lib/git-provider.js";
+import { GIT_URL_PLACEHOLDER, gitRemoteUrl, parseGitRemoteUrl, parseGitRepositorySetting, serializeGitRepositorySetting, type GitProvider } from "../lib/git-provider.js";
 
-interface GithubSyncValue extends Record<string, unknown> {
-  provider: GitProvider;
+/** What the admin actually types: ONE repository URL, a token, a branch.
+ * The platform, origin, repo path and Basic-auth user are all derived from
+ * `url` (`lib/git-provider.ts`), and confirmed by the server - a self-hosted
+ * GitLab is only distinguishable from any other self-hosted host by asking
+ * it (`routes/git.ts`'s `resolveGitRemote`). */
+interface GitSyncValue extends Record<string, unknown> {
   url: string;
-  repo: string;
   branch: string;
   token: string;
 }
+
+interface BranchListState {
+  status: "idle" | "loading" | "ready" | "error";
+  branches: string[];
+  message: string;
+}
+
+const IDLE_BRANCHES: BranchListState = { status: "idle", branches: [], message: "" };
 
 /**
  * The `githubSync` singleton's admin page (`status/pages-source-github-versioning.md`) -
@@ -34,7 +46,17 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "githubSync"), []);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
-  const [value, setValue] = useState<GithubSyncValue | null>(null);
+  const [value, setValue] = useState<GitSyncValue | null>(null);
+  /** The platform the SERVER resolved for the current URL (from a branch
+   * lookup or a validate call). Preferred over the host-only guess below
+   * when saving, because it is the only thing that can tell a self-hosted
+   * GitLab from a plain git host. */
+  const [resolvedProvider, setResolvedProvider] = useState<GitProvider | null>(null);
+  const [branchList, setBranchList] = useState<BranchListState>(IDLE_BRANCHES);
+  /** "New branch": type a name instead of picking one of the loaded ones.
+   * Also turned on automatically when the branches can't be listed at all,
+   * so a bad token or an unreachable host never leaves the field unusable. */
+  const [newBranch, setNewBranch] = useState(false);
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const [hasExistingToken, setHasExistingToken] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -42,6 +64,7 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
   const [loadError, setLoadError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const isSuperAdmin = authState.value.user?.isSuperAdmin === true;
+  const branchFieldId = useId();
 
   const canEdit = !!type && canAccess(type.id, "setting");
   const isDirty = initialSnapshot !== null && value !== null && JSON.stringify(value) !== initialSnapshot;
@@ -69,14 +92,13 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
         const entry = await entriesApi.getSingleton();
         const secret = entry?.value.token;
         const repository = parseGitRepositorySetting(typeof entry?.value.repo === "string" ? entry.value.repo : "");
-        const loaded: GithubSyncValue = {
-          provider: repository.provider,
-          url: repository.url || DEFAULT_GITLAB_URL,
-          repo: repository.repo,
+        const loaded: GitSyncValue = {
+          url: gitRemoteUrl(repository),
           branch: typeof entry?.value.branch === "string" ? entry.value.branch : "",
           token: "",
         };
         setHasExistingToken(typeof secret === "object" && secret !== null && "hasExisting" in secret);
+        setResolvedProvider(repository.repo ? repository.provider : null);
         setValue(loaded);
         setInitialSnapshot(JSON.stringify(loaded));
       } catch (error) {
@@ -85,24 +107,95 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
     })();
   }, [type, entriesApi]);
 
-  function update<K extends keyof GithubSyncValue>(key: K, next: GithubSyncValue[K]) {
+  function update<K extends keyof GitSyncValue>(key: K, next: GitSyncValue[K]) {
     setValue((current) => (current ? { ...current, [key]: next } : current));
-    setFieldErrors((current) => key === "provider" ? {} : { ...current, [key]: "" });
+    setFieldErrors((current) => ({ ...current, [key]: "" }));
+    // The URL decides the platform, so a typed URL invalidates whatever the
+    // server last resolved until the next lookup confirms it.
+    if (key === "url") setResolvedProvider(null);
   }
+
+  /**
+   * Loads the remote's branches for the Branch combobox as soon as there is
+   * a parseable URL and a usable token - the one typed here, or (blank input,
+   * unchanged URL) the stored one the server still holds. Debounced because
+   * it runs on every keystroke in two fields, and sequenced because a slow
+   * lookup for an older URL must never overwrite a newer one's result.
+   */
+  const lookupSeq = useRef(0);
+  const remoteUrl = value?.url ?? "";
+  const typedToken = value?.token ?? "";
+  useEffect(() => {
+    if (!value) return;
+    // No token needed to ASK: a public repository advertises its branches to
+    // anyone, and the server falls back to the stored token when the URL is
+    // still the saved one.
+    if (!parseGitRemoteUrl(remoteUrl).ok) {
+      setBranchList(IDLE_BRANCHES);
+      return;
+    }
+    const seq = ++lookupSeq.current;
+    setBranchList({ status: "loading", branches: [], message: "" });
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(`${path}/api/git/branches`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: remoteUrl, token: typedToken }),
+          });
+          const body = await response.json().catch(() => ({})) as { branches?: string[]; defaultBranch?: string; provider?: GitProvider; error?: string };
+          if (seq !== lookupSeq.current) return;
+          if (!response.ok || !body.branches) {
+            setBranchList({ status: "error", branches: [], message: body.error ?? "Branches could not be loaded." });
+            setNewBranch(true);
+            return;
+          }
+          setBranchList({ status: "ready", branches: body.branches, message: "" });
+          if (body.provider) setResolvedProvider(body.provider);
+          setNewBranch(false);
+          // Only fills a branch in when there is none yet - never overwrites
+          // what the admin (or the saved setting) already chose.
+          setValue((current) => (current && !current.branch && body.defaultBranch ? { ...current, branch: body.defaultBranch } : current));
+        } catch {
+          if (seq !== lookupSeq.current) return;
+          setBranchList({ status: "error", branches: [], message: "Branches could not be loaded." });
+          setNewBranch(true);
+        }
+      })();
+    }, 500);
+    return () => window.clearTimeout(timer);
+    // `value` itself is deliberately not a dependency - only these three
+    // inputs decide the lookup, and `branch` changes on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteUrl, typedToken, hasExistingToken, !!value]);
 
   async function save() {
     if (!value) return;
     setFieldErrors({});
+    const parsed = parseGitRemoteUrl(value.url);
+    if (!parsed.ok) { setFieldErrors({ url: parsed.error }); return; }
+    if (!value.branch.trim()) { setFieldErrors({ branch: "Pick a branch, or name a new one." }); return; }
     setSaving(true);
     try {
+      // The URL alone can't tell a self-hosted GitLab from any other git
+      // host, so the server's answer wins over the host-based guess whenever
+      // there is one: `validate` resolves it live, and a branch lookup for
+      // this same URL already did.
+      let setting = { ...parsed.setting, provider: resolvedProvider ?? parsed.setting.provider };
       if (setupOnly || value.token.trim()) {
-        const response = await fetch(`${path}/api/git/validate`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: value.provider, url: value.url, repo: value.repo, token: value.token }) });
-        const validation = await response.json().catch(() => ({})) as { valid?: boolean; fieldErrors?: Record<string, string> };
+        const response = await fetch(`${path}/api/git/validate`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: value.url, token: value.token }) });
+        const validation = await response.json().catch(() => ({})) as { valid?: boolean; fieldErrors?: Record<string, string>; provider?: GitProvider; url?: string; repo?: string; user?: string };
         if (!validation.valid) { setFieldErrors(validation.fieldErrors ?? {}); return; }
+        if (validation.provider && validation.url && validation.repo) {
+          setting = { provider: validation.provider, url: validation.url, repo: validation.repo, user: validation.user ?? "" };
+          setResolvedProvider(validation.provider);
+        }
       }
       // Same "blank secretkey input on an existing entry keeps the stored
       // ciphertext" contract `AiKeyEditor.tsx`'s own save uses.
-      const storedValue = { repo: serializeGitRepositorySetting(value), branch: value.branch, token: value.token };
+      const storedValue = { repo: serializeGitRepositorySetting(setting), branch: value.branch.trim(), token: value.token };
       const payload = value.token.trim() || !hasExistingToken ? storedValue : { ...storedValue, token: { hasExisting: true } };
       await entriesApi.saveSingleton(payload);
       setValue({ ...value, token: "" });
@@ -118,6 +211,34 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
     }
   }
 
+  const parsedUrl = value ? parseGitRemoteUrl(value.url) : null;
+  const detectedProvider = resolvedProvider ?? (parsedUrl?.ok ? parsedUrl.setting.provider : null);
+  const providerHint = !parsedUrl?.ok
+    ? ""
+    : detectedProvider === "github"
+      ? `GitHub · ${parsedUrl.setting.repo}`
+      : detectedProvider === "gitlab"
+        ? `GitLab · ${parsedUrl.setting.repo}`
+        : `Self-hosted git · ${parsedUrl.setting.repo}${parsedUrl.setting.user ? ` (as ${parsedUrl.setting.user})` : ""}`;
+  // A branch that is already saved but no longer on the remote (or one typed
+  // as "new" before the list arrived) still has to be visible and selected -
+  // a combobox with no matching option would render blank while the value
+  // silently stayed behind it.
+  const knownBranches = value?.branch && !branchList.branches.includes(value.branch)
+    ? [value.branch, ...branchList.branches]
+    : branchList.branches;
+  const branchOptions = knownBranches.map((name) => ({ value: name, label: name }));
+  // One line under Branch, in priority order: a save error, why the list is
+  // empty, or what was loaded.
+  const branchHelpIsError = !!fieldErrors.branch || branchList.status === "error";
+  const branchHelp = fieldErrors.branch
+    || (branchList.status === "error" ? branchList.message : "")
+    || (newBranch ? "" : branchList.status === "idle"
+      ? "Add the repository URL and an access token to list branches."
+      : branchList.status === "loading"
+        ? "Loading branches…"
+        : `${branchList.branches.length} ${branchList.branches.length === 1 ? "branch" : "branches"} on this repository.`);
+
   if (loadError) return <span class="error">{loadError}</span>;
   if (!type || !value) return <span class="hint">Loading…</span>;
   if (!canEdit) return <span class="error">You don't have permission to manage Git Sync.</span>;
@@ -127,7 +248,7 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
       <div class="page-header">
         <div style={{ flex: 1 }}>
           <h1>Git Sync</h1>
-          <p>Pushes a snapshot commit of your pages-source code to a GitHub or GitLab repository on every Build/Build all.</p>
+          <p>Pushes a snapshot commit of your pages-source code to a git repository on every Build/Build all. Paste the repository URL - GitHub, GitLab and self-hosted git servers are recognised automatically.</p>
         </div>
         <div class="row">
           {onSignOut && <button type="button" class="ghost sm" onClick={onSignOut}>Sign out</button>}
@@ -141,39 +262,15 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
 
       <section class={setupOnly ? "stack" : "card"}>
         <div class={setupOnly ? "stack" : "under stack"}>
-          <SelectField
-            label="Platform"
+          <TextField
+            label="Repository URL"
             required
-            value={value.provider === "github" ? "GitHub" : "GitLab"}
-            config={{ options: ["GitHub", "GitLab"], multiple: false }}
-            onChange={(next) => update("provider", next === "GitLab" ? "gitlab" : "github")}
-          />
-          {value.provider === "gitlab" && <TextField
-            label="GitLab URL"
-            required
-            placeholder={DEFAULT_GITLAB_URL}
+            type="url"
+            placeholder={GIT_URL_PLACEHOLDER}
             value={value.url}
             error={!!fieldErrors.url}
-            helperText={fieldErrors.url}
+            helperText={fieldErrors.url || providerHint}
             onChange={(next) => update("url", next)}
-          />}
-          <TextField
-            label="Repository"
-            required
-            placeholder="your-org/your-site"
-            value={value.repo}
-            error={!!fieldErrors.repo}
-            helperText={fieldErrors.repo}
-            onChange={(next) => update("repo", next)}
-          />
-          <TextField
-            label="Branch"
-            required
-            placeholder="main"
-            value={value.branch}
-            error={!!fieldErrors.branch}
-            helperText={fieldErrors.branch}
-            onChange={(next) => update("branch", next)}
           />
           <SecretKeyField
             label="Access Token"
@@ -183,6 +280,40 @@ export default function GithubSyncSettings({ setupOnly = false, onSaved, onSignO
             error={!!fieldErrors.token}
             helperText={fieldErrors.token}
             onChange={(next) => update("token", next)}
+          />
+          <div class="field">
+            <label for={branchFieldId}>Branch<span class="required-asterisk">*</span></label>
+            {newBranch ? (
+              <input
+                id={branchFieldId}
+                type="text"
+                placeholder="main"
+                value={value.branch}
+                aria-invalid={!!fieldErrors.branch || undefined}
+                onInput={(event) => update("branch", (event.target as HTMLInputElement).value)}
+              />
+            ) : (
+              <Combobox
+                id={branchFieldId}
+                options={branchOptions}
+                value={value.branch}
+                invalid={!!fieldErrors.branch}
+                disabled={branchList.status !== "ready"}
+                placeholder={branchList.status === "loading" ? "Loading branches…" : "Select a branch…"}
+                noResultsLabel="No branch matches."
+                onChange={(next) => update("branch", next)}
+              />
+            )}
+            {branchHelp && <span class={branchHelpIsError ? "error" : "hint"}>{branchHelp}</span>}
+          </div>
+          <CheckField
+            label="New branch"
+            description="Type a branch name instead of picking an existing one - it is created on the first push."
+            value={newBranch}
+            onChange={(next) => {
+              setNewBranch(next);
+              setFieldErrors((current) => ({ ...current, branch: "" }));
+            }}
           />
         </div>
       </section>

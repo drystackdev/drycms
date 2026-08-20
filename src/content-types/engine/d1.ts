@@ -1,10 +1,17 @@
 import type { ResolvedD1ContentOption } from "../../server/options.js";
 import { planDelete, planSave as planSaveEngine, type SavePlan } from "../migration.js";
-import { pendingSeedStatements } from "../seed.js";
+import { pendingSeed } from "../seed.js";
 import { superAdminSeedStatement } from "../permissions.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
-import { prepare, runBatch, type D1Database } from "./d1-driver.js";
+import {
+  emptySchemaDocument,
+  withAppliedType,
+  withoutAppliedType,
+  type SchemaDocument,
+} from "../schema-document.js";
+import { createMemorySchemaDocumentStore, type SchemaDocumentStore } from "./schema-document-store.js";
+import { runBatch, type D1Database } from "./d1-driver.js";
 import { ContentEngineError, type ContentEngineAdapter, type SaveBatchContext } from "./types.js";
 
 /**
@@ -34,6 +41,7 @@ const bootstrappedBindings = new WeakSet<D1Database>();
 export function createD1ContentEngineAdapter(
   option: ResolvedD1ContentOption,
   runtimeEnv: Record<string, unknown> | undefined,
+  documentStore: SchemaDocumentStore = createMemorySchemaDocumentStore(),
 ): ContentEngineAdapter {
   const maybeDb = runtimeEnv?.[option.binding] as D1Database | undefined;
   if (!maybeDb) {
@@ -71,16 +79,10 @@ export function createD1ContentEngineAdapter(
    */
   let cachedListPromise: Promise<ContentTypeDefinition[]> | null = null;
 
-  async function getResourceVersionValue(resource: string): Promise<number> {
-    const rows = await db.prepare('SELECT "version" FROM "_versions" WHERE "resource" = ?;').bind(resource).all<{ version: number }>();
-    return rows.results?.[0]?.version ?? 0;
-  }
-
-  /** Same "not a real transaction, just sequenced after the data write"
-   * caveat as `entries-d1.ts`'s `bumpResourceVersion` - see that file's doc
-   * comment. */
-  async function bumpResourceVersion(resource: string): Promise<void> {
-    const next = (await getResourceVersionValue(resource)) + 1;
+  /** Mirrors the document's `revision` into `_versions` for anything still
+   * reading that table. Same "not a real transaction, just sequenced after
+   * the data write" caveat as `entries-d1.ts`'s `bumpResourceVersion`. */
+  async function setResourceVersion(resource: string, next: number): Promise<void> {
     await db
       .prepare(
         'INSERT INTO "_versions" ("resource","version","updated_at") VALUES (?,?,?) ' +
@@ -90,20 +92,34 @@ export function createD1ContentEngineAdapter(
       .run();
   }
 
-  async function ensureBootstrap(): Promise<void> {
-    if (bootstrappedBindings.has(db)) return;
-    await db
-      .prepare(
-        `CREATE TABLE IF NOT EXISTS "metadata" (\n` +
-          `  "id" TEXT PRIMARY KEY,\n` +
-          `  "kind" TEXT NOT NULL,\n` +
-          `  "name" TEXT NOT NULL,\n` +
-          `  "definition" TEXT NOT NULL,\n` +
-          `  "version" INTEGER NOT NULL\n` +
-          `);`,
-      )
-      .run();
-    await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`).run();
+  /**
+   * Definitions from the pre-JSON `metadata` table (`status/content-types-
+   * json-file.md`), read once when `content/types.json` doesn't exist yet so
+   * a project created before the move keeps its schema. `[]` when the table
+   * was never created. Nothing writes to that table any more.
+   */
+  async function readLegacyMetadata(): Promise<ContentTypeDefinition[]> {
+    const tables = await db
+      .prepare(`SELECT "name" FROM "sqlite_master" WHERE "type" = 'table' AND "name" = 'metadata';`)
+      .all<{ name: string }>();
+    if ((tables.results ?? []).length === 0) return [];
+    const rows = await db.prepare('SELECT "definition" FROM "metadata";').all<{ definition: string }>();
+    const definitions: ContentTypeDefinition[] = [];
+    for (const row of rows.results ?? []) {
+      try {
+        definitions.push(JSON.parse(row.definition) as ContentTypeDefinition);
+      } catch {
+        // Best-effort, same as the sqlite adapter's copy: one unreadable row
+        // must not cost the project every other type.
+      }
+    }
+    return definitions;
+  }
+
+  async function ensureBootstrap(): Promise<SchemaDocument> {
+    const stored = await documentStore.read();
+    if (bootstrappedBindings.has(db) && stored) return stored;
+
     await db
       .prepare(
         `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
@@ -114,36 +130,38 @@ export function createD1ContentEngineAdapter(
       )
       .run();
 
-    const existing = await db.prepare('SELECT "name" FROM "metadata";').all<{ name: string }>();
-    const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
+    let doc = stored ?? { ...emptySchemaDocument(), applied: await readLegacyMetadata() };
+    const { statements, definitions } = pendingSeed(new Set(doc.applied.map((type) => type.name.toLowerCase())));
     await runBatch(db, statements);
-    if (statements.length > 0) await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
+    if (definitions.length > 0 || !stored) {
+      for (const definition of definitions) doc = withAppliedType(doc, definition);
+      await saveDocument(doc);
+    }
 
     const superAdmin = superAdminSeedStatement();
     await db.prepare(superAdmin.sql).bind(...(superAdmin.params ?? [])).run();
 
     bootstrappedBindings.add(db);
+    cachedListPromise = null;
+    return doc;
+  }
+
+  /** Document first, `_versions` second - the table is a mirror kept for
+   * anything still reading it, never the value `getResourceVersion()`
+   * returns (that comes from the document's own `revision`). */
+  async function saveDocument(doc: SchemaDocument): Promise<void> {
+    await documentStore.write(doc);
+    cachedListPromise = null;
+    await setResourceVersion(CONTENT_TYPES_RESOURCE, doc.revision);
   }
 
   async function listContentTypes(): Promise<ContentTypeDefinition[]> {
-    await ensureBootstrap();
-    if (!cachedListPromise) {
-      cachedListPromise = db
-        .prepare('SELECT "definition" FROM "metadata";')
-        .all<{ definition: string }>()
-        .then((result) => (result.results ?? []).map((row) => JSON.parse(row.definition) as ContentTypeDefinition));
-    }
+    cachedListPromise ??= ensureBootstrap().then((doc) => doc.applied);
     return cachedListPromise;
   }
 
   async function getContentType(id: string): Promise<ContentTypeDefinition | null> {
-    await ensureBootstrap();
-    const result = await db
-      .prepare('SELECT "definition" FROM "metadata" WHERE "id" = ?;')
-      .bind(id)
-      .all<{ definition: string }>();
-    const row = result.results?.[0];
-    return row ? (JSON.parse(row.definition) as ContentTypeDefinition) : null;
+    return (await listContentTypes()).find((type) => type.id === id) ?? null;
   }
 
   async function planSave(next: ContentTypeDefinition, batch: SaveBatchContext = {}): Promise<SavePlan> {
@@ -169,12 +187,11 @@ export function createD1ContentEngineAdapter(
   }
 
   async function applySave(next: ContentTypeDefinition, plan: SavePlan): Promise<ContentTypeDefinition> {
-    await ensureBootstrap();
+    let doc = await ensureBootstrap();
     const allPlans = [plan.primary, ...plan.cascaded];
 
     for (const p of allPlans) {
-      const current = await getContentType(p.targetContentTypeId);
-      const currentVersion = current?.version ?? 0;
+      const currentVersion = doc.applied.find((type) => type.id === p.targetContentTypeId)?.version ?? 0;
       if (currentVersion !== p.expectedVersion) {
         throw new ContentEngineError(
           "version_conflict",
@@ -189,37 +206,28 @@ export function createD1ContentEngineAdapter(
     // spanning multiple tables (a component cascade, or several child
     // tables) is therefore atomic per-table, NOT atomic as a whole, unlike
     // local SQLite's single transaction - a real platform difference.
-    // Metadata version-bumps run last, only after every table batch
-    // succeeds, so `metadata` never claims a version whose table rebuild
+    // The document write runs last, only after every table batch succeeds,
+    // so `content/types.json` never claims a schema whose table rebuild
     // didn't fully complete.
     for (const p of allPlans) {
       for (const table of p.tables) {
         await runBatch(db, table.statements);
       }
     }
-    for (const p of allPlans) {
-      const result = await prepare(db, p.metadataStatement).run();
-      if ((result.meta.changes ?? 0) === 0) {
-        throw new ContentEngineError(
-          "version_conflict",
-          `Metadata write for "${p.targetContentTypeId}" was rejected (version conflict).`,
-        );
-      }
-    }
-    await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
-    cachedListPromise = null;
+    for (const p of allPlans) doc = withAppliedType(doc, p.nextDefinition);
+    await saveDocument(doc);
 
-    const saved = await getContentType(next.id);
+    const saved = doc.applied.find((type) => type.id === next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
     return saved;
   }
 
   async function deleteContentType(id: string): Promise<void> {
-    await ensureBootstrap();
-    const existing = await getContentType(id);
+    const doc = await ensureBootstrap();
+    const existing = doc.applied.find((type) => type.id === id) ?? null;
     if (!existing) throw new ContentEngineError("not_found", `Content type "${id}" not found.`);
 
-    const allTypes = await listContentTypes();
+    const allTypes = doc.applied;
     if (existing.kind === "component") {
       const dependents = findDependents(id, allTypes);
       if (dependents.length > 0) {
@@ -232,9 +240,7 @@ export function createD1ContentEngineAdapter(
 
     const dropStatements = planDelete(existing, allTypes);
     await runBatch(db, dropStatements);
-    await db.prepare('DELETE FROM "metadata" WHERE "id" = ?;').bind(id).run();
-    await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
-    cachedListPromise = null;
+    await saveDocument(withoutAppliedType(doc, id));
   }
 
   return {
@@ -243,9 +249,6 @@ export function createD1ContentEngineAdapter(
     planSave,
     applySave,
     deleteContentType,
-    getResourceVersion: async () => {
-      await ensureBootstrap();
-      return getResourceVersionValue(CONTENT_TYPES_RESOURCE);
-    },
+    getResourceVersion: async () => (await ensureBootstrap()).revision,
   };
 }

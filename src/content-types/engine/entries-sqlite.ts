@@ -1,7 +1,7 @@
 import type { ResolvedSqliteContentOption } from "../../server/options.js";
 import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
-import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
+import { applyTimestamps, keptSecretPaths, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
 import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, inboundRelationRefs, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
@@ -395,8 +395,14 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     nodes: EntryFieldNode[],
     queryable: QueryableColumn[],
     value: EntryValue,
+    /** Set only by `restoreEntry`: the row's own id is part of what a git
+     * snapshot restores, since every relation in every OTHER row points at
+     * it (`status/git-versions-page.md`). A fresh `createEntry` never passes
+     * one - autoincrement stays the only way a new id is minted. */
+    forcedId?: number,
   ): Promise<number> {
-    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
+    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), forcedId === undefined ? "create" : "restore");
+    if (forcedId !== undefined) rowData.id = forcedId;
     const columns = Object.keys(rowData);
     let id: number;
     handle.exec("BEGIN IMMEDIATE;");
@@ -408,7 +414,7 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
         const columnList = columns.map(quoteIdent).join(",");
         const placeholders = columns.map(() => "?").join(",");
         const result = handle.run(`INSERT INTO ${quoteIdent(type.name)} (${columnList}) VALUES (${placeholders});`, columns.map((c) => rowData[c]));
-        id = result.lastInsertRowid!;
+        id = forcedId ?? result.lastInsertRowid!;
       }
       await writeChildFields(handle, nodes, id, value);
       bumpResourceVersion(handle, type.name);
@@ -433,6 +439,32 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     return (await getEntry(type, allTypes, id))!;
   }
 
+  async function updateRow(
+    handle: SqliteHandle,
+    type: ContentTypeDefinition,
+    nodes: EntryFieldNode[],
+    queryable: QueryableColumn[],
+    id: number,
+    value: EntryValue,
+    mode: "update" | "restore",
+  ): Promise<void> {
+    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), mode);
+    const columns = Object.keys(rowData);
+    handle.exec("BEGIN IMMEDIATE;");
+    try {
+      if (columns.length > 0) {
+        const setSql = columns.map((c) => `${quoteIdent(c)} = ?`).join(",");
+        handle.run(`UPDATE ${quoteIdent(type.name)} SET ${setSql} WHERE "id" = ?;`, [...columns.map((c) => rowData[c]), id]);
+      }
+      await writeChildFields(handle, nodes, id, value);
+      bumpResourceVersion(handle, type.name);
+      handle.exec("COMMIT;");
+    } catch (error) {
+      handle.exec("ROLLBACK;");
+      throw translateUniqueViolation(error, queryable) ?? error;
+    }
+  }
+
   async function updateEntry(
     type: ContentTypeDefinition,
     allTypes: ContentTypeDefinition[],
@@ -450,21 +482,38 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
       throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
     }
 
-    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "update");
-    const columns = Object.keys(rowData);
-    handle.exec("BEGIN IMMEDIATE;");
-    try {
-      if (columns.length > 0) {
-        const setSql = columns.map((c) => `${quoteIdent(c)} = ?`).join(",");
-        handle.run(`UPDATE ${quoteIdent(type.name)} SET ${setSql} WHERE "id" = ?;`, [...columns.map((c) => rowData[c]), id]);
-      }
-      await writeChildFields(handle, nodes, id, value);
-      bumpResourceVersion(handle, type.name);
-      handle.exec("COMMIT;");
-    } catch (error) {
-      handle.exec("ROLLBACK;");
-      throw translateUniqueViolation(error, queryable) ?? error;
+    await updateRow(handle, type, nodes, queryable, id, value, "update");
+    return (await getEntry(type, allTypes, id))!;
+  }
+
+  /** `assertValid` for a restore: a git-mirrored entry never carries its own
+   * secrets (`git-mirror.ts` redacts them at commit time), and `valueToRow`
+   * keeps the stored column rather than clearing it, so a `required` secret
+   * that isn't actually changing must not fail the write
+   * (`entry-validate.ts`'s `keptSecretPaths`). */
+  function assertValidRestore(nodes: EntryFieldNode[], value: EntryValue, existingRow: Record<string, unknown> | null): void {
+    const errors = validateEntryValue(nodes, value);
+    for (const path of keptSecretPaths(nodes, value, existingRow)) delete errors[path];
+    if (Object.keys(errors).length > 0) {
+      throw new ContentEntryError("validation_failed", "Validation failed.", errors);
     }
+  }
+
+  async function restoreEntry(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    id: number,
+    value: EntryValue,
+  ): Promise<EntryRow> {
+    const handle = await getHandle();
+    const nodes = buildEntryFieldTree(type, allTypes);
+    const queryable = flattenQueryableColumns(nodes);
+
+    const existing = handle.all<Record<string, unknown>>(`SELECT * FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    const existingRow = existing[0] ?? null;
+    assertValidRestore(nodes, value, existingRow);
+    if (existingRow) await updateRow(handle, type, nodes, queryable, id, value, "restore");
+    else await insertRow(handle, type, nodes, queryable, value, id);
 
     return (await getEntry(type, allTypes, id))!;
   }
@@ -567,6 +616,7 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     getRawEntry,
     createEntry,
     updateEntry,
+    restoreEntry,
     deleteEntry,
     reorderEntries,
     getSingletonEntry,

@@ -881,6 +881,76 @@ describe("createSqliteContentEntryEngineAdapter", () => {
   });
 });
 
+describe("restoreEntry", () => {
+  /** The one write path that keeps a caller-chosen id (`entries-types.ts`) -
+   * git restore depends on it, because every relation pointing at a row
+   * points at its id (`status/git-versions-page.md`). */
+  it("re-inserts a deleted row at its original id, keeping the snapshot's own timestamps", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const role = allTypes.find((t) => t.name === "role")!;
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    const editorRole = await entries.createEntry(role, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
+    const created = await entries.createEntry(user, allTypes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+      roles: [editorRole.id],
+    });
+    await entries.deleteEntry(user, allTypes, created.id);
+    expect(await entries.getEntry(user, allTypes, created.id)).toBeNull();
+
+    // A row that is GONE has no stored secret to keep, so a required one has
+    // to come with the restore - a git mirror never carries it
+    // (`git-mirror.ts` redacts it), which is exactly why this reports a
+    // per-entry error instead of silently writing a row with no password.
+    await expect(
+      entries.restoreEntry(user, allTypes, created.id, { name: "Ada", email: "ada@example.com", roles: [] }),
+    ).rejects.toThrow(/Validation failed/);
+
+    const restored = await entries.restoreEntry(user, allTypes, created.id, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+      roles: [editorRole.id],
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-02T00:00:00.000Z",
+    });
+    expect(restored.id).toBe(created.id);
+    expect(restored.value.name).toBe("Ada");
+    expect(restored.value.roles).toEqual([editorRole.id]);
+    // `datetime` fields deserialize to a `Date`, so compare the instant.
+    expect(new Date(restored.value.createdAt as string).toISOString()).toBe("2020-01-01T00:00:00.000Z");
+    expect(new Date(restored.value.updatedAt as string).toISOString()).toBe("2020-01-02T00:00:00.000Z");
+  });
+
+  it("updates in place when the row still exists, and leaves a secret the snapshot omits alone", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    const created = await entries.createEntry(user, allTypes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+      roles: [],
+    });
+    const before = await entries.getRawEntry(user, created.id);
+
+    // A mirrored entry file never carries a password (`git-mirror.ts`'s
+    // `redactSecretFields` drops the key entirely), so a restore must not
+    // blank the stored hash out.
+    const restored = await entries.restoreEntry(user, allTypes, created.id, { name: "Ada L", email: "ada@example.com", roles: [] });
+    expect(restored.id).toBe(created.id);
+    expect(restored.value.name).toBe("Ada L");
+    const after = await entries.getRawEntry(user, created.id);
+    expect(after?.password).toBe(before?.password);
+  });
+});
+
 async function rawQuery<T = unknown>(dir: string, sql: string): Promise<T[]> {
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(join(dir, "content.sqlite"));

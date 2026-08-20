@@ -636,11 +636,14 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
 }
 
 /**
- * Statements to create whichever default content types (by name,
- * case-insensitively) aren't already present - `[]` once every default has
- * been seeded once. Called on every bootstrap (not just when `metadata` is
- * first created) so a project upgraded to a drycms version that adds a new
- * default still picks it up, without re-seeding ones already there (which
+ * The table statements AND the definitions for whichever default content
+ * types (by name, case-insensitively) aren't already present - both empty
+ * once every default has been seeded once. The caller runs `statements`
+ * against the database and writes `definitions` into `content/types.json`'s
+ * `applied` list (`schema-document.ts`); there is no `metadata` table to
+ * insert them into any more. Called on every bootstrap (not just when the
+ * document is first created) so a project upgraded to a drycms version that
+ * adds a new default still picks it up, without re-seeding ones already there (which
  * would otherwise collide on name/id or clobber user edits to them).
  * `newAllTypes` for every planned type is the FULL default set regardless of
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
@@ -650,19 +653,20 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
  * auto-seeded; they only ever arrive by being created directly in the admin
  * UI, or by restoring a database backup (`routes/backup.ts`).
  */
-export function pendingSeedStatements(
+export function pendingSeed(
   existingNamesLowercase: ReadonlySet<string>,
-): Statement[] {
+): { statements: Statement[]; definitions: ContentTypeDefinition[] } {
   const all = defaultContentTypeDefinitions();
   const missing = all.filter(
     (t) => !existingNamesLowercase.has(t.name.toLowerCase()),
   );
 
   const statements: Statement[] = [];
+  const definitions: ContentTypeDefinition[] = [];
   for (const target of missing) {
     const plan = planMigration({ target, oldAllTypes: [], newAllTypes: all });
     for (const table of plan.tables) statements.push(...table.statements);
-    statements.push(plan.metadataStatement);
+    definitions.push(plan.nextDefinition);
     if (target.name === "menu") {
       statements.push(
         {
@@ -685,5 +689,5 @@ export function pendingSeedStatements(
       );
     }
   }
-  return statements;
+  return { statements, definitions };
 }

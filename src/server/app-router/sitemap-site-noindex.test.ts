@@ -7,7 +7,7 @@ vi.mock("../config.js", async () => {
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-sitemap-noindex-test-"));
-  return { path: "/dry", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  return { path: "/dry", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") } };
 });
 
 /**

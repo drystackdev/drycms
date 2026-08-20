@@ -477,6 +477,10 @@ export default function DryLayout({ children }: Props) {
     const githubSyncType = contentTypes?.find((t) => t.name === "githubSync");
     if (githubSyncType && canAccess(githubSyncType.id, "setting")) {
       items.push({ id: "github-sync", label: "Git Sync", href: `${path}/settings/github-sync` });
+      // Same grant as Git Sync itself: the Versions page READS the history of
+      // the repository configured right above it (`routes/versions.ts` gates
+      // restoring separately, on top of this).
+      items.push({ id: "versions", label: "Versions", href: `${path}/settings/versions` });
     }
     return items;
   }, [contentTypes]);

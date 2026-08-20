@@ -32,7 +32,12 @@ export interface MigrationPlan {
   /** Execution-order-safe: children created after their parent, dropped
    * before their parent. */
   tables: TableMigration[];
-  metadataStatement: Statement;
+  /** The definition to store in `content/types.json`'s `applied` list once
+   * this plan's table statements have run - `target` with `version` already
+   * advanced to `nextVersion`. There is no `metadata` table to upsert into
+   * any more (`status/content-types-json-file.md`), so a plan carries the
+   * VALUE to persist and the engine adapter decides how to write it. */
+  nextDefinition: ContentTypeDefinition;
   expectedVersion: number;
   nextVersion: number;
 }
@@ -395,24 +400,6 @@ function walkTablePair(oldNode: TableNode | undefined, newNode: TableNode | unde
 // Public planners
 // ---------------------------------------------------------------------------
 
-/** Plain INSERT for a brand-new id; on conflict (id already exists) only
- * updates if the row's CURRENT version still matches `expectedVersion` -
- * the optimistic-lock check. 0 rows affected on an existing id means either
- * a genuine conflict (another save landed first) or - by construction here,
- * since `expectedVersion` always comes from the just-loaded row - never a
- * "row doesn't exist" case for an update; the adapter treats "0 changes AND
- * the id already existed before this statement" as the conflict error. */
-function metadataUpsertStatement(target: ContentTypeDefinition, nextVersion: number, expectedVersion: number): Statement {
-  const definition = JSON.stringify({ ...target, version: nextVersion });
-  return {
-    sql: `INSERT INTO ${quoteIdent("metadata")} ("id","kind","name","definition","version") VALUES (?,?,?,?,?)
-ON CONFLICT("id") DO UPDATE SET "kind"=excluded."kind", "name"=excluded."name", "definition"=excluded."definition", "version"=excluded."version"
-WHERE ${quoteIdent("metadata")}."version" = ?;`,
-    params: [target.id, target.kind, target.name, definition, nextVersion, expectedVersion],
-    description: `Upsert metadata for "${target.name}" (v${nextVersion})`,
-  };
-}
-
 /** Pure. Resolves the target's old and new table trees and diffs them,
  * table by table (root + every child table, recursively). `component`
  * types produce no tables of their own - `tables` is always `[]` for them. */
@@ -436,7 +423,7 @@ export function planMigration(input: {
   return {
     targetContentTypeId: target.id,
     tables,
-    metadataStatement: metadataUpsertStatement(target, nextVersion, expectedVersion),
+    nextDefinition: { ...target, version: nextVersion },
     expectedVersion,
     nextVersion,
   };

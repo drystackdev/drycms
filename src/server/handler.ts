@@ -11,6 +11,7 @@ import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
+import * as contentTypeDraftsRoute from "./routes/content-type-drafts.js";
 import * as aiContentTypeDraftsRoute from "./routes/ai-content-type-drafts.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
@@ -30,6 +31,7 @@ import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.j
 import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
 import * as pageHistoryRoute from "./routes/page-history.js";
 import * as contentHistoryRoute from "./routes/content-history.js";
+import * as versionsRoute from "./routes/versions.js";
 import * as gitRoute from "./routes/git.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
@@ -77,6 +79,10 @@ const API_ROUTES: Record<string, RouteModule> = {
   icons: iconsRoute,
   iconify: iconifyRoute,
   "content-types": contentTypesRoute,
+  // The staging half of `content/types.json` (`schema-document.ts`) - its
+  // own segment rather than a slug under `content-types`, since routing here
+  // only dispatches on the first segment and a slug there is a type id.
+  "content-type-drafts": contentTypeDraftsRoute,
   "ai-content-type-drafts": aiContentTypeDraftsRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
@@ -108,6 +114,13 @@ const API_ROUTES: Record<string, RouteModule> = {
   // self-gating precedent as `dry-http`/`pages-build` (see the comment
   // above `github-sync` below).
   "content-history": contentHistoryRoute,
+  // The repository-wide history + "go back to this commit"
+  // (`status/git-versions-page.md`). Self-gating like `content-history`
+  // above, and for a sharper reason: READING the history needs only the Git
+  // Sync setting grant, while RESTORING rewrites page source and re-applies
+  // the whole schema, so it demands the code-edit AND content-type grants
+  // together - a split no single dispatcher-level check could express.
+  versions: versionsRoute,
   // The git smart-HTTP proxy the browser working copy talks to
   // (`routes/git.ts`) - same permission as `pages-source` below, since a
   // clone through it IS a read of that same executable tenant source.

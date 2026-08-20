@@ -1,12 +1,6 @@
 import { signal } from "@preact/signals";
 import type { ContentTypeDefinition } from "./types.js";
-import {
-  deleteContentTypeDraftRecord,
-  getAllContentTypeDraftRecords,
-  putContentTypeDraftRecord,
-  subscribeContentTypeDraftChanges,
-  type ContentTypeDraftRecord,
-} from "./content-type-draft-db.js";
+import type { SchemaDraft } from "./schema-document.js";
 
 const { path } = window.__DRY_CONFIG__;
 
@@ -32,12 +26,12 @@ type DraftMap = Record<string, DraftEntry>;
 /**
  * Every pending, unapplied edit to a content type, keyed by id - the
  * "staged changes" store behind the Content Types builder's "Apply and
- * build" flow (see `status/content-type-staged-apply.md`). Backed by
- * IndexedDB (`content-type-draft-db.ts`), same mechanism
- * `entry-draft-store.ts` already uses for content-entry drafts, replacing
- * this module's own former localStorage-only implementation - a
- * server-authored draft (an MCP proposal) now has somewhere to land once
- * pulled down, which a browser-only store never could.
+ * build" flow (see `status/content-type-staged-apply.md`). Backed by the
+ * `drafts` half of `content/types.json` (`schema-document.ts`) through
+ * `GET`/`PUT {path}/api/content-type-drafts` - the SAME file the applied
+ * schema lives in, so a staged change travels with the project (and is
+ * committed to git by "Apply and build") instead of living in one browser
+ * profile's IndexedDB, which is where this store used to keep it.
  *
  * A `@preact/signals` value (same pattern as `store/content-types.ts`'s
  * `contentTypesVersion`) so `BuilderContentType.tsx`'s list/badges and
@@ -45,19 +39,80 @@ type DraftMap = Record<string, DraftEntry>;
  * without prop drilling or manual event wiring. Starts EMPTY and is
  * populated asynchronously by `hydrateContentTypeDraftIndex()` (called once
  * from `DryLayout`'s mount effect, same "pop in shortly after first paint"
- * tradeoff `entryDraftIndex` already accepts) - unlike the old localStorage
- * version, a `getDraft()` call right after page load can transiently miss a
- * real draft until hydration finishes.
+ * tradeoff `entryDraftIndex` already accepts) - a `getDraft()` call right
+ * after page load can transiently miss a real draft until hydration
+ * finishes.
  */
 export const drafts = signal<DraftMap>({});
 
 export async function hydrateContentTypeDraftIndex(): Promise<void> {
-  const records = await getAllContentTypeDraftRecords();
-  const next: DraftMap = {};
-  for (const record of records) {
-    next[record.id] = { definition: record.definition, isNew: record.isNew, source: record.source };
+  try {
+    const response = await fetch(`${path}/api/content-type-drafts`, { credentials: "same-origin" });
+    if (!response.ok) return;
+    const body = (await response.json()) as { drafts?: SchemaDraft[] };
+    const next: DraftMap = {};
+    for (const draft of body.drafts ?? []) {
+      next[draft.definition.id] = { definition: draft.definition, isNew: draft.isNew, source: draft.source };
+    }
+    drafts.value = next;
+  } catch {
+    // Same degrade-safely contract the IndexedDB version had: a failed
+    // hydrate leaves the store empty rather than breaking the page, and the
+    // next write re-publishes whatever this tab does have.
   }
-  drafts.value = next;
+}
+
+/**
+ * Every draft write goes through ONE queued `PUT` of the whole staging area
+ * (the client always renders the complete set, so there is nothing to
+ * reconcile per-item) - chained rather than fired in parallel so two quick
+ * edits can't land out of order and resurrect a discarded draft. Always
+ * sends `drafts.value` as read at send time, never a captured copy, so a
+ * write queued behind another automatically carries the newest state.
+ */
+let pendingPersist: Promise<void> = Promise.resolve();
+
+function persistDrafts(): void {
+  pendingPersist = pendingPersist.then(async () => {
+    const payload: SchemaDraft[] = Object.values(drafts.value).map((entry) => ({
+      definition: entry.definition,
+      isNew: entry.isNew,
+      source: entry.source,
+      updatedAt: Date.now(),
+    }));
+    try {
+      await fetch(`${path}/api/content-type-drafts`, {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ drafts: payload }),
+      });
+    } catch {
+      // Best-effort: the signal (what the UI reads) already reflects the
+      // change, and the next write retries the whole set anyway.
+    }
+  });
+}
+
+const CHANNEL_NAME = "drycms-content-type-drafts";
+
+let channel: BroadcastChannel | undefined;
+
+function getChannel(): BroadcastChannel | undefined {
+  if (typeof BroadcastChannel === "undefined") return undefined;
+  channel ??= new BroadcastChannel(CHANNEL_NAME);
+  return channel;
+}
+
+/** Publishes the whole map, not a per-draft delta: the server-side staging
+ * area is replaced wholesale on every write, so the other tabs' copy should
+ * be too - and it saves them a round trip to see what this tab just did. */
+function broadcastDrafts(): void {
+  try {
+    getChannel()?.postMessage(drafts.value);
+  } catch {
+    // Best-effort - a tab that can't broadcast still has its own write.
+  }
 }
 
 /** Keeps `drafts` current when a DIFFERENT tab writes or discards a draft -
@@ -65,17 +120,13 @@ export async function hydrateContentTypeDraftIndex(): Promise<void> {
  * once from `DryLayout`'s mount effect, right next to
  * `hydrateContentTypeDraftIndex()`. */
 export function watchContentTypeDraftIndex(): () => void {
-  return subscribeContentTypeDraftChanges((message) => {
-    if (message.type === "put") {
-      const { id, definition, isNew, source } = message.record;
-      drafts.value = { ...drafts.value, [id]: { definition, isNew, source } };
-    } else {
-      if (!(message.id in drafts.value)) return;
-      const next = { ...drafts.value };
-      delete next[message.id];
-      drafts.value = next;
-    }
-  });
+  const ch = getChannel();
+  if (!ch) return () => {};
+  const handler = (event: MessageEvent) => {
+    drafts.value = event.data as DraftMap;
+  };
+  ch.addEventListener("message", handler);
+  return () => ch.removeEventListener("message", handler);
 }
 
 export function getDraft(id: string): DraftEntry | undefined {
@@ -85,16 +136,15 @@ export function getDraft(id: string): DraftEntry | undefined {
 /** Updates `drafts` synchronously (so a caller like `AiSchemaWizardPanel.tsx`
  * can read `getDraft()`/`drafts.value` right after calling this and see its
  * own write, exactly like the old synchronous-localStorage version behaved)
- * - the IndexedDB write itself is fire-and-forget underneath. No debounce
+ * - the `PUT` itself is fire-and-forget underneath. No debounce
  * (unlike `entry-draft-store.ts`'s `saveEntryDraft`): a content-type draft
  * is written on discrete actions (clicking Save, a wizard staging a
  * proposal, a sync pulling one from the server), never on every keystroke,
  * so there's no rapid-fire call rate to coalesce. */
 export function saveDraft(definition: ContentTypeDefinition, isNew: boolean, source: DraftSource = "local"): void {
-  const next = { ...drafts.value, [definition.id]: { definition, isNew, source } };
-  drafts.value = next;
-  const record: ContentTypeDraftRecord = { id: definition.id, definition, isNew, source, updatedAt: Date.now() };
-  void putContentTypeDraftRecord(record);
+  drafts.value = { ...drafts.value, [definition.id]: { definition, isNew, source } };
+  broadcastDrafts();
+  persistDrafts();
 }
 
 export function discardDraft(id: string): void {
@@ -102,7 +152,8 @@ export function discardDraft(id: string): void {
   const next = { ...drafts.value };
   delete next[id];
   drafts.value = next;
-  void deleteContentTypeDraftRecord(id);
+  broadcastDrafts();
+  persistDrafts();
 }
 
 export function discardDrafts(ids: string[]): void {
@@ -116,7 +167,8 @@ export function discardDrafts(ids: string[]): void {
   }
   if (!changed) return;
   drafts.value = next;
-  for (const id of ids) void deleteContentTypeDraftRecord(id);
+  broadcastDrafts();
+  persistDrafts();
 }
 
 interface AiContentTypeDraftPayload {
@@ -127,7 +179,7 @@ interface AiContentTypeDraftPayload {
 }
 
 /** A pending AI proposal (`ai-content-type-drafts.ts` server-side) that
- * conflicts with a draft already sitting in this browser's IndexedDB for the
+ * conflicts with a draft already staged for the
  * SAME content type id - `syncAiContentTypeDrafts()` surfaces these instead
  * of silently overwriting, so `BuilderContentType.tsx` can ask the admin
  * "overwrite with the AI's version, or keep what's already here?" before
@@ -151,7 +203,7 @@ let lastKnownAiDraftsVersion: number | undefined;
 
 /** Pulls every pending AI-proposed draft this account has on the server
  * (`GET /api/ai-content-type-drafts`) and merges each one into the SAME
- * local draft store `drafts`/IndexedDB above uses - so it shows up in the
+ * staging area `drafts` above holds - so it shows up in the
  * exact same "Apply and build" review UI a human-typed draft already gets,
  * no separate screen. A server draft whose id has no local counterpart yet
  * (or whose content already matches what's stored locally) is merged in

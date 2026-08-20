@@ -5,10 +5,16 @@ import { GITHUB_SYNC_TYPE_ID } from "../content-types/system-fields.js";
 import { parseGitRepositorySetting, type GitProvider } from "../lib/git-provider.js";
 
 export interface GitRepoConfig {
-  /** `"owner/name"`. */
+  /** `"owner/name"`, or a nested `"group/sub/name"` outside GitHub. */
   repo: string;
   provider: GitProvider;
+  /** The host's origin (`https://gitlab.com`) - `""` only for a legacy
+   * GitHub-only value that predates the URL-based setting. */
   url: string;
+  /** Basic-auth username the admin put in the repository URL's userinfo, for
+   * a self-hosted host that wants a real user name next to the token. `""`
+   * means the provider's token-only convention applies (`lib/git-provider.ts`). */
+  user: string;
   branch: string;
   /** `""` when no token is stored. The git proxy then talks to GitHub
    * anonymously, which only ever works for a PUBLIC repo - deliberately not
@@ -57,9 +63,10 @@ export async function loadGitConfig(context: DryRouteContext): Promise<{ config:
 /** `"owner/name"` - anything else is rejected before it can reach a URL.
  * The repo comes from this server's own config (never the request), so this
  * is defence in depth against a bad value being saved, not the primary
- * guard. */
+ * guard. GitHub is the only platform with a fixed two-segment path; GitLab
+ * has nested groups, and a self-hosted host may have either. */
 export function isValidRepoSlug(repo: string, provider: GitProvider = "github"): boolean {
   const segment = "[A-Za-z0-9._-]+";
-  const pattern = provider === "gitlab" ? new RegExp(`^${segment}(?:/${segment})+$`) : new RegExp(`^${segment}/${segment}$`);
+  const pattern = provider === "github" ? new RegExp(`^${segment}/${segment}$`) : new RegExp(`^${segment}(?:/${segment})+$`);
   return pattern.test(repo) && !repo.includes("..");
 }

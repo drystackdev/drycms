@@ -10,6 +10,9 @@ vi.mock("../config.js", async () => {
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-types-cache-route-"));
   return {
     content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    // The schema itself lives in `content/types.json` under page-source
+    // storage now (`schema-document.ts`), not in a `metadata` table.
+    pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") },
     typesCacheStorage: { kind: "local", root: join(tempDirBox.path, "types-cache") },
   };
 });

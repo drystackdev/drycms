@@ -46,6 +46,8 @@ import { fieldTypes } from "../../content-types/field-registry.js";
 import type { SelectFieldConfig } from "../../content-types/field-registry.js";
 import type { MagicWriteFetchTurn, MagicWriteRawFields, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
 import { requirePermission } from "../admin-access.js";
+import { GITHUB_SYNC_TYPE_ID } from "../../content-types/system-fields.js";
+import type { GitRepoConfig } from "../git-config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { normalizeStoragePath } from "../../storage/path.js";
 import { StorageError } from "../../storage/types.js";
@@ -267,6 +269,42 @@ const TOOLS: ToolDefinition[] = [
       type: "object",
       properties: { path: { type: "string", description: "The file or folder path to delete, e.g. \"pages/old-page\" or \"component/Unused.tsx\"." } },
       required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_versions",
+    description:
+      "List this project's git history - every commit on the configured branch, code and content together, newest first. A \"[CONTENT] \"-prefixed message is a content change (entries or the content-type schema); anything else is page-source code. Read-only: going back to a commit is an admin action in the Versions settings page, not an MCP tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Commits per page, 1-100. Default 30." },
+        page: { type: "number", description: "1-based page number for older commits. Default 1." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_version",
+    description: "Read one commit: its message, author, date, and every file it changed inside the two roots drycms owns (page source and content/), with per-file added/removed line counts and the diff itself.",
+    inputSchema: {
+      type: "object",
+      properties: { sha: { type: "string", description: "The commit sha, full or short, from list_versions." } },
+      required: ["sha"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_version_file",
+    description: "Read one file's full contents AS IT WAS at a given commit - e.g. what \"pages/page.tsx\" looked like before a change, or the \"content/types.json\" schema document at that point in time.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sha: { type: "string", description: "The commit sha, full or short." },
+        path: { type: "string", description: "Path inside the repo, e.g. \"pages/blog/page.tsx\" or \"content/types.json\"." },
+      },
+      required: ["sha", "path"],
       additionalProperties: false,
     },
   },
@@ -852,6 +890,88 @@ async function runReadPageSourceTool(context: DryRouteContext, rawPath: string |
   }
 }
 
+/**
+ * Read-only git history for an MCP client ("ai cũng xem được" - the AI sees
+ * the same history the Versions settings page shows). Gated on the Git Sync
+ * setting grant, exactly like `routes/versions.ts`'s own GET; restoring a
+ * commit has NO tool on purpose - rolling the whole project back is a
+ * destructive, human-confirmed action, not something a model should be able
+ * to trigger.
+ */
+async function requireVersionsAccess(context: DryRouteContext): Promise<ToolResult | null> {
+  const denied = await requirePermission(context, GITHUB_SYNC_TYPE_ID, "setting");
+  return denied ? { text: "You don't have permission to read this project's version history.", isError: true } : null;
+}
+
+/** Every git-history tool needs the same "is a repository even connected"
+ * answer, phrased for a model rather than a UI. Imported dynamically, like
+ * the git commit path in `runWritePageSourceTool` below: the git modules are
+ * only reachable from a handful of tools and stay out of this route's own
+ * chunk otherwise. */
+async function versionsConfig(context: DryRouteContext): Promise<{ config: GitRepoConfig } | { error: ToolResult }> {
+  const { loadGithubSyncConfig } = await import("./pages-source-github-sync.js");
+  const loaded = await loadGithubSyncConfig(context);
+  if ("error" in loaded) {
+    return { error: { text: `This project has no usable git repository connected: ${loaded.error}`, isError: true } };
+  }
+  return loaded;
+}
+
+async function runListVersionsTool(context: DryRouteContext, args: Record<string, unknown>): Promise<ToolResult> {
+  const denied = await requireVersionsAccess(context);
+  if (denied) return denied;
+  const loaded = await versionsConfig(context);
+  if ("error" in loaded) return loaded.error;
+
+  const limit = Math.min(100, Math.max(1, Number(args.limit) || 30));
+  const page = Math.max(1, Number(args.page) || 1);
+  const { listSnapshotCommits } = await import("../git-source-sync.js");
+  const result = await listSnapshotCommits(loaded.config, limit, { page });
+  if (!result.ok) return { text: `Could not read the history: ${result.reason}`, isError: true };
+  if (result.commits.length === 0) return { text: "No commits on this branch." };
+
+  const lines = result.commits.map((commit) => {
+    const kind = commit.message.startsWith("[CONTENT] ") ? "content" : "code";
+    return `${commit.sha.slice(0, 7)}  ${commit.date}  [${kind}]  ${commit.authorName}: ${commit.message.split("\n")[0]}`;
+  });
+  return { text: `${loaded.config.repo} (${loaded.config.branch}), page ${page}:\n${lines.join("\n")}` };
+}
+
+async function runReadVersionTool(context: DryRouteContext, sha: string | undefined): Promise<ToolResult> {
+  const denied = await requireVersionsAccess(context);
+  if (denied) return denied;
+  if (!sha) return { text: "\"sha\" is required.", isError: true };
+  const loaded = await versionsConfig(context);
+  if ("error" in loaded) return loaded.error;
+
+  const { getRepositoryCommitDetail } = await import("../git-source-sync.js");
+  const result = await getRepositoryCommitDetail(loaded.config, sha);
+  if (!result.ok) return { text: `Could not read commit "${sha}": ${result.reason}`, isError: true };
+  const header = `${result.sha}\n${result.authorName} · ${result.date}\n${result.message}`;
+  if (result.files.length === 0) return { text: `${header}\n\n(no files inside page source or content/)` };
+  const files = result.files.map((file) => {
+    const stats = `${file.status} +${file.additions} -${file.deletions}`;
+    return file.patch ? `--- ${file.path} (${stats})\n${file.patch}` : `--- ${file.path} (${stats})`;
+  });
+  const text = `${header}\n\n${files.join("\n\n")}`;
+  return { text: text.length > MAX_PAGE_SOURCE_READ_CHARS ? `${text.slice(0, MAX_PAGE_SOURCE_READ_CHARS)}\n… (truncated)` : text };
+}
+
+async function runReadVersionFileTool(context: DryRouteContext, sha: string | undefined, path: string | undefined): Promise<ToolResult> {
+  const denied = await requireVersionsAccess(context);
+  if (denied) return denied;
+  if (!sha) return { text: "\"sha\" is required.", isError: true };
+  if (!path) return { text: "\"path\" is required.", isError: true };
+  const loaded = await versionsConfig(context);
+  if ("error" in loaded) return loaded.error;
+
+  const { readRepositoryFileAtCommit } = await import("../git-source-sync.js");
+  const result = await readRepositoryFileAtCommit(loaded.config, sha, path);
+  if (!result.ok) return { text: `Could not read "${path}" at ${sha}: ${result.reason}`, isError: true };
+  if ("missing" in result) return { text: `"${path}" does not exist at ${sha}.` };
+  return { text: result.content.length > MAX_PAGE_SOURCE_READ_CHARS ? `${result.content.slice(0, MAX_PAGE_SOURCE_READ_CHARS)}\n… (truncated)` : result.content };
+}
+
 async function runWritePageSourceTool(context: DryRouteContext, rawPath: string | undefined, code: unknown): Promise<ToolResult> {
   const denied = await requirePageBuilderAccess(context);
   if (denied) return denied;
@@ -1329,6 +1449,15 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
       break;
     case "delete_page_source":
       outcome = await runDeletePageSourceTool(context, stringArg(args, "path"));
+      break;
+    case "list_versions":
+      outcome = await runListVersionsTool(context, args);
+      break;
+    case "read_version":
+      outcome = await runReadVersionTool(context, stringArg(args, "sha"));
+      break;
+    case "read_version_file":
+      outcome = await runReadVersionFileTool(context, stringArg(args, "sha"), stringArg(args, "path"));
       break;
     case "read_dry_types":
       outcome = await runReadDryTypesTool(context);

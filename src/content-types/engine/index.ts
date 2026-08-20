@@ -6,10 +6,16 @@ import type { ContentEntryEngineAdapter } from "./entries-types.js";
 import { createD1PagesRegistryAdapter } from "./pages-registry-d1.js";
 import { createSqlitePagesRegistryAdapter } from "./pages-registry-sqlite.js";
 import type { PagesRegistryAdapter } from "./pages-registry-types.js";
+import type { SchemaDocumentStore } from "./schema-document-store.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
 import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
 
 /**
+ * `documentStore` is where the content types themselves live
+ * (`content/types.json` - `schema-document.ts`); only the tests that build an
+ * adapter over a throwaway database omit it, and they get an in-memory
+ * document instead (`schema-document-store.ts`).
+ *
  * `runtimeEnv` is only required for `engine: "D1"` (the live `D1Database`
  * binding only exists per-request, unlike every other resolved option -
  * see `ResolvedD1ContentOption`'s docs). The `sqlite` branch ignores it and
@@ -20,12 +26,13 @@ import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
 export function createContentEngineAdapter(
   option: ResolvedContentOption,
   runtimeEnv?: Record<string, unknown>,
+  documentStore?: SchemaDocumentStore,
 ): ContentEngineAdapter {
   switch (option.engine) {
     case "sqlite":
-      return createSqliteContentEngineAdapter(option);
+      return createSqliteContentEngineAdapter(option, documentStore);
     case "D1":
-      return createD1ContentEngineAdapter(option, runtimeEnv);
+      return createD1ContentEngineAdapter(option, runtimeEnv, documentStore);
     default:
       throw new ContentEngineError(
         "unsupported",

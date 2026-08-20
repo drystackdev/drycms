@@ -14,6 +14,8 @@ import {
   type RawSqlHandle,
 } from "../../content-types/engine/backup.js";
 import { ContentEngineError } from "../../content-types/engine/types.js";
+import { createStorageSchemaDocumentStore } from "../schema-document-storage.js";
+import { parseSchemaDocument, type SchemaDocument } from "../../content-types/schema-document.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   invalid_definition: 400,
@@ -61,12 +63,40 @@ function backupFileTimestamp(): string {
  * through this one script format for both engines rather than a raw file
  * copy for one and a dump for the other.
  */
+/**
+ * The content types themselves are no longer in the database - they live in
+ * `content/types.json` (`content-types/schema-document.ts`) - so a dump of
+ * the tables alone would restore rows whose schema nothing describes. The
+ * whole document rides along as ONE marker comment line at the top of the
+ * same `.sql` file, keeping backup/restore a single file for the admin and
+ * leaving the script itself valid SQL. A backup taken before this existed
+ * simply has no marker, and restoring it leaves the current document alone.
+ */
+const SCHEMA_MARKER = "-- drycms:content-types ";
+
+function readSchemaMarker(dump: string): SchemaDocument | null {
+  const line = dump.split("\n").find((candidate) => candidate.startsWith(SCHEMA_MARKER));
+  if (!line) return null;
+  try {
+    return parseSchemaDocument(line.slice(SCHEMA_MARKER.length));
+  } catch {
+    // A corrupt marker must not cost the admin the table restore itself -
+    // the tables are the irreplaceable half, the document can be re-applied
+    // from git or re-edited.
+    return null;
+  }
+}
+
 export const GET: DryRouteHandler = async (context) => {
   const denied = await requireSuperAdmin(context, "Only Super Admin can back up the database.");
   if (denied) return denied;
   try {
     const handle = await resolveRawHandle(context);
-    const dump = await buildSqlDump(handle);
+    const document = await createStorageSchemaDocumentStore(context).read();
+    const tables = await buildSqlDump(handle);
+    const dump = document
+      ? `${SCHEMA_MARKER}${JSON.stringify(document)}\n${tables}`
+      : tables;
     return new Response(dump, {
       status: 200,
       headers: {
@@ -98,12 +128,17 @@ export const POST: DryRouteHandler = async (context) => {
     if (!(file instanceof File)) {
       throw new ContentEngineError("invalid_definition", "A backup file is required.");
     }
-    const statements = parseSqlDump(await file.text());
+    const text = await file.text();
+    const document = readSchemaMarker(text);
+    const statements = parseSqlDump(text);
     if (statements.length === 0) {
       throw new ContentEngineError("invalid_definition", "The backup file has no statements to restore.");
     }
     const handle = await resolveRawHandle(context);
     const restoredRows = await restoreFromDump(handle, statements);
+    // Document after tables, same order `applySave` uses: the schema
+    // description only ever advances to something the database already has.
+    if (document) await createStorageSchemaDocumentStore(context).write(document);
     // Raw-SQL restore bypasses every write path (`applySave`, entry CRUD)
     // the isolate/KV schema cache normally invalidates itself off of - clear
     // it explicitly so the next request sees the restored data immediately

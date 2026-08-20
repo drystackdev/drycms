@@ -11,11 +11,16 @@ vi.mock("../config.js", async () => {
   const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-ai-page-source-flags-route-"));
   const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
-  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, typesCacheStorage: resolved.typesCache.storage };
+  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") }, typesCacheStorage: resolved.typesCache.storage };
 });
 
 const { GET } = await import("./ai-page-source-flags.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content } = await import("../config.js");
 const { markAiPageSourceWrite } = await import("../ai-page-source-flags.js");
 
@@ -27,7 +32,7 @@ afterAll(async () => {
 let superAdminSession: SessionPayload;
 
 beforeAll(async () => {
-  const schema = createContentEngineAdapter(content);
+  const schema = createContentEngineAdapter(content, undefined, docStore());
   const entries = createContentEntryEngineAdapter(content);
   const allTypes = await schema.listContentTypes();
   const userType = allTypes.find((t) => t.name === "user")!;

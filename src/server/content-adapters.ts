@@ -5,6 +5,7 @@ import type { ContentEntryEngineAdapter, EntryRow } from "../content-types/engin
 import type { ContentEngineAdapter } from "../content-types/engine/types.js";
 import type { PagesRegistryAdapter } from "../content-types/engine/pages-registry-types.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { createStorageSchemaDocumentStore } from "./schema-document-storage.js";
 import { createRequestKeyValueAdapter } from "../kv/factory.js";
 import { KeyValueStore } from "../kv/memory.js";
 
@@ -22,7 +23,12 @@ export interface ContentAdapters {
  */
 const moduleAdapters: ContentAdapters | undefined = content.engine !== "D1"
   ? {
-      schema: createContentEngineAdapter(content),
+      // No request context to pass: the non-D1 deployment always pairs with
+      // `local` page-source storage, whose adapter ignores `env` entirely
+      // (`storage-adapters.ts`) - so one module-scoped document store is
+      // correct for the whole process, exactly like the engine adapter it
+      // is handed to.
+      schema: createContentEngineAdapter(content, undefined, createStorageSchemaDocumentStore({ env: {} })),
       entries: createContentEntryEngineAdapter(content),
       pagesRegistry: createPagesRegistryAdapter(content),
     }
@@ -256,7 +262,7 @@ export function getContentAdapters(context: DryRouteContext): ContentAdapters {
   if (moduleAdapters) return moduleAdapters;
   const existing = requestAdapters.get(context);
   if (existing) return existing;
-  const rawSchema = createContentEngineAdapter(content, context.env);
+  const rawSchema = createContentEngineAdapter(content, context.env, createStorageSchemaDocumentStore(context));
   const rawEntries = createContentEntryEngineAdapter(content, context.env);
   const cacheStore = schemaCacheStoreFor(context.env);
   const adapters = {

@@ -34,6 +34,11 @@ vi.mock("../../content-types/seed-assets.js", () => ({
 
 const { GET, POST } = await import("./auth.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content } = await import("../config.js");
 const { resolveSession } = await import("../session.js");
 
@@ -174,7 +179,7 @@ describe("auth route", () => {
     const cookie = cookieFrom(response);
     expect(cookie).toMatch(/^drycms_session=/);
 
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;

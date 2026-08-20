@@ -40,7 +40,9 @@ describe("loadGitConfig", () => {
     box.row = { id: 7, value: { repo: "db-owner/db-repo", branch: "main" } };
     box.raw = { token: "ciphertext" };
     await expect(loadGitConfig(context)).resolves.toEqual({
-      config: { provider: "github", url: "", repo: "db-owner/db-repo", branch: "main", token: "decrypted:ciphertext" },
+      // A bare legacy slug now resolves to github.com explicitly, since the
+      // URL is what carries the platform (`lib/git-provider.ts`).
+      config: { provider: "github", url: "https://github.com", repo: "db-owner/db-repo", branch: "main", user: "", token: "decrypted:ciphertext" },
     });
   });
 
@@ -49,7 +51,7 @@ describe("loadGitConfig", () => {
     box.row = { id: 7, value: { repo: "gitlab|https%3A%2F%2Fgitlab.example.com|db-owner/db-repo", branch: "main" } };
     box.raw = { token: "ciphertext" };
     await expect(loadGitConfig(context)).resolves.toEqual({
-      config: { provider: "gitlab", url: "https://gitlab.example.com", repo: "db-owner/db-repo", branch: "main", token: "decrypted:ciphertext" },
+      config: { provider: "gitlab", url: "https://gitlab.example.com", repo: "db-owner/db-repo", branch: "main", user: "", token: "decrypted:ciphertext" },
     });
   });
 });

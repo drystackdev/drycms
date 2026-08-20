@@ -14,7 +14,7 @@ export type EntryValue = Record<string, unknown>;
 // dialog's own Save button - re-exported here so this module stays the one
 // entry-CRUD engine adapters (`entries-sqlite.ts`/`entries-d1.ts`) import.
 export type { FieldErrors } from "./entry-validate.js";
-export { validateEntryValue } from "./entry-validate.js";
+export { keptSecretPaths, validateEntryValue } from "./entry-validate.js";
 export type { MaskedValue };
 
 /** `password`/`secretkey` columns never round-trip their real value to the
@@ -134,14 +134,21 @@ export async function valueToRow(nodes: EntryFieldNode[], value: EntryValue): Pr
  * whatever a client happens to submit for it. Matched by `fieldId` against
  * `SYSTEM_FIELD_IDS`, not by `fieldName` - see `EntryColumnNode.fieldId`'s
  * doc comment for why a name match alone isn't safe here.
+ *
+ * `"restore"` is the one mode that KEEPS what the caller submitted: a row
+ * being written back from a git snapshot (`server/git-restore.ts`) is the
+ * same row it was when it was committed, so re-stamping it "now" would
+ * silently rewrite creation order and every `updatedAt`-sorted list. Only a
+ * timestamp the snapshot doesn't carry falls back to the current time.
  */
 export function applyTimestamps(
   nodes: EntryFieldNode[],
   row: Record<string, unknown>,
-  mode: "create" | "update",
+  mode: "create" | "update" | "restore",
 ): Record<string, unknown> {
   const out = { ...row };
   const nowIso = new Date().toISOString();
+  const kept = (value: unknown) => (typeof value === "string" && value !== "" ? value : nowIso);
   for (const node of nodes) {
     if (node.kind === "flatten") {
       Object.assign(out, applyTimestamps(node.children, out, mode));
@@ -149,9 +156,10 @@ export function applyTimestamps(
     }
     if (node.kind !== "column") continue;
     if (node.fieldId === SYSTEM_FIELD_IDS.updatedAt) {
-      out[node.columnName] = nowIso;
+      out[node.columnName] = mode === "restore" ? kept(out[node.columnName]) : nowIso;
     } else if (node.fieldId === SYSTEM_FIELD_IDS.createdAt) {
       if (mode === "create") out[node.columnName] = nowIso;
+      else if (mode === "restore") out[node.columnName] = kept(out[node.columnName]);
       else delete out[node.columnName];
     }
   }

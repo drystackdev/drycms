@@ -13,6 +13,9 @@ vi.mock("../config.js", async () => {
   const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
   return {
     content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    // The schema itself lives in `content/types.json` under page-source
+    // storage now (`schema-document.ts`), not in a `metadata` table.
+    pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") },
     typesCacheStorage: resolved.typesCache.storage,
     storage: resolved.storage,
     path: resolved.path,
@@ -21,6 +24,11 @@ vi.mock("../config.js", async () => {
 
 const { POST } = await import("./mcp.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content } = await import("../config.js");
 const { writeGeneratedDryTypes } = await import("../../content-types/types-cache.js");
 
@@ -32,7 +40,7 @@ afterAll(async () => {
 let superAdminSession: SessionPayload;
 
 beforeAll(async () => {
-  const schema = createContentEngineAdapter(content);
+  const schema = createContentEngineAdapter(content, undefined, docStore());
   const entries = createContentEntryEngineAdapter(content);
   const allTypes = await schema.listContentTypes();
   const userType = allTypes.find((t) => t.name === "user")!;

@@ -115,6 +115,19 @@ export interface ContentEntryEngineAdapter {
   getRawEntry(type: ContentTypeDefinition, id: number): Promise<Record<string, unknown> | null>;
   createEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow>;
   updateEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow>;
+  /**
+   * Writes one row back AT `id`, whether or not that row still exists -
+   * update in place when it does, insert with that exact id when it doesn't.
+   * The ONE write path that mints no new id, and it exists for exactly one
+   * caller: restoring a git snapshot (`server/git-restore.ts`,
+   * `status/git-versions-page.md`), where every relation in every other
+   * restored row points at these ids, so a re-created row that came back
+   * under a fresh autoincrement id would silently break every reference to
+   * it. Timestamps are kept as the snapshot recorded them (`entry-codec.ts`'s
+   * `applyTimestamps` `"restore"` mode) rather than re-stamped to now.
+   * Never called by the generic entries HTTP route.
+   */
+  restoreEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow>;
   deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void>;
   getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null>;
   saveSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow>;

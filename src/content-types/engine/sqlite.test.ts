@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ContentTypeDefinition } from "../types.js";
 import { SUPER_ADMIN_DESCRIPTION } from "../permissions.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
+import { createMemorySchemaDocumentStore } from "./schema-document-store.js";
 
 /** Exercises the real adapter against a throwaway sqlite file (not a mock).
  * `locked`/`frozen`/`protectedFieldIds` (see `types.ts`) are enforced by the
@@ -160,5 +161,63 @@ describe("createSqliteContentEngineAdapter", () => {
     await adapter.deleteContentType("custom-note");
     const afterDelete = await adapter.getResourceVersion();
     expect(afterDelete).toBe(afterSave + 1);
+  });
+});
+
+/**
+ * The schema itself no longer lives in the database (`status/content-types-
+ * json-file.md`): it is `content/types.json`, reached through a
+ * `SchemaDocumentStore`. These cover the two things that can only go wrong
+ * at that seam - a second adapter over the same document must see the first
+ * one's writes, and a project that predates the document must have its old
+ * `metadata` table imported exactly once.
+ */
+describe("content/types.json as the schema store", () => {
+  it("persists an applied type into the document, where a second adapter over the same store finds it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drycms-sqlite-doc-test-"));
+    dirs.push(dir);
+    const store = createMemorySchemaDocumentStore();
+    const file = join(dir, "content.sqlite");
+    const first = createSqliteContentEngineAdapter({ engine: "sqlite", file }, store);
+
+    const note: ContentTypeDefinition = { id: "custom-note", kind: "collection", name: "note", label: "Note", fields: [], version: 0 };
+    await first.applySave(note, await first.planSave(note));
+
+    const doc = await store.read();
+    expect(doc?.applied.map((type) => type.name)).toContain("note");
+    // Nothing is written to a `metadata` table any more - the tables in the
+    // database are the CONTENT tables only.
+    const tables = await queryAll<{ name: string }>(dir, `SELECT "name" FROM "sqlite_master" WHERE "type" = 'table';`);
+    expect(tables.map((row) => row.name)).not.toContain("metadata");
+
+    const second = createSqliteContentEngineAdapter({ engine: "sqlite", file }, store);
+    expect((await second.listContentTypes()).map((type) => type.name)).toContain("note");
+  });
+
+  it("imports a pre-document project's `metadata` rows once, without re-seeding its tables", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drycms-sqlite-legacy-test-"));
+    dirs.push(dir);
+    const file = join(dir, "content.sqlite");
+
+    // A project as it looked before the move: definitions in `metadata`, the
+    // matching table already created.
+    const legacy: ContentTypeDefinition = { id: "legacy-post", kind: "collection", name: "post", label: "Post", fields: [], version: 3 };
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(file);
+    db.exec(`CREATE TABLE "metadata" ("id" TEXT PRIMARY KEY, "kind" TEXT NOT NULL, "name" TEXT NOT NULL, "definition" TEXT NOT NULL, "version" INTEGER NOT NULL);`);
+    db.exec(`CREATE TABLE "post" ("id" INTEGER PRIMARY KEY AUTOINCREMENT);`);
+    db.prepare(`INSERT INTO "metadata" ("id","kind","name","definition","version") VALUES (?,?,?,?,?);`)
+      .run(legacy.id, legacy.kind, legacy.name, JSON.stringify(legacy), legacy.version);
+    db.close();
+
+    const store = createMemorySchemaDocumentStore();
+    const adapter = createSqliteContentEngineAdapter({ engine: "sqlite", file }, store);
+    const types = await adapter.listContentTypes();
+
+    // The imported type survives at its own version, and the built-in
+    // defaults are seeded alongside it.
+    expect(types.find((type) => type.id === "legacy-post")?.version).toBe(3);
+    expect(types.map((type) => type.name)).toContain("user");
+    expect((await store.read())?.applied.map((type) => type.id)).toContain("legacy-post");
   });
 });

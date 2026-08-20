@@ -8,20 +8,22 @@ import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
 import { decodeEntryId } from "../../lib/id-hash.js";
 import { loadGithubSyncConfig } from "./pages-source-github-sync.js";
 import { commitContentChanges, getContentCommitDetail, listSnapshotCommits, readContentFileAtCommit } from "../git-source-sync.js";
+import { SCHEMA_DOCUMENT_PATH } from "../../content-types/schema-document.js";
 
 const CONTENT_PREFIX = "[CONTENT] ";
 
-/** Same `content/entries/<type>/<id>.json` / `content/types/<id>.json`
- * convention on both the read (this file's GET) and write (POST) side -
- * `plans/history-content.md`'s file-structure decision. `typeName` is
- * `CONTENT_TYPE_NAME_RE`-validated (`naming.ts`) and `schemaId`/`entryId`
- * are a UUID / integer respectively, so none of these can smuggle a `/` or
- * `..` into the path. */
+/** `content/entries/<type>/<id>.json` for entry data (`plans/history-content.md`'s
+ * file-structure decision). `typeName` is `CONTENT_TYPE_NAME_RE`-validated
+ * (`naming.ts`) and `entryId` is an integer, so neither can smuggle a `/` or
+ * `..` into the path.
+ *
+ * Schema history has no per-type path any more: every content type lives in
+ * the single `content/types.json` (`schema-document.ts`), so a type's history
+ * is that file's history - and the file is committed by the SERVER as part of
+ * "Apply and build" (`content-types-git-commit.ts`), never by a client
+ * request here. */
 function entryContentPath(typeName: string, entryId: number | null): string {
   return `content/entries/${typeName}/${entryId === null ? "singleton" : entryId}.json`;
-}
-function schemaContentPath(schemaId: string): string {
-  return `content/types/${schemaId}.json`;
 }
 
 interface ResolvedTarget {
@@ -39,7 +41,7 @@ async function resolveTarget(context: DryRouteContext): Promise<{ ok: true; targ
     return {
       ok: true,
       target: {
-        path: schemaContentPath(schemaId),
+        path: SCHEMA_DOCUMENT_PATH,
         checkAccess: () => requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting"),
       },
     };
@@ -175,28 +177,6 @@ export const POST: DryRouteHandler = async (context) => {
     }
     const op = raw.op;
     ops.add(op);
-
-    if (raw.kind === "schema") {
-      if (typeof raw.schemaId !== "string" || !raw.schemaId) {
-        return jsonResponse({ error: "invalid_request", message: "A schemaId is required." }, 400);
-      }
-      const schemaId = raw.schemaId;
-      const denied = await requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting");
-      if (denied) return denied;
-
-      if (op === "delete") {
-        files[schemaContentPath(schemaId)] = null;
-        labels.push(`schema ${schemaId}`);
-        continue;
-      }
-      const definition = await schema.getContentType(schemaId);
-      if (!definition || !isGitMirrorEligible(definition)) {
-        return jsonResponse({ error: "not_found", message: `Content type "${schemaId}" not found.` }, 404);
-      }
-      files[schemaContentPath(definition.id)] = JSON.stringify(definition, null, 2);
-      labels.push(definition.label || definition.name);
-      continue;
-    }
 
     if (raw.kind !== "entry" || typeof raw.typeName !== "string") {
       return jsonResponse({ error: "invalid_request", message: "Malformed change item." }, 400);

@@ -1,5 +1,6 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
+import { commitSchemaDocument, type SchemaCommitResult } from "../content-types-git-commit.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import {
   ContentEngineError,
@@ -189,7 +190,7 @@ async function performSave(
  * is a DX papercut (bad autocomplete), not a reason to fail a schema save
  * that already committed - see `types-cache.ts`'s own "risk" analysis.
  */
-async function regenerateTypesCache(adapter: ContentEngineAdapter, context: Pick<DryRouteContext, "env">): Promise<void> {
+export async function regenerateTypesCache(adapter: ContentEngineAdapter, context: Pick<DryRouteContext, "env">): Promise<void> {
   try {
     const allTypes = await adapter.listContentTypes();
     await writeGeneratedDryTypes(generateDryTypes(allTypes), context);
@@ -292,8 +293,27 @@ export async function handleBatch(
   entryAdapter: ContentEntryEngineAdapter,
   mode: "plan" | "apply",
   draftInputs: BatchDraftInput[],
-  context: Pick<DryRouteContext, "env">,
+  context: DryRouteContext,
 ): Promise<Response> {
+  return jsonResponse(await runBatch(adapter, entryAdapter, mode, draftInputs, context));
+}
+
+/**
+ * `handleBatch`'s body as plain data, so a caller that is not an HTTP
+ * request can run the same apply. The one such caller is
+ * `git-restore.ts`: restoring a commit re-applies that commit's whole
+ * schema and must NOT let this write its own `content/types.json` commit
+ * (`options.commitToGit: false`) - the restore lands as exactly ONE commit
+ * covering code, schema and entries together.
+ */
+export async function runBatch(
+  adapter: ContentEngineAdapter,
+  entryAdapter: ContentEntryEngineAdapter,
+  mode: "plan" | "apply",
+  draftInputs: BatchDraftInput[],
+  context: DryRouteContext,
+  options: { commitToGit?: boolean } = {},
+): Promise<{ mode: "plan" | "apply"; results: BatchItemResult[]; git?: SchemaCommitResult }> {
   const ordered = orderByDependency(draftInputs);
   const allDrafts = ordered.map((input) => input.definition);
   /** Version bumps an EARLIER item's component cascade already applied to a
@@ -343,8 +363,17 @@ export async function handleBatch(
       if (mode === "apply") break;
     }
   }
-  if (mode === "apply" && results.some((r) => r.ok)) await regenerateTypesCache(adapter, context);
-  return jsonResponse({ mode, results });
+  if (mode !== "apply" || !results.some((r) => r.ok)) return { mode, results };
+
+  await regenerateTypesCache(adapter, context);
+  if (options.commitToGit === false) return { mode, results };
+  // One commit for the whole batch, matching "Apply and build" being one
+  // user action - `content/types.json` now holds every applied type, so the
+  // commit is the same single file regardless of how many changed. Never
+  // blocks the response: the schema change itself has already landed.
+  const applied = results.filter((result) => result.ok);
+  const git = await commitSchemaDocument(context, { verb: "Update", labels: applied.map((result) => result.label) });
+  return { mode, results, git };
 }
 
 export const GET: DryRouteHandler = async (context) => {
@@ -447,6 +476,7 @@ export const DELETE: DryRouteHandler = async (context) => {
     }
     await adapter.deleteContentType(id);
     await regenerateTypesCache(adapter, context);
+    await commitSchemaDocument(context, { verb: "Delete", labels: [existing?.label || existing?.name || id] });
     return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);

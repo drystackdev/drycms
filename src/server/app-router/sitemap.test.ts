@@ -9,11 +9,16 @@ vi.mock("../config.js", async () => {
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-sitemap-test-"));
-  return { path: "/dry", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  return { path: "/dry", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") } };
 });
 
 const { content, path: adminPath } = await import("../config.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { buildRobotsResponse, buildSitemapResponse } = await import("./sitemap.js");
 
 const ORIGINAL_APP_DOMAIN = process.env.APP_DOMAIN;
@@ -81,7 +86,7 @@ describe("buildSitemapResponse", () => {
   });
 
   it("includes a published entry of the collection the [slug] page itself reads, at that route's own pathname", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const story: ContentTypeDefinition = {
       id: "test-story",
@@ -103,7 +108,7 @@ describe("buildSitemapResponse", () => {
   });
 
   it("excludes an entry whose own seo.noIndex is true", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const storyType = allTypes.find((t) => t.id === "test-story")!;
@@ -119,7 +124,7 @@ describe("buildSitemapResponse", () => {
    * collection nothing renders has no URL to advertise, so it can't end up
    * in the sitemap as a 404 waiting to be crawled. */
   it("leaves out a slug-enabled collection that no [param] page reads", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const note: ContentTypeDefinition = {
       id: "test-note",

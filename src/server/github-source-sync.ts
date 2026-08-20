@@ -471,6 +471,21 @@ export type GithubPullResult =
  * `{ok:false,reason}` contract as `pushPagesSourceSnapshot`.
  */
 export async function pullPagesSourceSnapshot(config: GithubSyncConfig, sha?: string): Promise<GithubPullResult> {
+  const pulled = await pullTree(config, sha, (path) => PAGE_SOURCE_FILE_PATTERN.test(path));
+  if (!pulled.ok) return pulled;
+  return { ok: true, sha: pulled.sha, sourceByPath: pulled.files };
+}
+
+/** Every file at one commit that `accept` keeps, read through the same tree
+ * -> blobs walk `pushPagesSourceSnapshot` writes with (so a pulled file is
+ * byte-identical to what was pushed). Shared by `pullPagesSourceSnapshot`
+ * (page-source only) and `pullRepositorySnapshot` (page source + `content/`,
+ * the whole restorable state - `status/git-versions-page.md`). */
+async function pullTree(
+  config: GithubSyncConfig,
+  sha: string | undefined,
+  accept: (path: string) => boolean,
+): Promise<{ ok: true; sha: string; files: Record<string, string> } | { ok: false; reason: string }> {
   try {
     const resolvedSha =
       sha ?? (await githubRequest<GithubRefResponse>(`/repos/${config.repo}/git/ref/heads/${encodeURIComponent(config.branch)}`, config.token)).object.sha;
@@ -478,7 +493,7 @@ export async function pullPagesSourceSnapshot(config: GithubSyncConfig, sha?: st
     const tree = await githubRequest<GithubTreeListResponse>(`/repos/${config.repo}/git/trees/${commit.tree.sha}?recursive=1`, config.token);
     if (tree.truncated) return { ok: false, reason: "The repository tree is too large to fetch in one request." };
 
-    const blobEntries = tree.tree.filter((entry) => entry.type === "blob" && PAGE_SOURCE_FILE_PATTERN.test(entry.path));
+    const blobEntries = tree.tree.filter((entry) => entry.type === "blob" && accept(entry.path));
     const files = await Promise.all(
       blobEntries.map(async (entry) => {
         const blob = await githubRequest<GithubBlobContentResponse>(`/repos/${config.repo}/git/blobs/${entry.sha}`, config.token);
@@ -487,8 +502,67 @@ export async function pullPagesSourceSnapshot(config: GithubSyncConfig, sha?: st
       }),
     );
 
-    return { ok: true, sha: resolvedSha, sourceByPath: Object.fromEntries(files) };
+    return { ok: true, sha: resolvedSha, files: Object.fromEntries(files) };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "Failed to pull from GitHub." };
   }
+}
+
+/** Page source AND the `content/` mirror - the two roots drycms owns and can
+ * therefore restore. Anything else in the repo (a README, CI config, another
+ * app sharing the branch) is deliberately outside it: a restore must never
+ * write, delete, or claim to own a file drycms didn't put there. */
+export function isRestorablePath(path: string): boolean {
+  return isPageSourcePath(path) || isContentPath(path);
+}
+
+export interface RepositorySnapshot {
+  sha: string;
+  /** The four page-source roots (`pages/`, `component/`, `styles/`, `md/`). */
+  sourceByPath: Record<string, string>;
+  /** `content/types.json` + `content/entries/**.json`. */
+  contentByPath: Record<string, string>;
+}
+export type RepositorySnapshotResult = { ok: true; snapshot: RepositorySnapshot } | { ok: false; reason: string };
+
+/**
+ * The whole restorable state at one commit, split by root - what the
+ * Versions page's "restore this commit" reads (`status/git-versions-page.md`).
+ * `pullPagesSourceSnapshot` above is deliberately left alone: it feeds the
+ * code-only restore path, which must keep ignoring `content/`.
+ */
+export async function pullRepositorySnapshot(config: GithubSyncConfig, sha?: string): Promise<RepositorySnapshotResult> {
+  const pulled = await pullTree(config, sha, isRestorablePath);
+  if (!pulled.ok) return pulled;
+  const sourceByPath: Record<string, string> = {};
+  const contentByPath: Record<string, string> = {};
+  for (const [path, content] of Object.entries(pulled.files)) {
+    (isContentPath(path) ? contentByPath : sourceByPath)[path] = content;
+  }
+  return { ok: true, snapshot: { sha: pulled.sha, sourceByPath, contentByPath } };
+}
+
+/** `getCommitDetail`/`getContentCommitDetail` over BOTH roots at once - the
+ * Versions page lists one history, not two. */
+export async function getRepositoryCommitDetail(config: GithubSyncConfig, sha: string): Promise<GithubCommitDetailResult> {
+  return commitDetail(config, sha, isRestorablePath);
+}
+
+/** `readFileAtCommit`/`readContentFileAtCommit` over both roots. */
+export async function readRepositoryFileAtCommit(config: GithubSyncConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  return fileAtCommit(config, sha, path, isRestorablePath);
+}
+
+/**
+ * One commit spanning both roots - a restore rewrites page source and the
+ * `content/` mirror together, and they have to land as ONE commit or the
+ * history would show a repository state that never existed.
+ */
+export async function commitRepositoryChanges(
+  config: GithubSyncConfig,
+  files: Record<string, string | null>,
+  message: string,
+  author: { name: string; email: string },
+): Promise<GithubPatchResult> {
+  return commitFiles(config, files, message, author, isRestorablePath, "Nothing to restore - this commit already matches the current state.", "A path is outside page source and the content root.");
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateContentTypeDefinition } from "./naming.js";
-import { defaultContentTypeDefinitions, pendingSeedStatements } from "./seed.js";
+import { defaultContentTypeDefinitions, pendingSeed } from "./seed.js";
 import { SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
 import { resolveTableTree } from "./tree.js";
 import type { ContentTypeDefinition } from "./types.js";
@@ -281,9 +281,9 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 
-describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/memory/seoDefaults/systemSettings/githubSync tables plus 11 metadata rows when nothing exists yet", () => {
-    const statements = pendingSeedStatements(new Set());
+describe("pendingSeed", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/memory/seoDefaults/systemSettings/githubSync tables plus the 11 definitions when nothing exists yet", () => {
+    const { statements, definitions } = pendingSeed(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
@@ -300,10 +300,11 @@ describe("pendingSeedStatements", () => {
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
-    const metadataInserts = statements.filter((s) =>
-      s.sql.startsWith('INSERT INTO "metadata"'),
-    );
-    expect(metadataInserts).toHaveLength(11);
+    // The definitions go into `content/types.json` (`schema-document.ts`),
+    // never into SQL - there is no `metadata` table any more.
+    expect(sql).not.toContain('INSERT INTO "metadata"');
+    expect(definitions).toHaveLength(11);
+    expect(definitions.every((definition) => definition.version === 1)).toBe(true);
     expect(statements.find((s) => s.description === "Seed the Home item in the default main menu")?.params).toEqual([
       0,
       "Home",
@@ -321,7 +322,7 @@ describe("pendingSeedStatements", () => {
   });
 
   it("seeds nothing once every default name is already present", () => {
-    const statements = pendingSeedStatements(
+    const { statements, definitions } = pendingSeed(
       new Set([
         "user",
         "menu",
@@ -337,10 +338,11 @@ describe("pendingSeedStatements", () => {
       ]),
     );
     expect(statements).toEqual([]);
+    expect(definitions).toEqual([]);
   });
 
   it("only seeds the missing ones, but still resolves menu's embedded menuItem component", () => {
-    const statements = pendingSeedStatements(new Set(["user"]));
+    const { statements, definitions } = pendingSeed(new Set(["user"]));
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).not.toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
@@ -353,9 +355,7 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "systemSettings"');
     expect(sql).toContain('CREATE TABLE "githubSync"');
 
-    const metadataInserts = statements.filter((s) =>
-      s.sql.startsWith('INSERT INTO "metadata"'),
-    );
-    expect(metadataInserts).toHaveLength(10);
+    expect(definitions).toHaveLength(10);
+    expect(definitions.some((definition) => definition.name === "user")).toBe(false);
   });
 });

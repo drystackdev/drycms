@@ -14,7 +14,6 @@ import {
   saveDraft,
 } from "../content-types/draft-store.js";
 import { isGitMirrorEligible } from "../content-types/git-mirror.js";
-import { syncSchemaChangesToGit } from "../content-types/entry-git-sync.js";
 import { randomUUID } from "../lib/uuid.js";
 import type {
   RelationFieldConfig,
@@ -694,26 +693,10 @@ export default function ContentTypeEditor({
     setDeleting(true);
     try {
       await api.remove(definition.id);
-      // Same treatment as `ApplyBuildDialog.tsx`'s successful applies: a
-      // git-eligible type's draft stays undiscarded until the `[CONTENT]`
-      // deletion commit confirms (retried 3x), no automatic "reset" offered
-      // on failure (recreating the definition wouldn't restore the dropped
-      // table's actual rows, so it'd be a misleading undo - decision #4
-      // already treats schema history as view-only for the same reason).
-      if (isGitMirrorEligible(definition)) {
-        void syncSchemaChangesToGit(path, [{ schemaId: definition.id, op: "delete" }]).then((outcome) => {
-          if (outcome === "synced") discardDraft(definition.id);
-          else {
-            toast.add({
-              type: "error",
-              title: "Content history sync failed",
-              description: "The deletion was applied, but syncing it to git failed after 3 attempts.",
-            });
-          }
-        });
-      } else {
-        discardDraft(definition.id);
-      }
+      // The deletion commit of `content/types.json` is the server's job now
+      // (`server/content-types-git-commit.ts`, same as an apply), so there is
+      // nothing left to wait for before clearing this type's draft.
+      discardDraft(definition.id);
       setShowDeleteConfirm(false);
       toast.add({
         type: "success",

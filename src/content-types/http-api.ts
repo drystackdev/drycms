@@ -26,6 +26,12 @@ export interface BatchItemResult {
 export interface BatchResponse {
   mode: "plan" | "apply";
   results: BatchItemResult[];
+  /** Apply mode only: whether the server committed `content/types.json` -
+   * the whole schema - to the configured git repository afterwards
+   * (`server/content-types-git-commit.ts`). Absent in plan mode, and
+   * `committed: false` with a `reason` whenever no repo is configured, which
+   * is an ordinary state, not an error. */
+  git?: { committed: boolean; commitSha?: string; reason?: string };
 }
 
 export class ContentTypesApiError extends Error {}

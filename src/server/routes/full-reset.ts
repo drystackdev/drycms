@@ -4,6 +4,9 @@ import { requireSuperAdmin } from "../admin-access.js";
 import { jsonResponse } from "../route-helpers.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { invalidateSchemaCache } from "../content-adapters.js";
+import { createStorageSchemaDocumentStore } from "../schema-document-storage.js";
+import { emptySchemaDocument, withAppliedType } from "../../content-types/schema-document.js";
+import { pendingSeed } from "../../content-types/seed.js";
 import { resolveSqliteDriver } from "../../content-types/engine/sqlite-driver.js";
 import { bootstrapDefaultContentSchema } from "../../content-types/engine/sqlite.js";
 import type { D1Database } from "../../content-types/engine/d1-driver.js";
@@ -170,6 +173,16 @@ async function resetContent(context: DryRouteContext): Promise<Response> {
     }
 
     await restoreFromDump(rawHandle, statements);
+
+    // The tables are only half of a fresh boot: the content types themselves
+    // live in `content/types.json` (`schema-document.ts`), so the document
+    // has to be replaced by the same freshly-seeded definitions the restored
+    // tables were built from. Skipping this would leave a project whose
+    // document still described the deleted app-defined types.
+    let fresh = emptySchemaDocument();
+    for (const definition of pendingSeed(new Set()).definitions) fresh = withAppliedType(fresh, definition);
+    await createStorageSchemaDocumentStore(context).write(fresh);
+
     if (content.engine === "D1") await invalidateSchemaCache(context);
 
     return jsonResponse({ ok: true, keptUserId: preservedUser.id, keptGithubSync: preservedGithubSync.length > 0, keptSystemSettings: preservedSystemSettings.length > 0 });

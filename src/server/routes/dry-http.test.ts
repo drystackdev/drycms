@@ -11,11 +11,16 @@ vi.mock("../config.js", async () => {
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-dry-http-route-"));
-  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") } };
 });
 
 const { POST } = await import("./dry-http.js");
 const { createContentEntryEngineAdapter, createContentEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content } = await import("../config.js");
 
 afterAll(async () => {
@@ -41,7 +46,7 @@ let roleViewerSession: SessionPayload;
 let codePermissionSession: SessionPayload;
 
 beforeAll(async () => {
-  const schema = createContentEngineAdapter(content);
+  const schema = createContentEngineAdapter(content, undefined, docStore());
   const entries = createContentEntryEngineAdapter(content);
   const allTypes = await schema.listContentTypes();
   const userType = allTypes.find((t) => t.name === "user")!;
@@ -88,7 +93,7 @@ describe("POST /dry/api/dry-http", () => {
 
   it("bumps X-Dry-Resource-Version after the resource's data actually changes", async () => {
     const entries = createContentEntryEngineAdapter(content);
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const allTypes = await schema.listContentTypes();
     const systemSettingsType = allTypes.find((t) => t.name === "systemSettings")!;
 

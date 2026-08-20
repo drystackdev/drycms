@@ -21,8 +21,6 @@ import {
   deleteAiContentTypeDraftOnServer,
   type DraftEntry,
 } from "../../content-types/draft-store.js";
-import { isGitMirrorEligible } from "../../content-types/git-mirror.js";
-import { syncSchemaChangesToGit } from "../../content-types/entry-git-sync.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { bumpContentTypesVersion } from "../../store/content-types.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
@@ -153,35 +151,19 @@ export default function ApplyBuildDialog({
       setApplyResults(response.results);
       const succeededIds = response.results.filter((r) => r.ok).map((r) => r.id);
 
-      // Schema drafts `git-mirror.ts` excludes (a type named `role`/`user`/...)
-      // discard immediately, same as before this feature. The rest stay
-      // pending until ONE combined `[CONTENT]` commit confirms - matching
-      // `commitPagesSourceChanges`'s "one Save = one commit" shape for a
-      // multi-file page-source save (`plans/history-content.md` decision #1).
-      // Unlike an entry save, a failed sync here is never offered an
-      // automatic "reset": re-running the migration to roll back a schema
-      // change carries its own destructive-change risk (decision #4 already
-      // treats schema history as view-only for the same reason) - it just
-      // stays flagged pending for a manual retry instead.
-      const eligibleItems = succeededIds
-        .map((id) => items.find((item) => item.definition.id === id))
-        .filter((entry): entry is DraftEntry => !!entry && isGitMirrorEligible(entry.definition));
-      const eligibleIds = new Set(eligibleItems.map((entry) => entry.definition.id));
-      discardDrafts(succeededIds.filter((id) => !eligibleIds.has(id)));
-      if (eligibleItems.length > 0) {
-        void syncSchemaChangesToGit(
-          path,
-          eligibleItems.map((entry) => ({ schemaId: entry.definition.id, op: entry.isNew ? "create" as const : "update" as const })),
-        ).then((outcome) => {
-          if (outcome === "synced") {
-            discardDrafts([...eligibleIds]);
-          } else {
-            toast.add({
-              type: "error",
-              title: "Content history sync failed",
-              description: "Schema changes were applied, but syncing them to git failed after 3 attempts. They'll stay pending - re-run Apply and build later to retry.",
-            });
-          }
+      // Applied drafts are done here: the schema now lives in
+      // `content/types.json`, and the SERVER commits that file as part of
+      // the apply (`server/content-types-git-commit.ts`) rather than the
+      // browser making a second, separately-failing round trip. A commit
+      // that couldn't happen (no repo configured, bad token, self-hosted
+      // host with no REST API) never holds the applied change hostage - it
+      // is surfaced as a warning and the drafts still clear.
+      discardDrafts(succeededIds);
+      if (succeededIds.length > 0 && response.git && !response.git.committed && response.git.reason && response.git.reason !== "not-configured") {
+        toast.add({
+          type: "error",
+          title: "Content history sync failed",
+          description: `Schema changes were applied, but committing content/types.json failed: ${response.git.reason}`,
         });
       }
       // A succeeded AI-proposed draft is now live - its server-side staging

@@ -5,6 +5,7 @@ import { getContentAdapters } from "../content-adapters.js";
 import { jsonResponse } from "../route-helpers.js";
 import { loadGitConfig } from "../git-config.js";
 import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, resetBranchToSnapshot } from "../git-source-sync.js";
+import { CUSTOM_GIT_UNSUPPORTED_REASON } from "../custom-git-source-sync.js";
 import type { GitRepoConfig } from "../git-config.js";
 import { bufferOf } from "../../storage/util.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
@@ -58,6 +59,11 @@ export async function loadGithubSyncConfig(context: DryRouteContext): Promise<{ 
   // anonymously), every call on this side is a WRITE through the REST API -
   // no token means nothing to do.
   if (!loaded.config.token) return { error: "not-configured" };
+  // Neither does a self-hosted host with no such API. Reported here, once,
+  // so every REST-only caller (snapshot push/restore, page + content
+  // history, the MCP write path) treats it exactly like "not configured"
+  // instead of retrying a request that can never succeed.
+  if (loaded.config.provider === "custom") return { error: CUSTOM_GIT_UNSUPPORTED_REASON };
   return { config: loaded.config };
 }
 

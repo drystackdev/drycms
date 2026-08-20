@@ -35,9 +35,11 @@ export function getContentHistoryFile(adminPath: string, target: ContentHistoryT
 }
 
 export type ContentChangeOp = "create" | "update" | "delete";
-export type ContentChangeItem =
-  | { kind: "entry"; typeName: string; entryId?: string | null; op: ContentChangeOp }
-  | { kind: "schema"; schemaId: string; op: ContentChangeOp };
+/** Entries only. A content-TYPE change is committed by the server itself as
+ * part of "Apply and build" (`server/content-types-git-commit.ts`) - the
+ * whole schema is one file (`content/types.json`), so there is nothing for a
+ * client to assemble here. */
+export type ContentChangeItem = { kind: "entry"; typeName: string; entryId?: string | null; op: ContentChangeOp };
 
 export interface ContentCommitResult {
   committed: boolean;

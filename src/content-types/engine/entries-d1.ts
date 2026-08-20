@@ -2,7 +2,7 @@ import type { ResolvedD1ContentOption } from "../../server/options.js";
 import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { runBatch, type D1Database } from "./d1-driver.js";
-import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
+import { applyTimestamps, keptSecretPaths, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
 import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, inboundRelationRefs, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
@@ -516,8 +516,9 @@ export function createD1ContentEntryEngineAdapter(
 
   /** Shared by `createEntry` (validated) and `ensureSingletonEntry`
    * (deliberately NOT validated - see that function's doc comment). */
-  async function insertRow(type: ContentTypeDefinition, nodes: EntryFieldNode[], queryable: QueryableColumn[], value: EntryValue): Promise<number> {
-    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
+  async function insertRow(type: ContentTypeDefinition, nodes: EntryFieldNode[], queryable: QueryableColumn[], value: EntryValue, forcedId?: number): Promise<number> {
+    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), forcedId === undefined ? "create" : "restore");
+    if (forcedId !== undefined) rowData.id = forcedId;
     const columns = Object.keys(rowData);
     let id: number;
     try {
@@ -526,9 +527,8 @@ export function createD1ContentEntryEngineAdapter(
       } else {
         const columnList = columns.map(quoteIdent).join(",");
         const placeholders = columns.map(() => "?").join(",");
-        id = (
-          await dbRun(db, `INSERT INTO ${quoteIdent(type.name)} (${columnList}) VALUES (${placeholders});`, columns.map((c) => rowData[c]))
-        ).lastInsertRowid;
+        const inserted = await dbRun(db, `INSERT INTO ${quoteIdent(type.name)} (${columnList}) VALUES (${placeholders});`, columns.map((c) => rowData[c]));
+        id = forcedId ?? inserted.lastInsertRowid;
       }
     } catch (error) {
       throw translateUniqueViolation(error, queryable) ?? error;
@@ -567,7 +567,19 @@ export function createD1ContentEntryEngineAdapter(
       throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
     }
 
-    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "update");
+    await updateRow(type, nodes, queryable, id, value, "update");
+    return (await getEntry(type, allTypes, id))!;
+  }
+
+  async function updateRow(
+    type: ContentTypeDefinition,
+    nodes: EntryFieldNode[],
+    queryable: QueryableColumn[],
+    id: number,
+    value: EntryValue,
+    mode: "update" | "restore",
+  ): Promise<void> {
+    const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), mode);
     const columns = Object.keys(rowData);
     if (columns.length > 0) {
       try {
@@ -580,6 +592,36 @@ export function createD1ContentEntryEngineAdapter(
 
     await writeChildFields(db, nodes, id, value);
     await bumpResourceVersion(type.name);
+  }
+
+  /** D1 half of `entries-sqlite.ts`'s `assertValidRestore` - see there. */
+  function assertValidRestore(nodes: EntryFieldNode[], value: EntryValue, existingRow: Record<string, unknown> | null): void {
+    const errors = validateEntryValue(nodes, value);
+    for (const path of keptSecretPaths(nodes, value, existingRow)) delete errors[path];
+    if (Object.keys(errors).length > 0) {
+      throw new ContentEntryError("validation_failed", "Validation failed.", errors);
+    }
+  }
+
+  /** D1 half of `entries-sqlite.ts`'s `restoreEntry` - writes one row back
+   * AT ITS ORIGINAL ID from a git snapshot, inserting it when the row is
+   * gone and updating it in place when it still exists
+   * (`status/git-versions-page.md`). */
+  async function restoreEntry(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    id: number,
+    value: EntryValue,
+  ): Promise<EntryRow> {
+    const nodes = buildEntryFieldTree(type, allTypes);
+    const queryable = flattenQueryableColumns(nodes);
+
+    const existing = await dbAll<Record<string, unknown>>(db, `SELECT * FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    const existingRow = existing[0] ?? null;
+    assertValidRestore(nodes, value, existingRow);
+    if (existingRow) await updateRow(type, nodes, queryable, id, value, "restore");
+    else await insertRow(type, nodes, queryable, value, id);
+
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -662,6 +704,7 @@ export function createD1ContentEntryEngineAdapter(
     getRawEntry,
     createEntry,
     updateEntry,
+    restoreEntry,
     deleteEntry,
     reorderEntries,
     getSingletonEntry,

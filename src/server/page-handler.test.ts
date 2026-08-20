@@ -33,6 +33,11 @@ vi.mock("./config.js", async () => {
 const { path: adminPath } = await import("./config.js");
 const { handlePageRequest } = await import("./page-handler.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("./schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content } = await import("./config.js");
 const { writeBuiltPage, readBuiltPage } = await import("./app-router/built-pages-storage.js");
 const { ensurePagesSourceSeeded } = await import("./pages-source-seed.js");
@@ -109,7 +114,7 @@ describe("handlePageRequest", () => {
   });
 
   it("301s to the redirect's `to` slug when the URL's last segment matches a redirect row's `from` - checked BEFORE routing, so it also catches a still-syntactically-matching dynamic route (e.g. a renamed /blogs/[slug]) - true in both prod and dev", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const redirectType = allTypes.find((t) => t.name === "redirect")!;

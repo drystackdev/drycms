@@ -1,5 +1,5 @@
 import { fetchNoRedirect, validateOutboundUrlForRequest } from "./outbound-url.js";
-import { PAGE_SOURCE_FILE_PATTERN, type GithubCommitDetailResult, type GithubFileAtCommitResult, type GithubHistoryResult, type GithubPatchResult, type GithubPullResult, type GithubSyncResult } from "./github-source-sync.js";
+import { PAGE_SOURCE_FILE_PATTERN, type GithubCommitDetailResult, type GithubFileAtCommitResult, type GithubHistoryResult, type GithubPatchResult, type GithubPullResult, type GithubSyncResult, type RepositorySnapshotResult } from "./github-source-sync.js";
 import type { GitRepoConfig } from "./git-config.js";
 import { PAGES_SOURCE_ROOTS } from "./app-router/source-roots.js";
 
@@ -212,6 +212,45 @@ async function commitDetail(config: GitLabConfig, sha: string, isValidPath: (pat
 
 export async function getCommitDetail(config: GitLabConfig, sha: string): Promise<GithubCommitDetailResult> {
   return commitDetail(config, sha, isPageSourcePath);
+}
+
+/** Page source AND the `content/` mirror - the two roots drycms owns, so the
+ * only two a restore may touch (`github-source-sync.ts`'s own
+ * `isRestorablePath`, same rule on this platform). */
+const isRestorablePath = (path: string) => isPageSourcePath(path) || isContentPath(path);
+
+/** GitLab half of `github-source-sync.ts`'s `pullRepositorySnapshot` - the
+ * whole restorable state at one commit, split by root
+ * (`status/git-versions-page.md`). */
+export async function pullRepositorySnapshot(config: GitLabConfig, sha?: string): Promise<RepositorySnapshotResult> {
+  try {
+    const ref = sha ?? config.branch;
+    const entries = (await listTree(config, ref)).filter((entry) => entry.type === "blob" && isRestorablePath(entry.path));
+    const sourceByPath: Record<string, string> = {};
+    const contentByPath: Record<string, string> = {};
+    await Promise.all(entries.map(async (entry) => {
+      const result = await fileAtCommit(config, ref, entry.path, isRestorablePath);
+      if (!("content" in result)) throw new Error("Failed to read a GitLab repository file.");
+      (isContentPath(entry.path) ? contentByPath : sourceByPath)[entry.path] = result.content;
+    }));
+    const commit = await gitlabRequest<{ id: string }>(config, `${projectPath(config)}/repository/commits/${encodeURIComponent(ref)}`);
+    return { ok: true, snapshot: { sha: commit.id, sourceByPath, contentByPath } };
+  } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : "Failed to pull from GitLab." }; }
+}
+
+/** Both roots at once - the Versions page lists one history, not two. */
+export async function getRepositoryCommitDetail(config: GitLabConfig, sha: string): Promise<GithubCommitDetailResult> {
+  return commitDetail(config, sha, isRestorablePath);
+}
+
+export async function readRepositoryFileAtCommit(config: GitLabConfig, sha: string, path: string): Promise<GithubFileAtCommitResult> {
+  return fileAtCommit(config, sha, path, isRestorablePath);
+}
+
+/** One commit spanning both roots - see the GitHub adapter's own
+ * `commitRepositoryChanges` for why a restore can't be split in two. */
+export async function commitRepositoryChanges(config: GitLabConfig, files: Record<string, string | null>, message: string, author: { name: string; email: string }): Promise<GithubPatchResult> {
+  return commitFiles(config, files, message, author, isRestorablePath, "Nothing to restore - this commit already matches the current state.", "A path is outside page source and the content root.");
 }
 
 /** Same as `getCommitDetail`, scoped to the `content/` root. */

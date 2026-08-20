@@ -16,8 +16,9 @@ function randomToken(length = 6): string {
 }
 
 /** Every IndexedDB database this app opens client-side - `idb-cache.ts`
- * (generic HTTP/list cache), `entry-draft-db.ts`/`content-type-draft-db.ts`
- * (unsaved edits), `file-manager-blob-cache.ts` (Media previews),
+ * (generic HTTP/list cache), `entry-draft-db.ts` (unsaved entry edits -
+ * content-TYPE drafts live in `content/types.json` now, not in a browser
+ * database), `file-manager-blob-cache.ts` (Media previews),
  * `magic-chat-store.ts`/`page-source-magic-chat-store.ts` (chat history).
  * Hardcoded rather than enumerated via `indexedDB.databases()` (patchy
  * browser support) - a fixed, known list matching this app's own `DB_NAME`
@@ -25,7 +26,6 @@ function randomToken(length = 6): string {
 const INDEXED_DB_NAMES = [
   "drycms-cache",
   "drycms-entry-drafts",
-  "drycms-content-type-drafts",
   "drycms-file-blob-cache",
   "drycms-magic-chat",
   "drycms-page-source-magic-chat",

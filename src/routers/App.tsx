@@ -44,6 +44,7 @@ const PageBuild = lazy(() => import("../pages/PageBuild.js"));
 const PageBuilder = lazy(() => import("../pages/PageBuilder.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
 const GithubSyncSettings = lazy(() => import("../pages/GithubSyncSettings.js"));
+const Versions = lazy(() => import("../pages/settings/Versions.js"));
 const Backup = lazy(() => import("../pages/Backup.js"));
 
 /** Client-side redirect - the bare base path and any unmatched path are sent
@@ -271,6 +272,10 @@ function AuthenticatedApp() {
               <Route
                 path={`${path}/settings/github-sync`}
                 component={GithubSyncSettings}
+              />
+              <Route
+                path={`${path}/settings/versions`}
+                component={Versions}
               />
               <Route path={`${path}/backup`} component={Backup} />
               {/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}

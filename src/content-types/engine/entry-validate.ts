@@ -64,6 +64,44 @@ export function findPasswordChangeErrors(nodes: EntryFieldNode[], value: Record<
   return errors;
 }
 
+const SECRET_FIELD_TYPES: ReadonlySet<string> = new Set(["password", "secretkey"]);
+
+/**
+ * Dotted paths (same keys `validateEntryValue` produces) of the
+ * `password`/`secretkey` columns this write leaves out WHILE the stored row
+ * still has a value for them - i.e. the secrets that are being kept, not
+ * cleared, because `valueToRow` skips an omitted secret rather than nulling
+ * its column.
+ *
+ * Exists for one caller: restoring a git-mirrored entry
+ * (`server/git-restore.ts`). A mirrored entry file never contains a secret -
+ * `git-mirror.ts`'s `redactSecretFields` drops the key entirely - so a
+ * `required` secret would fail validation on every restore even though the
+ * stored value is not going to change. Dropping exactly these paths from the
+ * error map is narrower than skipping validation for the write as a whole.
+ */
+export function keptSecretPaths(
+  nodes: EntryFieldNode[],
+  value: Record<string, unknown>,
+  existingRow: Record<string, unknown> | null,
+  pathPrefix = "",
+): string[] {
+  if (!existingRow) return [];
+  const paths: string[] = [];
+  for (const node of nodes) {
+    const path = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+    if (node.kind === "flatten") {
+      paths.push(...keptSecretPaths(node.children, (value[node.fieldName] as Record<string, unknown>) ?? {}, existingRow, path));
+      continue;
+    }
+    if (node.kind !== "column" || !SECRET_FIELD_TYPES.has(node.fieldType)) continue;
+    if (!isEmptyValue(value[node.fieldName])) continue;
+    const stored = existingRow[node.columnName];
+    if (typeof stored === "string" && stored !== "") paths.push(path);
+  }
+  return paths;
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const RELATIVE_URL_RE = /^(?:\/|\.\/|\.\.\/|\?|#)/;

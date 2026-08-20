@@ -15,12 +15,20 @@ vi.mock("../config.js", async () => {
   tempDirBox.storageRoot = mkdtempSync(join(tmpdir(), "drycms-content-entries-route-storage-"));
   return {
     content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    // The schema itself lives in `content/types.json` under page-source
+    // storage now (`schema-document.ts`), not in a `metadata` table.
+    pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") },
     storage: { kind: "local", root: tempDirBox.storageRoot },
   };
 });
 
 const { GET, POST, PUT, PATCH } = await import("./content-entries.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content } = await import("../config.js");
 
 afterAll(async () => {
@@ -37,7 +45,7 @@ afterAll(async () => {
 let superAdminSession: SessionPayload;
 
 beforeAll(async () => {
-  const schema = createContentEngineAdapter(content);
+  const schema = createContentEngineAdapter(content, undefined, docStore());
   const entries = createContentEntryEngineAdapter(content);
   const allTypes = await schema.listContentTypes();
   const userType = allTypes.find((t) => t.name === "user")!;
@@ -119,7 +127,7 @@ describe("content-entries route - data-version protocol", () => {
   });
 
   it("hides the seeded Super Admin role from role/user lists", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;
@@ -139,7 +147,7 @@ describe("content-entries route - data-version protocol", () => {
   });
 
   it("returns not_found for a direct GET of the seeded Super Admin role", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const roleType = allTypes.find((t) => t.name === "role")!;
@@ -165,7 +173,7 @@ describe("content-entries route - data-version protocol", () => {
 
 describe("content-entries route - PATCH (reorder)", () => {
   it("bulk-persists sortIndex for a features.sortable collection, and rejects one that isn't sortable", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const item = {
       id: "custom-item",
       kind: "collection" as const,
@@ -203,7 +211,7 @@ describe("content-entries route - PATCH (reorder)", () => {
 
 describe("content-entries route - slug-change redirects", () => {
   it("creates a redirect row when a features.slug entry's slug changes on PUT, and leaves it alone when the slug doesn't change", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const post_: ContentTypeDefinition = {
       id: "custom-post",
       kind: "collection",
@@ -238,7 +246,7 @@ describe("content-entries route - entry media folder rename rewrites saved field
     const { createLocalStorageAdapter } = await import("../../storage/local.js");
     const { tempEntryMediaFolderPath, entryMediaFolderPath } = await import("../../content-types/entry-media-paths.js");
 
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const mediaPost: ContentTypeDefinition = {
       id: "custom-media-post",
       kind: "collection",
@@ -287,7 +295,7 @@ describe("content-entries route - authorization", () => {
   });
 
   it("403s a session with no grant on the resource, and allows only the specifically-granted action", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;
@@ -339,7 +347,7 @@ describe("content-entries route - authorization", () => {
   });
 
   it("hides a Super Admin's own `user` row from a delegated admin's direct-by-id GET, and blocks editing it even with roles unchanged", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;
@@ -379,7 +387,7 @@ describe("content-entries route - authorization", () => {
   });
 
   it("allows an editor with update permission to publish a draft-enabled entry", async () => {
-    const schema = createContentEngineAdapter(content);
+    const schema = createContentEngineAdapter(content, undefined, docStore());
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;

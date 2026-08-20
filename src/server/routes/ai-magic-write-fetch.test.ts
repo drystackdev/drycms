@@ -12,12 +12,20 @@ vi.mock("../config.js", async () => {
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-ai-magic-write-fetch-"));
   return {
     content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    // The schema itself lives in `content/types.json` under page-source
+    // storage now (`schema-document.ts`), not in a `metadata` table.
+    pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") },
     storage: { kind: "local", root: join(tempDirBox.path, "storage") },
   };
 });
 
 const { executeMagicFetch } = await import("./ai-magic-write-fetch.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createStorageSchemaDocumentStore } = await import("../schema-document-storage.js");
+/** The engine adapters this file builds by hand must read and write the SAME
+ * `content/types.json` the route handlers under test do - a default in-memory
+ * document would make each side seed its own schema over the other's tables. */
+const docStore = () => createStorageSchemaDocumentStore({ env: {} });
 const { content, storage } = await import("../config.js");
 
 afterAll(async () => {
@@ -25,7 +33,7 @@ afterAll(async () => {
   await rm(tempDirBox.path, { recursive: true, force: true });
 });
 
-const schema = createContentEngineAdapter(content);
+const schema = createContentEngineAdapter(content, undefined, docStore());
 const entries = createContentEntryEngineAdapter(content);
 
 let superAdminSession: SessionPayload;

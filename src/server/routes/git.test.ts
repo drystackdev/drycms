@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveGitTarget } from "./git.js";
+import { parseAdvertisedBranches, resolveGitTarget } from "./git.js";
 
 describe("resolveGitTarget", () => {
   const repo = "acme/site";
@@ -47,7 +47,10 @@ vi.mock("../git-config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../git-config.js")>();
   return { ...actual, loadGitConfig: async () => configBox.result };
 });
-vi.mock("../outbound-url.js", () => ({ validateOutboundUrlForRequest: async (url: string) => url.replace(/\/+$/, "") }));
+vi.mock("../outbound-url.js", () => ({
+  validateOutboundUrlForRequest: async (url: string) => url.replace(/\/+$/, ""),
+  fetchNoRedirect: async (url: string, init?: RequestInit) => fetch(url, init),
+}));
 
 const { GET, POST } = await import("./git.js");
 
@@ -66,7 +69,8 @@ describe("git proxy route", () => {
     const response = await POST(context("https://site.test/dry/api/git/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "gitlab", url: "https://gitlab.com", repo: "acme/site", token: "glpat-token" }),
+      // One URL is the whole input now - the platform is derived from it.
+      body: JSON.stringify({ url: "https://gitlab.com/acme/site", token: "glpat-token" }),
     }, "validate"));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ valid: false, fieldErrors: { token: "This GitLab token requires the api scope." } });
@@ -80,7 +84,8 @@ describe("git proxy route", () => {
     const response = await POST(context("https://site.test/dry/api/git/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "gitlab", url: "https://gitlab.com", repo: "acme/site", token: "glpat-token" }),
+      // One URL is the whole input now - the platform is derived from it.
+      body: JSON.stringify({ url: "https://gitlab.com/acme/site", token: "glpat-token" }),
     }, "validate"));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ valid: false, fieldErrors: { token: "This GitLab token has the Guest role. Create one with Developer or Maintainer access." } });
@@ -180,7 +185,9 @@ describe("git proxy route", () => {
     vi.stubGlobal("fetch", fetchMock);
     const response = await GET(context("https://site.test/dry/api/git/config", {}, "config"));
     const body = await response.json();
-    expect(body).toEqual({ configured: true, provider: "github", url: "", repo: "acme/site", branch: "release", hasToken: true });
+    // `remoteUrl` is "" here because this legacy config has no stored origin;
+    // a value saved by the settings page always carries one.
+    expect(body).toEqual({ configured: true, provider: "github", url: "", remoteUrl: "", repo: "acme/site", branch: "release", hasToken: true });
     expect(JSON.stringify(body)).not.toContain("ghp_secret");
     // Purely local - config must never cost a GitHub round trip.
     expect(fetchMock).not.toHaveBeenCalled();
@@ -201,5 +208,106 @@ describe("git proxy route", () => {
     const response = await GET(context("https://site.test/dry/api/git/info/refs?service=git-upload-pack"));
     expect(response.status).toBe(502);
     expect((await response.json()).message).toContain("network down");
+  });
+});
+
+const ADVERTISEMENT = [
+  "001e# service=git-upload-pack\n",
+  "0000",
+  "00e8a1b2 HEAD\0multi_ack symref=HEAD:refs/heads/main object-format=sha1 agent=git/2.45\n",
+  "003fa1b2 refs/heads/main\n",
+  "003fc3d4 refs/heads/feature/checkout\n",
+  "003fe5f6 refs/tags/v1.0.0^{}\n",
+  "0000",
+].join("");
+
+describe("parseAdvertisedBranches", () => {
+  it("reads branches and the default branch out of a v1 advertisement", () => {
+    // No vendor API is involved, which is exactly why this works the same on
+    // GitHub, GitLab and a self-hosted host.
+    expect(parseAdvertisedBranches(ADVERTISEMENT)).toEqual({
+      branches: ["feature/checkout", "main"],
+      defaultBranch: "main",
+    });
+  });
+
+  it("has no branches and no default for an empty repository", () => {
+    expect(parseAdvertisedBranches("001e# service=git-upload-pack\n0000")).toEqual({ branches: [], defaultBranch: "" });
+  });
+});
+
+describe("git branch listing", () => {
+  function branchesRequest(body: unknown) {
+    return context("https://site.test/dry/api/git/branches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }, "branches");
+  }
+
+  it("lists branches straight from the remote's advertisement", async () => {
+    configBox.result = { error: "not-configured" };
+    const fetchMock = vi.fn(async () => new Response(ADVERTISEMENT, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(branchesRequest({ url: "https://github.com/acme/site", token: "ghp_token" }));
+    expect(await response.json()).toEqual({ provider: "github", branches: ["feature/checkout", "main"], defaultBranch: "main" });
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://github.com/acme/site.git/info/refs?service=git-upload-pack");
+  });
+
+  it("falls back to the stored token only for the stored repository", async () => {
+    configBox.result = { config: { repo: "acme/site", provider: "github", url: "https://github.com", branch: "main", token: "ghp_stored" } };
+    const fetchMock = vi.fn(async () => new Response(ADVERTISEMENT, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const same = await POST(branchesRequest({ url: "https://github.com/acme/site", token: "" }));
+    expect(same.status).toBe(200);
+    expect(new Headers((fetchMock.mock.calls[0]![1] as RequestInit).headers).get("Authorization")).toBe(`Basic ${btoa("x-access-token:ghp_stored")}`);
+
+    // A different repository is still listed (a public one advertises to
+    // anyone), but ANONYMOUSLY - the saved, write-only token must never be
+    // spent against a host the caller chose.
+    await POST(branchesRequest({ url: "https://evil.test/acme/site", token: "" }));
+    expect(new Headers((fetchMock.mock.calls[1]![1] as RequestInit).headers).has("Authorization")).toBe(false);
+  });
+
+  it("reports a rejected token instead of an empty branch list", async () => {
+    configBox.result = { error: "not-configured" };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 401 })));
+    const response = await POST(branchesRequest({ url: "https://gitlab.com/acme/site", token: "bad" }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("GitLab rejected this access token");
+  });
+});
+
+describe("validate on a self-hosted host", () => {
+  it("keeps a host that is not GitLab as a custom git server, checked over smart-HTTP", async () => {
+    configBox.result = { error: "not-configured" };
+    const fetchMock = vi.fn()
+      // `/api/v4/version` - the GitLab probe, answered by something else.
+      .mockResolvedValueOnce(new Response("<html>not gitlab</html>", { status: 404 }))
+      .mockResolvedValueOnce(new Response(ADVERTISEMENT, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(context("https://site.test/dry/api/git/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://git.example.com/group/site", token: "t" }),
+    }, "validate"));
+    expect(await response.json()).toMatchObject({ valid: true, provider: "custom", url: "https://git.example.com", repo: "group/site", defaultBranch: "main" });
+    expect(fetchMock.mock.calls[1]![0]).toBe("https://git.example.com/group/site.git/info/refs?service=git-receive-pack");
+  });
+
+  it("upgrades a self-hosted GitLab to the gitlab provider so its API features keep working", async () => {
+    configBox.result = { error: "not-configured" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ version: "17.3.0" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 1 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ default_branch: "trunk", permissions: { project_access: { access_level: 40 } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(context("https://site.test/dry/api/git/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://git.example.com/group/site", token: "glpat" }),
+    }, "validate"));
+    expect(await response.json()).toMatchObject({ valid: true, provider: "gitlab", defaultBranch: "trunk" });
   });
 });

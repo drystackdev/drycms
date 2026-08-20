@@ -104,22 +104,6 @@ export function syncEntryDraftToGit(options: {
 }
 
 /**
- * Mirrors one or more content-type schema changes as a SINGLE commit -
- * `ApplyBuildDialog.tsx`'s "Apply and build" already applies its whole batch
- * as one user action, so its git mirror follows the same "one action, one
- * commit" shape `commitPagesSourceChanges` uses for a multi-file page-source
- * save. Unlike `syncEntryDraftToGit`, this has no automatic "reset" on
- * failure - the caller (`ApplyBuildDialog.tsx`/`ContentTypeEditor.tsx`) just
- * leaves the draft pending and surfaces a toast, since re-running a schema
- * migration to roll one back carries its own destructive-change risk
- * (decision #4, `plans/history-content.md`, already treats schema history as
- * view-only for the same reason).
- */
-export function syncSchemaChangesToGit(adminPath: string, items: { schemaId: string; op: ContentChangeOp }[]): Promise<"synced" | "failed"> {
-  return commitWithRetry(adminPath, items.map((item) => ({ kind: "schema", schemaId: item.schemaId, op: item.op })));
-}
-
-/**
  * Resolves one queued failure - `"reset"` writes `pending.rollback` back
  * through the ordinary entries API (the ADMIN'S OWN existing create/
  * update/delete permission grant covers this, no special-cased endpoint)
