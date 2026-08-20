@@ -738,12 +738,15 @@ export default function StandalonePreview() {
 
   async function handleDeleteFile(filePath: string) {
     await deleteFile(filePath);
-    if (fileDialogPath === filePath) setFileDialogPath(null);
+    // `filePath` may be a FOLDER, deleted recursively - a currently open
+    // file/dialog/route doesn't have to equal it exactly, just live under it.
+    const isWithin = (path: string | null | undefined) => path === filePath || path?.startsWith(`${filePath}/`);
+    if (isWithin(fileDialogPath)) setFileDialogPath(null);
     // Falls back to whatever the preview currently shows - if THAT was also
-    // the deleted file, the `setPathname("/")` below changes it a moment
-    // later and the `activePagePath` sync effect follows along.
-    if (openFilePath === filePath) setOpenFilePath(activePagePath);
-    if (match?.entryPath === filePath) setPathname("/");
+    // deleted, the `setPathname("/")` below changes it a moment later and
+    // the `activePagePath` sync effect follows along.
+    if (isWithin(openFilePath)) setOpenFilePath(activePagePath);
+    if (isWithin(match?.entryPath)) setPathname("/");
   }
 
   const handleVeiClick = useCallback((ref: PreviewVeiClickRef) => setVeiTarget(ref), []);

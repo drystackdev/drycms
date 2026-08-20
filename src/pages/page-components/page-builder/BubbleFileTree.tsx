@@ -314,15 +314,19 @@ export default function BubbleFileTree(props: BubbleFileTreeProps) {
   async function commitRename(entry: FileEntry, typed: string) {
     setRenamingPath(null);
     if (!typed || typed === entry.name) return;
-    const parent = parentOfFullPath(entry.id);
+    // A folder's `entry.id` is only relative to `activeRoot` (see
+    // `buildEntries`'s own doc comment) - rebase it to a real storage path
+    // before computing the sibling `to` path or calling `onRenameFile`.
+    const from = entry.kind === "folder" ? `${props.activeRoot}/${entry.id}` : entry.id;
+    const parent = parentOfFullPath(from);
     const to = parent ? `${parent}/${typed}` : typed;
-    if (to === entry.id) return;
+    if (to === from) return;
     if (to in props.sourceByPath) {
       toast.add({ type: "error", title: `"${typed}" already exists here.` });
       return;
     }
     try {
-      await props.onRenameFile(entry.id, to);
+      await props.onRenameFile(from, to);
     } catch (err) {
       toast.add({ type: "error", title: err instanceof Error ? err.message : "Could not rename the file." });
     }
@@ -474,11 +478,15 @@ function BubbleFileTreeList(props: BubbleFileTreeListProps) {
         const isFolder = entry.kind === "folder";
         const expanded = isFolder && open(entry.id);
         const renaming = props.renamingPath === entry.id;
+        // A folder's `entry.id` is only relative to `activeRoot` - rebase it
+        // to a real storage path before handing it to `canDelete`/`onDeleteFile`,
+        // which both expect an absolute path the way file ids already are.
+        const absolutePath = isFolder ? `${props.activeRoot}/${entry.id}` : entry.id;
 
         const menuItems: PopoverMenuEntry[] = [
           { type: "item", label: "Rename", icon: <RenameIcon />, onClick: () => props.onStartRename(entry) },
-          ...(props.canDelete(entry.id)
-            ? [{ type: "item", label: "Delete", icon: <TrashIcon />, danger: true, onClick: () => props.onDeleteFile(entry.id) } as PopoverMenuEntry]
+          ...(props.canDelete(absolutePath)
+            ? [{ type: "item", label: "Delete", icon: <TrashIcon />, danger: true, onClick: () => props.onDeleteFile(absolutePath) } as PopoverMenuEntry]
             : []),
         ];
 
@@ -560,7 +568,7 @@ function BubbleFileTreeList(props: BubbleFileTreeListProps) {
 
         return (
           <div key={entry.id}>
-            {entry.kind === "file" && !renaming ? (
+            {!renaming ? (
               <ContextMenu label={`Actions for ${entry.name}`} items={menuItems}>
                 {row}
               </ContextMenu>

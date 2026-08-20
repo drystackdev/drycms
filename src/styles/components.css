@@ -161,7 +161,7 @@
       gap: 0.375rem;
       min-height: 1.5rem;
       align-items: center;
-      overflow: hidden;
+      flex-wrap: wrap;
     }
 
     .builder-field-icon {
@@ -7963,12 +7963,37 @@
       overflow: auto;
     }
 
+    /* Fixed-header/scrolling-body shape, same pattern as
+     * `.apply-build-dialog[open]` above - the affected-files/entries list can
+     * run long. */
+    .page-builder-save-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
     .page-builder-save-dialog-body {
       display: flex;
       flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
       gap: 1rem;
-      min-height: 20rem;
-      overflow: auto;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      scrollbar-gutter: stable;
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
+    }
+
+    .page-builder-save-dialog-body > [data-overlayscrollbars-viewport] {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
     }
 
     .dialog-title {

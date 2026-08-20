@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { useDialogSync } from "../../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../../hooks/overlayscrollbars.js";
 import type { EntryDraftRecord } from "../../../content-types/entry-draft-db.js";
 import type { ContentTypeDefinition } from "../../../content-types/types.js";
 import { PreviewIcon, UndoIcon } from "../../../components/icons/index.js";
@@ -30,6 +31,7 @@ export default function SavePreviewDialog(props: {
   onClose: () => void;
 }) {
   const dialogRef = useDialogSync(props.open, props.onClose);
+  const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([props.open]);
   const [draftPreview, setDraftPreview] = useState<{ draft: EntryDraftRecord; diffs: EntryFieldDiff[] } | null>(null);
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
   const typeByName = new Map(props.allTypes.map((type) => [type.name, type] as const));
@@ -67,7 +69,7 @@ export default function SavePreviewDialog(props: {
           <p class="hint">Commits the saved changes to git, then rebuilds and publishes every affected page.</p>
         </div>
       </header>
-      <div class="under page-builder-save-dialog-body">
+      <div class="under page-builder-save-dialog-body" ref={bodyScroll}>
         <div class="page-builder-save-group">
           <div class="row"><strong>Code files</strong><span class="badge sm secondary">{props.dirtyPaths.length}</span></div>
           {props.dirtyPaths.length > 0 ? (
