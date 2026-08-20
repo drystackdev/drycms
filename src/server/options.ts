@@ -14,7 +14,6 @@ import { resolve as resolvePath } from "node:path";
  */
 const R2_BUCKET_BINDING = "MEDIA_BUCKET";
 const D1_CONTENT_BINDING = "CONTENT_DB";
-const KV_NAMESPACE_BINDING = "KV";
 
 /** Fixed local directory/file names (also reused as the R2 key prefix for
  * the same root under `kind: "cloudflare"`) - see `R2_BUCKET_BINDING`'s doc
@@ -232,9 +231,10 @@ export interface ResolvedKvTuning {
  * The union still has all 4 historical kinds (`kv/factory.ts`'s
  * `createKeyValueAdapter`/`createRequestKeyValueAdapter` still implement
  * every one of them) even though `resolveOptions()` below only ever
- * produces `"local"` or `"KV"` now - `"sqlite"`/`"D1"` remain valid values
- * for anything that builds a `ResolvedKvOption` by hand instead of through
- * `DryOption.kind`.
+ * produces `"local"` or `"D1"` now (switched from the `"KV"` Workers KV
+ * binding 2026-08-20 - KV's free-tier daily write cap was hit in production,
+ * D1's is 100x higher) - `"sqlite"`/`"KV"` remain valid values for anything
+ * that builds a `ResolvedKvOption` by hand instead of through `DryOption.kind`.
  */
 export type ResolvedKvOption = ResolvedKvTuning & (
   | ({ kind: "local"; root: string })
@@ -422,7 +422,7 @@ function resolveKvOption(
     if (value !== undefined) resolvePositiveNumber(value, `kv.${key}`, value);
   }
 
-  if (kind === "cloudflare") return { ...tuning, kind: "KV", binding: KV_NAMESPACE_BINDING };
+  if (kind === "cloudflare") return { ...tuning, kind: "D1", binding: D1_CONTENT_BINDING };
   return { ...tuning, kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), KV_DIR_NAME) };
 }
 

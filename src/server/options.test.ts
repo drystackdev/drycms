@@ -51,7 +51,7 @@ describe('resolveOptions', () => {
 		expect(resolveOptions({ kind: 'local' })).toEqual(expected);
 	});
 
-	it('resolves kind "cloudflare" to D1 content, one shared R2 bucket per prefix, and Workers KV - all with fixed binding names', () => {
+	it('resolves kind "cloudflare" to D1 content, one shared R2 bucket per prefix, and D1-backed KV - all with fixed binding names', () => {
 		const resolved = resolveOptions({ kind: 'cloudflare' });
 		expect(resolved.kind).toBe('cloudflare');
 		expect(resolved.content).toEqual({ engine: 'D1', binding: 'CONTENT_DB' });
@@ -61,7 +61,7 @@ describe('resolveOptions', () => {
 		expect(resolved.pagesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-cache' });
 		expect(resolved.typesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'types-cache' });
 		expect(resolved.pagesSource.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-source' });
-		expect(resolved.kv).toMatchObject({ kind: 'KV', binding: 'KV' });
+		expect(resolved.kv).toMatchObject({ kind: 'D1', binding: 'CONTENT_DB' });
 	});
 
 	it('rejects an unrecognized top-level kind', () => {
@@ -74,7 +74,7 @@ describe('resolveOptions', () => {
 			kind: 'local', maxEntries: 5, durability: 'sync',
 		});
 		expect(resolveOptions({ kind: 'cloudflare', kv: { maxEntries: 5 } }).kv).toMatchObject({
-			kind: 'KV', binding: 'KV', maxEntries: 5,
+			kind: 'D1', binding: 'CONTENT_DB', maxEntries: 5,
 		});
 	});
 
