@@ -28,7 +28,6 @@ import CodePanel from "./page-components/page-builder/CodePanel.js";
 import FileDialog from "./page-components/page-builder/FileDialog.js";
 import VeiEntryFrame from "./page-components/page-builder/VeiEntryFrame.js";
 import SavePreviewDialog, { type SaveProgress } from "./page-components/page-builder/SavePreviewDialog.js";
-import ConfirmDialog from "../components/ConfirmDialog.js";
 import PageSourceMagicChat from "./page-components/page-builder/PageSourceMagicChat.js";
 import { CORE_STYLE_FILES } from "./page-components/core-styles/registry.js";
 import { getAllEntryDraftRecords, putEntryDraftRecord, type EntryDraftRecord } from "../content-types/entry-draft-db.js";
@@ -191,8 +190,6 @@ export default function PageBuilder() {
     createFile,
     renameFile,
     deleteFile,
-    remoteUpdateNotice,
-    dismissRemoteUpdateNotice,
     remoteDiverged,
     setPollPaused,
   } = usePageBuilderSource(path, canEnterBuilder);
@@ -1168,19 +1165,6 @@ export default function StandalonePreview() {
         onClose={() => {
           if (!saveProgress) setSaveDialogOpen(false);
         }}
-      />
-
-      <ConfirmDialog
-        open={remoteUpdateNotice !== null}
-        title="Remote changes pulled"
-        message={`${remoteUpdateNotice?.changedPaths.length ?? 0} file(s) were just pulled from the remote: ${remoteUpdateNotice?.changedPaths.join(", ") ?? ""}. Build & publish them now?`}
-        confirmLabel="Build & publish now"
-        cancelLabel="Later"
-        onConfirm={() => {
-          dismissRemoteUpdateNotice();
-          setSaveDialogOpen(true);
-        }}
-        onCancel={dismissRemoteUpdateNotice}
       />
     </div>
   );

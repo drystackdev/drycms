@@ -609,6 +609,42 @@ suite (`bun run test`, 1449/1449) + `typecheck` sạch + smoke test UI (đăng
 nhập, mở Page Builder, không lỗi console mới) đã chạy; phần còn lại cần PAT
 thật hoặc user tự test 2 tab admin.
 
+### Verify live trên `dev.drystack.dev` + 3 sửa tiếp theo cùng ngày (2026-08-20)
+
+Deploy thật lên `dev.drystack.dev` (tenant Silverlap) lộ ra 2 vấn đề KHÔNG
+liên quan trực tiếp tới auto-pull, cộng 2 điều chỉnh theo yêu cầu user:
+
+1. **Poll unconditional mỗi 5s hammer git thật** - bản đầu gọi thẳng
+   `ensureRepoReady` (fetch+pack transfer đầy đủ) mỗi tick dù remote không
+   đổi gì, bắt được qua network trace thật (`git-repo.ts` giờ có
+   `remoteHeadSha()` - 1 GET `info/refs` nhẹ, không `fs`/`dir` - chỉ khi sha
+   đổi mới trả tiền cho fetch đầy đủ).
+2. **Bug CÓ SẴN, không phải do hôm nay**: `pages/layout.tsx` của user import
+   `@component/MegaMenu` chưa tồn tại -> `PreviewFrame` build fail MỌI lần ->
+   `hasPreviewDocumentRef` không bao giờ true -> `onReady` không bao giờ gọi
+   -> overlay "Loading Page Builder" kẹt vĩnh viễn, chặn luôn click vào
+   toolbar/code panel. Sửa: `PreviewFrame.tsx` catch block giờ cũng gọi
+   `props.onReady()` khi build fail - banner lỗi vẫn hiện, nhưng UI không bị
+   khoá nữa.
+3. **`saveAndPublish` (Build & publish) chậm hơn hẳn (~30s)**: poll nền dùng
+   chung `withGitLock` với chính thao tác commit/push của Build & publish,
+   có thể xếp hàng chờ hoặc fetch lại đúng commit vừa tự push. Thêm
+   `pollPausedRef`/`setPollPaused` - `saveAndPublish` tạm dừng poll trong lúc
+   chạy, resume ở `finally`. (Chưa chắc giải thích hết 30s - phần còn lại
+   nhiều khả năng là chi phí thật của commit+push+build-per-page.)
+4. **User chốt lại UX auto-pull, đảo ngược phần "dialog" ở mục trên**: bỏ hẳn
+   `ConfirmDialog`/`remoteUpdateNotice` - không có popup chủ động hỏi build.
+   Auto-pull vẫn chạy y hệt (an toàn, không dirty mới pull), nhưng khi có
+   file mới về chỉ lặng lẽ gộp vào `pendingRemotePaths` ->
+   `pendingCommitPaths` -> tự hiện ở nút dock **Build & publish** như mọi
+   thay đổi khác. Người dùng tự quyết định khi nào bấm. Đồng thời tăng chu kỳ
+   poll từ 5s -> 30s (yêu cầu user).
+
+Cả 4 điều chỉnh: `typecheck` sạch + `bun run test` 1449/1449 sau mỗi bước.
+Chưa có lượt deploy cuối cùng (đã gộp cả 4) lên `dev.drystack.dev` - lệnh
+`bun run deploy`/`wrangler deploy` bị chặn bởi permission classifier của
+harness, cần user tự chạy hoặc approve trực tiếp.
+
 ## Speed
 
 Chưa có blocker. Cần user cung cấp repo + PAT thật để chạy spike G0.

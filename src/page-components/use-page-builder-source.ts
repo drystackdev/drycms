@@ -137,11 +137,6 @@ export interface UsePageBuilderSourceResult {
   deleteFile: (path: string) => Promise<void>;
   /** Re-reads the whole tree from storage, discarding local edits. */
   reload: () => Promise<void>;
-  /** Set once a background poll (every 30s, git only) auto-pulls new commits
-   * from the remote - the paths it pulled, for a one-time "here's what
-   * changed" dialog. `null` once dismissed. */
-  remoteUpdateNotice: { changedPaths: string[] } | null;
-  dismissRemoteUpdateNotice: () => void;
   /** The remote has moved but this working copy has uncommitted edits, so the
    * background poll could not auto-pull - a soft warning, not a block. */
   remoteDiverged: boolean;
@@ -183,9 +178,6 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
    * fix (comparing HEAD against a persisted `lastBuiltCommit`) is the
    * deferred item `status/git-page-source.md` already tracks. */
   const [pendingRemotePaths, setPendingRemotePaths] = useState<Set<string>>(() => new Set());
-  /** Set right after a background auto-pull moved HEAD forward - Page Builder
-   * shows this once, then the admin dismisses it. */
-  const [remoteUpdateNotice, setRemoteUpdateNotice] = useState<{ changedPaths: string[] } | null>(null);
   /** The remote moved while this working copy has its own uncommitted edits.
    * `ensureCloned` never auto-pulls in that case (it would either overwrite
    * or silently need a merge it doesn't attempt) - this only tells the admin
@@ -378,8 +370,12 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         const fresh = await readAllSource();
         setSourceByPath(fresh);
         setSavedByPath(fresh);
+        // Silent: no popup, no auto-build - the paths just join
+        // `pendingCommitPaths`, so the dock's existing Save/Build & publish
+        // button picks them up exactly like any other pending change, and
+        // the admin decides if and when to act on it (user's own call,
+        // 2026-08-20 - a proactive "build now?" dialog was here before).
         setPendingRemotePaths((previous) => new Set([...previous, ...changed]));
-        setRemoteUpdateNotice({ changedPaths: changed });
       } catch {
         // A missed poll just tries again in 30s - not worth interrupting an
         // edit session for.
@@ -394,7 +390,6 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     };
   }, [enabled, usingGit, adminPath]);
 
-  const dismissRemoteUpdateNotice = useCallback(() => setRemoteUpdateNotice(null), []);
   const setPollPaused = useCallback((paused: boolean) => {
     pollPausedRef.current = paused;
   }, []);
@@ -764,8 +759,6 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     createFile,
     renameFile,
     deleteFile,
-    remoteUpdateNotice,
-    dismissRemoteUpdateNotice,
     remoteDiverged,
     setPollPaused,
   };
