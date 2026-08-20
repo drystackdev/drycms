@@ -560,6 +560,55 @@ từ khi PAT đọc từ env - Settings chỉ còn là đường cấu hình ph�
 Ghi chú cũ (giữ nguyên): mới chốt xong plan + 4 quyết định kiến trúc với user
 (2026-08-16). Việc kế tiếp: Giai đoạn 0 (spike clone/commit/push qua proxy).
 
+### Poll remote mỗi 5s + auto-pull an toàn + dialog (2026-08-20, theo yêu cầu user)
+
+Trước phần còn lại của Gói 6 (lastBuiltCommit đầy đủ), user chốt 2 tính năng
+nhỏ hơn, độc lập được:
+
+1. **Poll remote mỗi 5s** trong lúc Page Builder mở (chỉ khi `usingGit`).
+   Dùng lại nguyên `ensureRepoReady`/`ensureCloned` đã có sẵn (nó vốn đã an
+   toàn: chỉ fast-forward khi working copy sạch, có dirty thì báo
+   `diverged` chứ không bao giờ tự ghi đè) - không cần thêm logic merge mới.
+   - Không dirty + remote có commit mới -> tự pull (fast-forward), đọc lại
+     source bằng `readAllSource()` (KHÔNG gọi `reload()` vì nó bật `loading`
+     và sẽ chớp cả UI Page Builder về màn skeleton giữa phiên làm việc), rồi
+     hiện dialog liệt kê file đã đổi kèm nút "Build & publish now" (mở
+     `SavePreviewDialog` có sẵn) / "Later".
+   - Đang dirty + remote có commit mới -> KHÔNG tự pull, chỉ hiện banner
+     cảnh báo nhẹ (tái dùng class `.page-builder-history-banner`), tự ẩn khi
+     hết dirty.
+   - Poll tự dừng khi `gitState.phase` là `"cloning"`/`"error"` - tránh
+     hammer lại đúng request đang lỗi (PAT hỏng) mỗi 5s vô ích; test live bắt
+     đúng bug này trước khi sửa (xem bên dưới).
+2. **Nút "Build & publish" hiện ra sau khi auto-pull**: file vừa pull về đã
+   sạch so với HEAD nên `gitState.dirty` không thấy - thêm state mới
+   `pendingRemotePaths` (paths đã pull nhưng chưa build), gộp vào
+   `pendingCommitPaths` cạnh `dirtyPaths`/`gitState.dirty`. Nhờ vậy dock badge
+   + `SavePreviewDialog` + `saveAndPublish` (đã có sẵn logic "codePaths rỗng
+   dirty thì bỏ qua commit, đi thẳng publish") tự nhận các file này mà không
+   phải sửa `saveAndPublish`. `markPublished` dọn luôn khỏi
+   `pendingRemotePaths` sau khi build xong.
+
+File đụng tới: `page-components/use-page-builder-source.ts` (state +
+effect polling + mở rộng `pendingCommitPaths`/`markPublished`),
+`pages/PageBuilder.tsx` (banner diverged, dialog remote-update dùng lại
+`ConfirmDialog`).
+
+**Bug thật bắt được lúc verify live (Chromium, `bun run dev:worker`)**: PAT
+trong `.env` (repo `khancoder282/test-filestorage`) hiện 401 ngay từ lần
+clone đầu - môi trường dev này có PAT hỏng/hết hạn, không phải do thay đổi
+hôm nay. Nhờ vậy bắt được đúng lỗi: bản đầu của poll không check `phase`
+trước khi gọi lại `ensureRepoReady`, nên cứ 5s lại bắn thêm 1 request 401 vô
+ích suốt phiên làm việc. Sửa: chỉ poll khi `phase` là `"ready"` hay
+`"diverged"`. Verify lại: 8s chỉ còn đúng 1 lỗi 401 (từ lần clone gốc), không
+tăng thêm.
+
+**Chưa verify được**: luồng auto-pull + dialog thật (cần PAT hợp lệ để clone
+thành công trước, rồi mô phỏng một push từ nơi khác vào cùng branch). Test
+suite (`bun run test`, 1449/1449) + `typecheck` sạch + smoke test UI (đăng
+nhập, mở Page Builder, không lỗi console mới) đã chạy; phần còn lại cần PAT
+thật hoặc user tự test 2 tab admin.
+
 ## Speed
 
 Chưa có blocker. Cần user cung cấp repo + PAT thật để chạy spike G0.

@@ -137,6 +137,14 @@ export interface UsePageBuilderSourceResult {
   deleteFile: (path: string) => Promise<void>;
   /** Re-reads the whole tree from storage, discarding local edits. */
   reload: () => Promise<void>;
+  /** Set once a background poll (every 5s, git only) auto-pulls new commits
+   * from the remote - the paths it pulled, for a one-time "here's what
+   * changed" dialog. `null` once dismissed. */
+  remoteUpdateNotice: { changedPaths: string[] } | null;
+  dismissRemoteUpdateNotice: () => void;
+  /** The remote has moved but this working copy has uncommitted edits, so the
+   * background poll could not auto-pull - a soft warning, not a block. */
+  remoteDiverged: boolean;
 }
 
 export function usePageBuilderSource(adminPath: string, enabled = true): UsePageBuilderSourceResult {
@@ -157,6 +165,21 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   /** See `UNPUBLISHED_KEY` - only maintained when there is no repository; with
    * one, `gitState.dirty` is the authoritative answer and this stays empty. */
   const [unpublishedPaths, setUnpublishedPaths] = useState<Set<string>>(readUnpublished);
+  /** Paths a background remote poll (below) auto-pulled - already at HEAD, so
+   * `gitState.dirty` alone would never flag them, yet nothing has built and
+   * published them either. Session-only, unlike `unpublishedPaths`: losing
+   * this on reload just costs one extra look at `/dry/page-build`, and a real
+   * fix (comparing HEAD against a persisted `lastBuiltCommit`) is the
+   * deferred item `status/git-page-source.md` already tracks. */
+  const [pendingRemotePaths, setPendingRemotePaths] = useState<Set<string>>(() => new Set());
+  /** Set right after a background auto-pull moved HEAD forward - Page Builder
+   * shows this once, then the admin dismisses it. */
+  const [remoteUpdateNotice, setRemoteUpdateNotice] = useState<{ changedPaths: string[] } | null>(null);
+  /** The remote moved while this working copy has its own uncommitted edits.
+   * `ensureCloned` never auto-pulls in that case (it would either overwrite
+   * or silently need a merge it doesn't attempt) - this only tells the admin
+   * a pull is waiting once they finish or discard. */
+  const [remoteDiverged, setRemoteDiverged] = useState(false);
 
   const api = useMemo(() => createPagesSourceApi(`${adminPath}/api/pages-source`), [adminPath]);
 
@@ -195,6 +218,12 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       const next = new Set(previous);
       for (const filePath of paths) next.delete(filePath);
       writeUnpublished(next);
+      return next;
+    });
+    setPendingRemotePaths((previous) => {
+      if (!paths.some((filePath) => previous.has(filePath))) return previous;
+      const next = new Set(previous);
+      for (const filePath of paths) next.delete(filePath);
       return next;
     });
   }, []);
@@ -287,6 +316,64 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       window.clearInterval(timer);
     };
   }, [adminPath, enabled, locallyEditedPaths, usingGit]);
+
+  useEffect(() => {
+    // Git's own equivalent of the dev-only poll above - a `fetch` against
+    // the real remote (GitHub/GitLab), so it runs in every environment,
+    // production included. Safe to run unattended: `ensureCloned` only ever
+    // fast-forwards when the working copy has no edits of its own, and
+    // otherwise reports `diverged` for the admin to see rather than
+    // overwriting or merging anything (`git-repo.ts`'s own comment on why
+    // that decision is never automatic).
+    if (!enabled || !usingGit) return;
+    let cancelled = false;
+    let polling = false;
+    const poll = async () => {
+      if (polling) return;
+      // Only once a working copy actually exists: "cloning" hasn't produced
+      // one yet, and "error" (a broken PAT, a repo that no longer resolves)
+      // won't be fixed by retrying the same request every 5s - the admin has
+      // to fix the config, at which point a full reload re-clones anyway.
+      const phase = gitState.value.phase;
+      if (phase !== "ready" && phase !== "diverged") return;
+      polling = true;
+      try {
+        const before = gitState.value.head;
+        await ensureRepoReady(adminPath);
+        if (cancelled) return;
+        if (gitState.value.phase === "diverged") {
+          setRemoteDiverged(true);
+          return;
+        }
+        setRemoteDiverged(false);
+        const after = gitState.value.head;
+        if (!before || !after || before === after) return;
+        const { changedPathsBetween, readAllSource } = await import("./git/git-repo.js");
+        const changed = await changedPathsBetween(before, after);
+        if (changed.length === 0 || cancelled) return;
+        // A direct source swap, not `reload()`: that flips `loading` and
+        // would flash the whole builder into its loading skeleton mid-session
+        // for what should be an invisible background refresh.
+        const fresh = await readAllSource();
+        setSourceByPath(fresh);
+        setSavedByPath(fresh);
+        setPendingRemotePaths((previous) => new Set([...previous, ...changed]));
+        setRemoteUpdateNotice({ changedPaths: changed });
+      } catch {
+        // A missed poll just tries again in 5s - not worth interrupting an
+        // edit session for.
+      } finally {
+        polling = false;
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [enabled, usingGit, adminPath]);
+
+  const dismissRemoteUpdateNotice = useCallback(() => setRemoteUpdateNotice(null), []);
 
   /**
    * Typing persists itself - there is no Save button anywhere in Page
@@ -542,8 +629,8 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
    * nobody.
    */
   const pendingCommitPaths = useMemo(
-    () => [...new Set([...dirtyPaths, ...(usingGit ? gitState.value.dirty : unpublishedPaths)])],
-    [dirtyPaths, usingGit, gitState.value.dirty, unpublishedPaths],
+    () => [...new Set([...dirtyPaths, ...(usingGit ? gitState.value.dirty : unpublishedPaths), ...pendingRemotePaths])],
+    [dirtyPaths, usingGit, gitState.value.dirty, unpublishedPaths, pendingRemotePaths],
   );
 
   const createFile = useCallback(
@@ -653,5 +740,8 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     createFile,
     renameFile,
     deleteFile,
+    remoteUpdateNotice,
+    dismissRemoteUpdateNotice,
+    remoteDiverged,
   };
 }
