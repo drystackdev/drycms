@@ -3,7 +3,7 @@ import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { requirePermission } from "../admin-access.js";
 import { CONTENT_TYPES_RESOURCE_ID, type PermissionAction } from "../../content-types/permissions.js";
-import { isGitMirrorEligible, redactSecretFields } from "../../content-types/git-mirror.js";
+import { isGitMirrorEligible, isGitMirrorEligibleEntry, redactSecretFields } from "../../content-types/git-mirror.js";
 import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
 import { decodeEntryId } from "../../lib/id-hash.js";
 import { loadGithubSyncConfig } from "./pages-source-github-sync.js";
@@ -207,10 +207,18 @@ export const POST: DryRouteHandler = async (context) => {
       ? await entryAdapter.getSingletonEntry(type, allTypes)
       : await entryAdapter.getEntry(type, allTypes, entryId as number);
     if (!row) return jsonResponse({ error: "not_found", message: "The entry no longer exists." }, 404);
+    // The seeded Super Admin role: type-eligible like any other `role` row,
+    // but its own permission bypass is excluded at the row level - skip
+    // mirroring it rather than fail the whole batch.
+    if (!isGitMirrorEligibleEntry(type, row.value)) continue;
 
     const nodes = buildEntryFieldTree(type, allTypes);
     files[path] = JSON.stringify(redactSecretFields(nodes, row.value), null, 2);
     labels.push(label);
+  }
+
+  if (Object.keys(files).length === 0) {
+    return jsonResponse({ committed: false, reason: "Nothing to mirror." });
   }
 
   const firstOp = ops.size === 1 ? [...ops][0] : undefined;

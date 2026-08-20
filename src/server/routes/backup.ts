@@ -16,6 +16,8 @@ import {
 import { ContentEngineError } from "../../content-types/engine/types.js";
 import { createStorageSchemaDocumentStore } from "../schema-document-storage.js";
 import { parseSchemaDocument, type SchemaDocument } from "../../content-types/schema-document.js";
+import { loadGithubSyncConfig } from "./pages-source-github-sync.js";
+import { pullEntriesFromGit } from "../git-restore.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   invalid_definition: 400,
@@ -87,9 +89,42 @@ function readSchemaMarker(dump: string): SchemaDocument | null {
   }
 }
 
+/**
+ * `GET {path}/api/backup/entries` - reports whether this branch has a git
+ * repository configured, so `Backup.tsx`'s "Entry" section knows whether to
+ * offer the pull at all (`pullEntriesFromGit` needs a repo to read `content/
+ * entries/**` from - there is nothing to preview/pull without one).
+ */
+async function getEntryPullStatus(context: DryRouteContext): Promise<Response> {
+  const loaded = await loadGithubSyncConfig(context);
+  if ("error" in loaded) return jsonResponse({ configured: false, reason: loaded.error });
+  return jsonResponse({ configured: true, repo: loaded.config.repo, branch: loaded.config.branch, provider: loaded.config.provider });
+}
+
+/**
+ * `POST {path}/api/backup/entries` - `{ mode: "plan" | "apply" }`. The
+ * reverse of the whole-database restore above: instead of a `.sql` file the
+ * admin uploads, this pulls whatever `content/entries/**` already holds at
+ * this branch's git HEAD (`pullEntriesFromGit`) and writes it into the
+ * current install's live database - e.g. hydrating a freshly cloned branch's
+ * local sqlite, which never received those rows. `mode: "plan"` (the
+ * default) writes nothing and just reports how many entries would be pulled.
+ */
+async function postEntryPull(context: DryRouteContext): Promise<Response> {
+  const loaded = await loadGithubSyncConfig(context);
+  if ("error" in loaded) return jsonResponse({ error: "git_not_configured", message: loaded.error }, 412);
+  const body = (await context.request.json().catch(() => ({}))) as { mode?: unknown };
+  const mode = body.mode === "apply" ? "apply" : "plan";
+  const outcome = await pullEntriesFromGit(context, loaded.config, { mode });
+  if (!outcome.ok) return jsonResponse({ error: "git_error", message: outcome.reason }, 502);
+  if (content.engine === "D1" && outcome.result.applied) await invalidateSchemaCache(context);
+  return jsonResponse({ mode, ...outcome.result });
+}
+
 export const GET: DryRouteHandler = async (context) => {
   const denied = await requireSuperAdmin(context, "Only Super Admin can back up the database.");
   if (denied) return denied;
+  if ((context.params.slug ?? "") === "entries") return getEntryPullStatus(context);
   try {
     const handle = await resolveRawHandle(context);
     const document = await createStorageSchemaDocumentStore(context).read();
@@ -122,6 +157,7 @@ export const GET: DryRouteHandler = async (context) => {
 export const POST: DryRouteHandler = async (context) => {
   const denied = await requireSuperAdmin(context, "Only Super Admin can restore the database.");
   if (denied) return denied;
+  if ((context.params.slug ?? "") === "entries") return postEntryPull(context);
   try {
     const form = await context.request.formData();
     const file = form.get("file");

@@ -15,6 +15,7 @@
 import { createContentEngineAdapter } from "../src/content-types/engine/index.js";
 import { generateDryTypes } from "../src/content-types/codegen.js";
 import { writeGeneratedDryTypes } from "../src/content-types/types-cache.js";
+import { createStorageSchemaDocumentStore } from "../src/server/schema-document-storage.js";
 import { content } from "../src/server/config.js";
 
 if (content.engine === "D1") {
@@ -22,7 +23,11 @@ if (content.engine === "D1") {
   process.exit(0);
 }
 
-const adapter = createContentEngineAdapter(content);
+// Without a real document store this defaults to an in-memory (empty) one,
+// which makes `listContentTypes()` fall back to importing the long-gone
+// `metadata` table (`sqlite.ts`'s `readLegacyMetadata`) - just the seeded
+// system types, silently dropping every real content type.
+const adapter = createContentEngineAdapter(content, {}, createStorageSchemaDocumentStore({ env: {} }));
 const allTypes = await adapter.listContentTypes();
 const output = generateDryTypes(allTypes);
 await writeGeneratedDryTypes(output, { env: {} });

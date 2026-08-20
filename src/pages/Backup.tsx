@@ -1,10 +1,17 @@
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
-import { ArchiveIcon, UploadIcon } from "../components/icons/index.js";
-import { downloadBackup, restoreBackup } from "../page-components/backup-http-api.js";
+import { ArchiveIcon, ArrowDownIcon, UploadIcon } from "../components/icons/index.js";
+import {
+  downloadBackup,
+  restoreBackup,
+  getEntryPullStatus,
+  pullEntriesFromGit,
+  type EntryPullResult,
+  type EntryPullStatus,
+} from "../page-components/backup-http-api.js";
 import {
   SCHEMA_DOCUMENT_EXPORT_ENDPOINT,
   importSchemaDocument,
@@ -18,6 +25,7 @@ import { useDocumentTitle } from "./page-common.js";
 const RESTORE_CONFIRM_PHRASE = "RESTORE";
 const DB_ENDPOINT = `${path}/api/backup`;
 const STORAGE_ENDPOINT = `${path}/api/storage-backup`;
+const ENTRIES_ENDPOINT = `${path}/api/backup/entries`;
 
 interface PendingRestore {
   kind: "database" | "storage";
@@ -59,6 +67,15 @@ export default function Backup() {
   const [pendingRestore, setPendingRestore] = useState<PendingRestore | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [restoring, setRestoring] = useState(false);
+
+  const [entryPullStatus, setEntryPullStatus] = useState<EntryPullStatus | null>(null);
+  const [planningPull, setPlanningPull] = useState(false);
+  const [pullPlan, setPullPlan] = useState<EntryPullResult | null>(null);
+  const [pulling, setPulling] = useState(false);
+
+  useEffect(() => {
+    void getEntryPullStatus(ENTRIES_ENDPOINT).then(setEntryPullStatus);
+  }, []);
 
   async function handleDownloadDb() {
     setDownloadingDb(true);
@@ -188,6 +205,41 @@ export default function Backup() {
     }
   }
 
+  async function handlePlanEntryPull() {
+    setPlanningPull(true);
+    try {
+      const plan = await pullEntriesFromGit(ENTRIES_ENDPOINT, "plan");
+      if (plan.reason) {
+        toast.add({ type: "error", title: "Couldn't read git", description: plan.reason });
+        return;
+      }
+      setPullPlan(plan);
+    } finally {
+      setPlanningPull(false);
+    }
+  }
+
+  async function handleConfirmEntryPull() {
+    setPulling(true);
+    try {
+      const result = await pullEntriesFromGit(ENTRIES_ENDPOINT, "apply");
+      if (result.reason) {
+        toast.add({ type: "error", title: "Pull failed", description: result.reason });
+        return;
+      }
+      setPullPlan(null);
+      toast.add({
+        type: "success",
+        title: `${result.restored} entr${result.restored === 1 ? "y" : "ies"} pulled from git`,
+        description: result.errors.length > 0 ? `${result.errors.length} failed - see console.` : "Reloading…",
+      });
+      if (result.errors.length > 0) console.error("[drycms] entry pull errors", result.errors);
+      window.setTimeout(() => window.location.reload(), 1200);
+    } finally {
+      setPulling(false);
+    }
+  }
+
   if (!authState.value.user?.isSuperAdmin) {
     return <span class="error">You don't have permission to manage backups.</span>;
   }
@@ -265,6 +317,64 @@ export default function Backup() {
           </button>
         </div>
       </section>
+
+      <section class="card">
+        <header>
+          <h2>Entries</h2>
+          <p>
+            Pull every content entry git already tracks (<code>content/entries/**</code>, mirrored there on every save) from
+            this branch's git history straight into the current database - useful after cloning a branch whose local database
+            never saw those rows. Only entries git has a mirror file for are touched; nothing already in the database is
+            deleted.
+          </p>
+        </header>
+        <div class="under row" style={{ flexWrap: "wrap", gap: "0.75rem" }}>
+          <button
+            type="button"
+            disabled={!entryPullStatus?.configured || planningPull}
+            aria-busy={planningPull || undefined}
+            onClick={() => void handlePlanEntryPull()}
+          >
+            <ArrowDownIcon /> Pull from git...
+          </button>
+        </div>
+        {entryPullStatus && !entryPullStatus.configured && (
+          <p class="hint">
+            No git repository is connected on this branch{entryPullStatus.reason ? ` (${entryPullStatus.reason})` : ""} - connect one
+            under Settings &rarr; Git Sync first.
+          </p>
+        )}
+      </section>
+
+      <ConfirmDialog
+        open={!!pullPlan}
+        title="Pull entries from git"
+        busy={pulling}
+        confirmLabel="Pull entries"
+        confirmDisabled={!pullPlan || pullPlan.restored === 0}
+        onConfirm={() => void handleConfirmEntryPull()}
+        onCancel={() => {
+          if (!pulling) setPullPlan(null);
+        }}
+        message={
+          <div class="stack" style={{ gap: "0.75rem" }}>
+            {pullPlan && pullPlan.restored > 0 ? (
+              <p>
+                This writes <strong>{pullPlan.restored}</strong> entr{pullPlan.restored === 1 ? "y" : "ies"} from git into the
+                current database, overwriting any matching row already there with what git has.
+              </p>
+            ) : (
+              <p>Git has no mirrored entries to pull - there's nothing to do.</p>
+            )}
+            {pullPlan && pullPlan.skipped.length > 0 && (
+              <p class="hint">
+                {pullPlan.skipped.length} mirrored entr{pullPlan.skipped.length === 1 ? "y" : "ies"} skipped - their content type
+                doesn't exist in the current schema.
+              </p>
+            )}
+          </div>
+        }
+      />
 
       <ConfirmDialog
         open={!!pendingTypeImport}

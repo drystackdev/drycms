@@ -8,7 +8,7 @@ import { readPagesSourceTree } from "./routes/pages-source-github-sync.js";
 import { regenerateTypesCache, runBatch } from "./routes/content-types.js";
 import { createStorageSchemaDocumentStore } from "./schema-document-storage.js";
 import { SCHEMA_DOCUMENT_PATH, parseSchemaDocument, serializeSchemaDocument } from "../content-types/schema-document.js";
-import { isGitMirrorEligible } from "../content-types/git-mirror.js";
+import { isGitMirrorEligible, isGitMirrorEligibleEntry } from "../content-types/git-mirror.js";
 import { PAGES_SOURCE_ROOTS } from "./app-router/source-roots.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { EntryValue } from "../content-types/engine/entry-codec.js";
@@ -110,6 +110,74 @@ export type RestoreOutcome = { ok: true; result: RestoreResult } | { ok: false; 
 interface RestoreOptions {
   mode: "plan" | "apply";
   author: { name: string; email: string };
+}
+
+export interface EntryPullResult {
+  /** Mirrored entries written into this install's live database. */
+  restored: number;
+  /** Mirrored entries skipped because their content type doesn't exist (or
+   * isn't git-mirror-eligible) in the current schema, each as `"type#id"`. */
+  skipped: string[];
+  applied: boolean;
+  errors: string[];
+}
+
+export type EntryPullOutcome = { ok: true; result: EntryPullResult } | { ok: false; reason: string };
+
+/**
+ * The reverse direction of `content-history.ts`'s own mirror write: pulls
+ * every `content/entries/**` file at the branch's current HEAD and writes it
+ * into THIS install's live database (`Backup.tsx`'s "Entry" section) - e.g.
+ * hydrating a freshly cloned branch whose local sqlite has never seen these
+ * rows, since the mirror otherwise only ever flows D1 -> git.
+ *
+ * Deliberately narrower than `restoreCommit` above: no page source, no
+ * schema, no target commit to diff against - just HEAD's mirror files
+ * written straight into the matching live rows. Only entries git already has
+ * a mirror file for are touched; nothing is deleted, since the mirror is a
+ * record of past changes, not a full dump of every row.
+ */
+export async function pullEntriesFromGit(
+  context: DryRouteContext,
+  config: GitRepoConfig,
+  options: { mode: "plan" | "apply" },
+): Promise<EntryPullOutcome> {
+  const head = await pullRepositorySnapshot(config);
+  if (!head.ok) return { ok: false, reason: head.reason };
+
+  const { schema: schemaAdapter, entries: entryAdapter } = getContentAdapters(context);
+  const allTypes = await schemaAdapter.listContentTypes();
+  const typeByName = new Map(allTypes.filter(isGitMirrorEligible).map((type) => [type.name, type]));
+
+  const skipped: string[] = [];
+  const toRestore = mirroredEntries(head.snapshot.contentByPath).filter((entry) => {
+    if (typeByName.has(entry.typeName)) return true;
+    skipped.push(`${entry.typeName}#${entry.entryId ?? "singleton"}`);
+    return false;
+  });
+
+  if (options.mode === "plan") {
+    return { ok: true, result: { restored: toRestore.length, skipped, applied: false, errors: [] } };
+  }
+
+  const errors: string[] = [];
+  let restored = 0;
+  for (const entry of toRestore) {
+    const type = typeByName.get(entry.typeName)!;
+    try {
+      const value = JSON.parse(entry.content) as EntryValue;
+      // Defense in depth, same reasoning as `restoreCommit` above - the
+      // write side never mirrors the Super Admin role row, but a pull must
+      // not trust that blindly.
+      if (!isGitMirrorEligibleEntry(type, value)) continue;
+      if (entry.entryId === null) await entryAdapter.saveSingletonEntry(type, allTypes, value);
+      else await entryAdapter.restoreEntry(type, allTypes, entry.entryId, value);
+      restored++;
+    } catch (error) {
+      errors.push(`${entry.typeName}#${entry.entryId ?? "singleton"}: ${error instanceof Error ? error.message : "could not be restored."}`);
+    }
+  }
+  return { ok: true, result: { restored, skipped, applied: true, errors } };
 }
 
 export async function restoreCommit(
@@ -253,6 +321,10 @@ export async function restoreCommit(
     if (!type) continue;
     try {
       const value = JSON.parse(entry.content) as EntryValue;
+      // Defense in depth: a legacy or hand-edited mirror file could still
+      // carry a Super Admin role row even though the write side no longer
+      // ever produces one - never let a restore write it back.
+      if (!isGitMirrorEligibleEntry(type, value)) continue;
       if (entry.entryId === null) await entryAdapter.saveSingletonEntry(type, allTypes, value);
       else await entryAdapter.restoreEntry(type, allTypes, entry.entryId, value);
     } catch (error) {

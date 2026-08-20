@@ -128,7 +128,12 @@ try {
     const { createContentEngineAdapter } = await vite.ssrLoadModule("/src/content-types/engine/index.ts");
     const { generateDryTypes } = await vite.ssrLoadModule("/src/content-types/codegen.ts");
     const { writeGeneratedDryTypes } = await vite.ssrLoadModule("/src/content-types/types-cache.ts");
-    const adapter = createContentEngineAdapter(content);
+    const { createStorageSchemaDocumentStore } = await vite.ssrLoadModule("/src/server/schema-document-storage.ts");
+    // Without a real document store this defaults to an in-memory (empty)
+    // one, which makes `listContentTypes()` fall back to importing the
+    // long-gone `metadata` table (`sqlite.ts`'s `readLegacyMetadata`) - just
+    // the seeded system types, silently dropping every real content type.
+    const adapter = createContentEngineAdapter(content, {}, createStorageSchemaDocumentStore({ env: {} }));
     const allTypes = await adapter.listContentTypes();
     await writeGeneratedDryTypes(generateDryTypes(allTypes), { env: {} });
     console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types)`);

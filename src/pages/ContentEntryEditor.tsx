@@ -47,7 +47,7 @@ import {
   loadEntryDraft,
   saveEntryDraft,
 } from "../content-types/entry-draft-store.js";
-import { isGitMirrorEligible } from "../content-types/git-mirror.js";
+import { isGitMirrorEligible, isGitMirrorEligibleEntry } from "../content-types/git-mirror.js";
 import { syncEntryDraftToGit } from "../content-types/entry-git-sync.js";
 import EntryPreviewDialog from "./content-entry-editor/EntryPreviewDialog.js";
 import {
@@ -261,7 +261,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // brand-new entry (`isNew`) has no history to show yet, and a type
   // `git-mirror.ts` excludes was never synced in the first place.
   const historyTarget: ContentHistoryTarget | null =
-    !type || isNew || !isGitMirrorEligible(type)
+    !type || isNew || !isGitMirrorEligible(type) || (value && !isGitMirrorEligibleEntry(type, value))
       ? null
       : isSingleton
         ? { type: type.name }
@@ -630,15 +630,17 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             }
           : current;
 
-      // A type `git-mirror.ts` excludes (`role`/`user`/`githubSync`/...)
-      // never syncs - the draft discards immediately, same as before this
-      // feature existed. Otherwise the draft is kept (not discarded) until
-      // the git commit itself confirms - see `syncEntryDraftToGit`'s own
-      // doc comment (`plans/history-content.md` decision #1). `priorValue`
-      // is read from `originalValue` (this render's closure, unaffected by
-      // this function's own later `setInitialSnapshot` calls) - what a
-      // "reset" rolls back TO if the sync never confirms.
-      const gitEligible = isGitMirrorEligible(type);
+      // A type `git-mirror.ts` excludes (`user`/`githubSync`/`aiKey`) never
+      // syncs, and neither does the one row `git-mirror.ts` excludes WITHIN
+      // an otherwise-eligible type (the seeded Super Admin `role`) - the
+      // draft discards immediately, same as before this feature existed.
+      // Otherwise the draft is kept (not discarded) until the git commit
+      // itself confirms - see `syncEntryDraftToGit`'s own doc comment
+      // (`plans/history-content.md` decision #1). `priorValue` is read from
+      // `originalValue` (this render's closure, unaffected by this
+      // function's own later `setInitialSnapshot` calls) - what a "reset"
+      // rolls back TO if the sync never confirms.
+      const gitEligible = isGitMirrorEligible(type) && isGitMirrorEligibleEntry(type, payload as EntryValue);
       const priorValue = originalValue as EntryValue;
 
       if (isSingleton) {
@@ -812,7 +814,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       // `handleResetAll`'s own `discardEntryDraft` call above). Git-eligible
       // types still mirror the deletion (fire-and-forget, same as a save -
       // `plans/history-content.md` decision #1) before discarding.
-      if (isGitMirrorEligible(type) && priorValue) {
+      if (isGitMirrorEligible(type) && priorValue && isGitMirrorEligibleEntry(type, priorValue)) {
         syncEntryDraftToGit({
           adminPath: path,
           typeSlug,
