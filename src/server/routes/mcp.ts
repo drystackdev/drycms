@@ -46,6 +46,8 @@ import type { MagicWriteFetchTurn, MagicWriteRawFields, MagicWriteRawValue } fro
 import { requirePermission } from "../admin-access.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { normalizeStoragePath } from "../../storage/path.js";
+import { StorageError } from "../../storage/types.js";
+import { isCoreStyleFilePath } from "../app-router/source-roots.js";
 import { requirePageSourceFileName } from "./pages-source.js";
 import { validateContentTypeDefinition, NamingError } from "../../content-types/naming.js";
 import { randomUUID } from "../../lib/uuid.js";
@@ -213,6 +215,17 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "The page.tsx file's path, e.g. \"pages/about/page.tsx\" or \"pages/page.tsx\"." } },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_page_source",
+    description:
+      "Delete one page-source file, or a folder and everything under it (recursive), from storage. Deletes immediately - there is no undo and no draft/review step. Built-in style files (globals.css/theme.css/base.css under styles/) can't be deleted, same as in the Page Editor's own file-tree UI.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "The file or folder path to delete, e.g. \"pages/old-page\" or \"component/Unused.tsx\"." } },
       required: ["path"],
       additionalProperties: false,
     },
@@ -653,6 +666,29 @@ async function runWritePageSourceTool(context: DryRouteContext, rawPath: string 
   }
 }
 
+/** Deletes a file OR a folder - same single-method shape `pages-source.ts`'s
+ * own `DELETE` route uses (`adapter.remove` is recursive for folders), so
+ * this one tool covers both rather than splitting into two. Guards the same
+ * root/core-style-file cases that route does, so an MCP client can't delete
+ * anything the Page Builder's own file-tree UI would refuse to. */
+async function runDeletePageSourceTool(context: DryRouteContext, rawPath: string | undefined): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  if (!rawPath) return { text: "\"path\" is required.", isError: true };
+  const path = normalizeStoragePath(rawPath);
+  try {
+    if (!path) throw new StorageError("invalid_path", "Cannot delete the root.");
+    if (isCoreStyleFilePath(path)) throw new StorageError("protected", `"${path}" is a built-in file and can't be deleted.`);
+    const adapter = getStorageAdapter(pagesSourceStorage, context);
+    const existing = await adapter.stat(path);
+    const kind = existing?.kind === "folder" ? "folder" : "file";
+    await adapter.remove(path);
+    return { text: `Deleted ${kind} "${path}"${kind === "folder" ? " and everything under it" : ""}.` };
+  } catch (error) {
+    return { text: `Could not delete "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
+  }
+}
+
 const MAX_PREVIEW_HTML_CHARS = 40_000;
 
 /** Loads every `.tsx`/`.ts` file in `pagesSourceStorage` (`pages/`/
@@ -1027,6 +1063,9 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
       break;
     case "preview_page_source":
       outcome = await runPreviewPageSourceTool(context, stringArg(args, "path"));
+      break;
+    case "delete_page_source":
+      outcome = await runDeletePageSourceTool(context, stringArg(args, "path"));
       break;
     case "read_dry_types":
       outcome = await runReadDryTypesTool(context);
