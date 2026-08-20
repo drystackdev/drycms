@@ -33,11 +33,22 @@ import { fetchJson, loadAllPagesSource, type AssetHrefs } from "./pages-source-h
  * silent on purpose is "no published page depends on this resource yet" -
  * the common case for most saves, not something worth a toast every time.
  */
+/** Fired once per page as `rebuildAffectedPages` reaches it - see
+ * `initial-publish.ts`'s identical `PublishPageProgress`, which this mirrors
+ * rather than imports (kept as two small local types instead of a shared
+ * module, since the two build loops aren't otherwise coupled). */
+export interface RebuildPageProgress {
+  pathname: string;
+  completed: number;
+  total: number;
+}
+
 export async function rebuildAffectedPages(
   adminPath: string,
   typeName: string,
   allTypes: ContentTypeDefinition[],
   onStatus?: (message: string) => void,
+  onProgress?: (progress: RebuildPageProgress) => void,
 ): Promise<void> {
   try {
     const response = await fetch(`${adminPath}/api/pages-build?byResource=${encodeURIComponent(typeName)}`, { credentials: "same-origin" });
@@ -62,9 +73,10 @@ export async function rebuildAffectedPages(
     const { targets } = await resolveAllPageTargets(sourceByPath, allTypes, `${adminPath}/api/dry-http`);
     const origin = window.location.origin;
     let built = 0;
-    for (const pathname of paths) {
+    for (const [index, pathname] of paths.entries()) {
       const target = targets.get(pathname);
       if (!target) continue;
+      onProgress?.({ pathname, completed: index, total: paths.length });
       const result = await buildPage({
         pathname,
         origin,

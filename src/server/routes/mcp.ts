@@ -301,7 +301,7 @@ const TOOLS: ToolDefinition[] = [
         definitionJson: {
           type: "string",
           description:
-            "The full content type definition as a JSON string: at least \"name\", \"label\", \"kind\" (\"collection\"|\"singleton\"|\"component\"), and \"fields\" (an array, may be empty). Omit \"id\"/\"version\" - they're assigned/looked up server-side. Each field needs \"id\", \"name\", \"label\", \"type\", and - for a \"component\" field - \"config.componentId\": that component's id, OR (since you won't know a sibling proposal's id yet) its \"name\" - resolved automatically against both the live schema and your own other pending proposals. Propose the component itself first. This tool's success message echoes back the id it assigned; prefer that id once you have it. See docs/ARCHITECTURE.md (via read_doc) for the full field model.",
+            "The full content type definition as a JSON string: at least \"name\", \"label\", \"kind\" (\"collection\"|\"singleton\"|\"component\"), and \"fields\" (an array, may be empty). Omit \"id\"/\"version\" on the definition itself - they're assigned/looked up server-side by matching \"name\". Each field needs \"name\", \"label\", \"type\", and - for a \"component\" field - \"config.componentId\": that component's id, OR (since you won't know a sibling proposal's id yet) its \"name\" - resolved automatically against both the live schema and your own other pending proposals. Propose the component itself first. Omit each field's own \"id\" too, UNLESS you're echoing one back from a previous propose_content_type success message (e.g. re-proposing a still-pending draft) - when updating an EXISTING content type, leaving \"id\" unset lets an unchanged/renamed-in-place field be matched to its real existing field by \"name\" and keep its data; only invent an id if you deliberately want a fresh, empty field. There is no tool that can look up an existing field's real id directly, so never guess one. See docs/ARCHITECTURE.md (via read_doc) for the full field model.",
         },
       },
       required: ["definitionJson"],
@@ -1065,7 +1065,11 @@ function resolveComponentFieldConfig(field: RawRecord, config: RawRecord, compon
  * reading `.unique` off an undefined `validation`) instead of a clear
  * message the AI could act on immediately. Collects every problem rather
  * than stopping at the first, so one retry can fix them all. */
-function normalizeProposedFields(rawFields: unknown[], componentsByRef: Map<string, string>): { fields: FieldDefinition[]; errors: string[] } {
+function normalizeProposedFields(
+  rawFields: unknown[],
+  componentsByRef: Map<string, string>,
+  existingFieldsByName: Map<string, FieldDefinition>,
+): { fields: FieldDefinition[]; errors: string[] } {
   const errors: string[] = [];
   const fields = rawFields.map((raw, index): FieldDefinition => {
     const field = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as RawRecord;
@@ -1081,8 +1085,22 @@ function normalizeProposedFields(rawFields: unknown[], componentsByRef: Map<stri
       if (error) errors.push(`Field "${name}": ${error}`);
     }
 
+    // `migration.ts`'s `diffColumns`/`draft-diff.ts`'s `diffContentType` key
+    // field identity by `id`, never `name`. No MCP tool exposes an existing
+    // field's real internal id (`read_dry_types`/`list_content_types` only
+    // ever show name/type - see this file's own header comment on why), so
+    // an AI re-proposing an update naturally omits `id` even for a field
+    // it isn't touching. Falling back to `randomUUID()` in that case would
+    // make "Apply and build" read the untouched field as "drop the old
+    // column, add a new one" and silently lose every row's value for it.
+    // Resolve the real id the same way the content type's own id is resolved
+    // just below (by matching name against the live schema) so the AI never
+    // has to guess it - only a genuine rename (name change) can't be saved
+    // losslessly this way, which is unavoidable without the AI knowing the id.
+    const matchedId = firstString(field.id) ?? existingFieldsByName.get(name.toLowerCase())?.id;
+
     return {
-      id: firstString(field.id) ?? randomUUID(),
+      id: matchedId ?? randomUUID(),
       name,
       label: firstString(field.label) ?? name,
       description: firstString(field.description),
@@ -1140,13 +1158,15 @@ async function runProposeContentTypeTool(context: DryRouteContext, allTypes: Con
     componentsByRef.set(type.name.toLowerCase(), type.id);
   }
 
-  const { fields, errors } = normalizeProposedFields(parsed.fields, componentsByRef);
+  const existing = allTypes.find((type) => type.name === parsed.name && type.kind === parsed.kind);
+  const isNew = !existing;
+  const existingFieldsByName = new Map((existing?.fields ?? []).map((field) => [field.name.toLowerCase(), field]));
+
+  const { fields, errors } = normalizeProposedFields(parsed.fields, componentsByRef, existingFieldsByName);
   if (errors.length > 0) {
     return { text: `Invalid content type: ${errors.join(" ")}`, isError: true };
   }
 
-  const existing = allTypes.find((type) => type.name === parsed.name && type.kind === parsed.kind);
-  const isNew = !existing;
   const definition: ContentTypeDefinition = {
     ...parsed,
     fields,

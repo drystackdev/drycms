@@ -36,7 +36,7 @@ import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { isGitMirrorEligible } from "../content-types/git-mirror.js";
 import { syncEntryDraftToGit } from "../content-types/entry-git-sync.js";
 import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
-import { publishPagesAffectedBySource } from "../page-components/initial-publish.js";
+import { publishAllPages, publishPagesAffectedBySource, publishPagesForEntryPaths, type PublishPageProgress } from "../page-components/initial-publish.js";
 import { gitState, refreshGitStatus } from "../page-components/git/git-state.js";
 import { getHistoryFile, getHistoryTree, type HistoryCommit } from "../page-components/git/history-http-api.js";
 import HistoryDialog from "./page-components/page-builder/HistoryDialog.js";
@@ -963,14 +963,28 @@ export default function StandalonePreview() {
         // source-path lookup is persisted server-side, publishing all targets
         // is the safe dependency-complete result for a source change.
         setSaveProgress({ percent: 80, label: "Building pages affected by code…" });
-        const result = await publishPagesAffectedBySource(path, types, codePaths, (message) => setSaveProgress({ percent: 90, label: message }));
+        const result = await publishPagesAffectedBySource(
+          path, types, codePaths,
+          (message) => setSaveProgress({ percent: 90, label: message }),
+          ({ pathname, completed, total }) => setSaveProgress({
+            percent: 80 + Math.round((completed / Math.max(total, 1)) * 10),
+            label: `Building ${pathname}… (${completed + 1}/${total})`,
+          }),
+        );
         if (result.error) throw new Error(result.error);
       } else {
         const names = [...resources];
         for (const [index, typeName] of names.entries()) {
           const percent = 70 + Math.round((index / Math.max(names.length, 1)) * 25);
           setSaveProgress({ percent, label: `Building pages that use ${typeName}…` });
-          await rebuildAffectedPages(path, typeName, types, (message) => setSaveProgress({ percent, label: message }));
+          await rebuildAffectedPages(
+            path, typeName, types,
+            (message) => setSaveProgress({ percent, label: message }),
+            ({ pathname, completed, total }) => setSaveProgress({
+              percent,
+              label: `Building ${pathname}… (${completed + 1}/${total})`,
+            }),
+          );
         }
       }
       setSaveProgress({ percent: 100, label: "Built and published" });
@@ -991,6 +1005,72 @@ export default function StandalonePreview() {
     } finally {
       setPollPaused(false);
     }
+  }
+
+  /** Runs one background build/publish action (`buildPageFile`/
+   * `buildFolderPages`/`buildAllPages` below) behind a single live-updating
+   * "loading" toast, independent of the Save dialog's own `saveProgress` -
+   * this is a direct, unrelated-to-dirty-state build triggered from the file
+   * tree's right-click menu or the "Build all" header button, so it gets its
+   * own status surface rather than borrowing the Save flow's. */
+  async function runPageBuild(
+    build: (onProgress: (progress: PublishPageProgress) => void) => Promise<{ built: number; error?: string }>,
+    busyLabel: string,
+  ) {
+    const toastId = toast.add({ type: "loading", title: busyLabel });
+    try {
+      const result = await build(({ pathname, completed, total }) =>
+        toast.update(toastId, { type: "loading", title: `Building ${pathname}… (${completed + 1}/${total})` }));
+      if (result.error) throw new Error(result.error);
+      toast.update(toastId, {
+        type: "success",
+        title: result.built > 0 ? `Built and published ${result.built} ${result.built === 1 ? "page" : "pages"}` : "No pages needed building",
+        timeout: 4000,
+      });
+    } catch (error) {
+      toast.update(toastId, { type: "error", title: "Build failed", description: error instanceof Error ? error.message : "Unknown error" });
+    }
+  }
+
+  /** Right-click "Build" on one `pages/**\/page.tsx` file - builds and
+   * publishes just the pathname(s) that file resolves to (a dynamic
+   * template can resolve to several). */
+  function buildPageFile(entryPath: string) {
+    if (!allTypes) return;
+    const types = allTypes;
+    void runPageBuild(
+      (onProgress) => publishPagesForEntryPaths(path, types, [entryPath], undefined, onProgress),
+      `Building ${entryPath}…`,
+    );
+  }
+
+  /** Right-click "Build" on a folder under `pages/` - finds every
+   * `page.tsx` nested under it and builds/publishes each. */
+  function buildFolderPages(folderPath: string) {
+    if (!allTypes || !sourceByPath) return;
+    const types = allTypes;
+    const entryPaths = Object.keys(sourceByPath).filter(
+      (candidate) =>
+        (candidate === folderPath || candidate.startsWith(`${folderPath}/`)) &&
+        /(^|\/)page\.tsx$/.test(candidate),
+    );
+    if (entryPaths.length === 0) {
+      toast.add({ type: "error", title: `No page.tsx files found in ${folderPath}/.` });
+      return;
+    }
+    void runPageBuild(
+      (onProgress) => publishPagesForEntryPaths(path, types, entryPaths, undefined, onProgress),
+      `Building ${entryPaths.length} ${entryPaths.length === 1 ? "page" : "pages"} in ${folderPath}/…`,
+    );
+  }
+
+  /** The header "Build all" button next to BubbleMenu's "+" - every
+   * resolvable target on the site (same notion of "every page" `PageBuild.tsx`'s
+   * own "Build all" uses, via the shared `resolveAllPageTargets`). */
+  function buildAllPages() {
+    if (!allTypes) return;
+    const types = allTypes;
+    void runPageBuild((onProgress) => publishAllPages(path, types, undefined, onProgress), "Building all pages…");
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
@@ -1070,6 +1150,9 @@ export default function StandalonePreview() {
           onCreateFile={handleCreateFile}
           onRenameFile={handleRenameFile}
           onDeleteFile={handleDeleteFile}
+          onBuildFile={buildPageFile}
+          onBuildFolder={buildFolderPages}
+          onBuildAll={buildAllPages}
           onClose={() => setBubbleRoot(null)}
         />
       )}

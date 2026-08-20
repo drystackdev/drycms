@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { FileEntry } from "../../../storage/entry-types.js";
 import { buildComponentTree, type ComponentTreeNode } from "../../../page-components/tree.js";
 import { FolderBaseIcon, FolderBaseOpenIcon, fileIconForName } from "../file-type-icons.js";
-import { RenameIcon, TrashIcon } from "../../../components/icons/index.js";
+import { RenameIcon, TrashIcon, UploadIcon } from "../../../components/icons/index.js";
 import ContextMenu from "../../../components/ContextMenu.js";
 import type { PopoverMenuEntry } from "../../../components/Popover.js";
 import { PAGES_ROOT, STYLES_ROOT, MD_ROOT } from "../../../server/app-router/source-roots.js";
@@ -21,6 +21,12 @@ export interface BubbleFileTreeProps {
   /** `false` hides "Delete" entirely for that path (built-in style files,
    * which storage refuses to delete anyway). */
   canDelete: (path: string) => boolean;
+  /** Right-click "Build" on a `page.tsx` file - only offered when
+   * `activeRoot` is the pages root (see `rootOfPath`/`PAGES_ROOT` below),
+   * since nothing else under `component/`/`styles/`/`md/` is buildable. */
+  onBuildFile?: (entryPath: string) => void;
+  /** Right-click "Build all pages" on a folder - same root gate as above. */
+  onBuildFolder?: (folderPath: string) => void;
   /** Bumped by `BubbleMenu.tsx`'s header "+" button - a plain counter rather
    * than a callback prop, since the actual create UI (which folder it lands
    * in, the inline text box) is this component's own business, not
@@ -364,6 +370,8 @@ export default function BubbleFileTree(props: BubbleFileTreeProps) {
               onStartRename={startRename}
               onDeleteFile={props.onDeleteFile}
               canDelete={props.canDelete}
+              onBuildFile={props.onBuildFile}
+              onBuildFolder={props.onBuildFolder}
               renamingPath={renamingPath}
               onCommitRename={commitRename}
               onCancelRename={() => setRenamingPath(null)}
@@ -450,6 +458,8 @@ interface BubbleFileTreeListProps {
   onStartRename: (entry: FileEntry) => void;
   onDeleteFile: (path: string) => void;
   canDelete: (path: string) => boolean;
+  onBuildFile?: (entryPath: string) => void;
+  onBuildFolder?: (folderPath: string) => void;
   renamingPath: string | null;
   onCommitRename: (entry: FileEntry, value: string) => void;
   onCancelRename: () => void;
@@ -483,7 +493,16 @@ function BubbleFileTreeList(props: BubbleFileTreeListProps) {
         // which both expect an absolute path the way file ids already are.
         const absolutePath = isFolder ? `${props.activeRoot}/${entry.id}` : entry.id;
 
+        const inPagesRoot = props.activeRoot === PAGES_ROOT;
+        const isPageFile = !isFolder && inPagesRoot && /(^|\/)page\.tsx$/.test(entry.id);
+
         const menuItems: PopoverMenuEntry[] = [
+          ...(isPageFile && props.onBuildFile
+            ? [{ type: "item", label: "Build", icon: <UploadIcon />, onClick: () => props.onBuildFile!(entry.id) } as PopoverMenuEntry]
+            : []),
+          ...(isFolder && inPagesRoot && props.onBuildFolder
+            ? [{ type: "item", label: "Build all pages", icon: <UploadIcon />, onClick: () => props.onBuildFolder!(absolutePath) } as PopoverMenuEntry]
+            : []),
           { type: "item", label: "Rename", icon: <RenameIcon />, onClick: () => props.onStartRename(entry) },
           ...(props.canDelete(absolutePath)
             ? [{ type: "item", label: "Delete", icon: <TrashIcon />, danger: true, onClick: () => props.onDeleteFile(absolutePath) } as PopoverMenuEntry]

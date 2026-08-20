@@ -21,11 +21,30 @@ import { fetchJson, loadAllPagesSource, type AssetHrefs } from "./pages-source-h
  */
 const PUBLISH_ALL_BATCH_SIZE = 5;
 
+/** Fired once per page as `publishPages` reaches it, before that page's own
+ * build/publish work runs - lets a caller (e.g. `PageBuilder.tsx`'s save
+ * progress bar) show which page is building and how far through the list it
+ * is, instead of sitting on one static label for the whole loop. */
+export interface PublishPageProgress {
+  pathname: string;
+  completed: number;
+  total: number;
+}
+
 async function publishPages(
   adminPath: string,
   allTypes: ContentTypeDefinition[],
   onStatus?: (message: string) => void,
   changedSourcePaths?: ReadonlySet<string>,
+  onProgress?: (progress: PublishPageProgress) => void,
+  /** Restricts the run to targets whose OWN `entryPath` (the route source
+   * file a target resolved from, e.g. `pages/blog/[slug]/page.tsx`) is in
+   * this set - matched BEFORE compiling, unlike `changedSourcePaths` (which
+   * has to compile every page first to discover its dependency closure).
+   * Cheaper and more direct for "build just this entry file" callers
+   * (`publishPagesForEntryPaths`) that already know exactly which source
+   * file(s) they mean. */
+  entryPathFilter?: ReadonlySet<string>,
 ): Promise<{ built: number; error?: string }> {
   try {
     const [{ buildPage, computeSourceHash, publishBuiltPages, resolveAllPageTargets }, sourceByPath, assetHrefs] = await Promise.all([
@@ -35,7 +54,9 @@ async function publishPages(
     ]);
 
     const { targets } = await resolveAllPageTargets(sourceByPath, allTypes, `${adminPath}/api/dry-http`);
-    const pathnames = [...targets.keys()];
+    const pathnames = [...targets.keys()].filter(
+      (pathname) => !entryPathFilter || entryPathFilter.has(targets.get(pathname)!.entryPath),
+    );
     if (pathnames.length === 0) return { built: 0 };
 
     const origin = window.location.origin;
@@ -49,9 +70,10 @@ async function publishPages(
       batch = [];
     }
 
-    for (const pathname of pathnames) {
+    for (const [index, pathname] of pathnames.entries()) {
       const target = targets.get(pathname);
       if (!target) continue;
+      onProgress?.({ pathname, completed: index, total: pathnames.length });
       const result = await buildPage({
         pathname,
         origin,
@@ -90,8 +112,9 @@ export function publishAllPages(
   adminPath: string,
   allTypes: ContentTypeDefinition[],
   onStatus?: (message: string) => void,
+  onProgress?: (progress: PublishPageProgress) => void,
 ): Promise<{ built: number; error?: string }> {
-  return publishPages(adminPath, allTypes, onStatus);
+  return publishPages(adminPath, allTypes, onStatus, undefined, onProgress);
 }
 
 /** Publishes only targets whose compiled dependency closure includes one of
@@ -103,6 +126,24 @@ export function publishPagesAffectedBySource(
   allTypes: ContentTypeDefinition[],
   changedSourcePaths: readonly string[],
   onStatus?: (message: string) => void,
+  onProgress?: (progress: PublishPageProgress) => void,
 ): Promise<{ built: number; error?: string }> {
-  return publishPages(adminPath, allTypes, onStatus, new Set(changedSourcePaths));
+  return publishPages(adminPath, allTypes, onStatus, new Set(changedSourcePaths), onProgress);
+}
+
+/** Publishes only the targets whose own route-entry file (a `page.tsx`,
+ * `404.tsx`/`500.tsx`) is one of `entryPaths` - the direct "build just this
+ * page" action (`BubbleFileTree.tsx`'s file/folder right-click "Build", and
+ * a folder build is just this called with every `page.tsx` found under it).
+ * A single dynamic-route template can still resolve to many pathnames (one
+ * per matching entry row), which is why this takes entry-path SOURCE files
+ * rather than pathnames directly. */
+export function publishPagesForEntryPaths(
+  adminPath: string,
+  allTypes: ContentTypeDefinition[],
+  entryPaths: readonly string[],
+  onStatus?: (message: string) => void,
+  onProgress?: (progress: PublishPageProgress) => void,
+): Promise<{ built: number; error?: string }> {
+  return publishPages(adminPath, allTypes, onStatus, undefined, onProgress, new Set(entryPaths));
 }

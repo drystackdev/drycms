@@ -170,3 +170,47 @@ describe("propose_content_type - AI-friendly component field normalization", () 
     expect(architectureField.validation).toEqual({});
   });
 });
+
+describe("propose_content_type - existing field id resolution", () => {
+  it("re-matches an unchanged/renamed-in-place field to its REAL live id by name, instead of minting a fresh one that would read as drop+add and lose data", async () => {
+    const schema = createContentEngineAdapter(content);
+    const live: ContentTypeDefinition = {
+      id: "profile-live-id",
+      kind: "collection",
+      name: "profileidtest",
+      label: "Profile Id Test",
+      fields: [
+        { id: "bio-real-id", name: "bio", label: "Bio", type: "text", config: {}, validation: {}, order: 0 },
+      ],
+      version: 0,
+    };
+    const plan = await schema.planSave(live, {});
+    const saved = await schema.applySave(live, plan);
+    expect(saved.id).toBe("profile-live-id");
+
+    // The AI has no way to know "bio-real-id" - no MCP tool exposes it - so
+    // a realistic re-proposal (adding a field, keeping "bio" as-is) omits
+    // "id" on the field it isn't touching, exactly like the malformed-shape
+    // test above omits ids the AI never had.
+    const result = await callTool({
+      name: "profileidtest",
+      label: "Profile Id Test",
+      kind: "collection",
+      fields: [
+        { name: "bio", label: "Bio", type: "text" },
+        { name: "tagline", label: "Tagline", type: "text" },
+      ],
+    });
+    expect(result.isError).toBe(false);
+    const draftId = result.text.match(/id "([^"]+)"/)?.[1];
+    expect(draftId).toBe("profile-live-id");
+
+    const draft = await pendingDraft(draftId!);
+    expect(draft).toBeTruthy();
+    const bioField = draft!.fields.find((f) => f.name === "bio");
+    expect(bioField?.id).toBe("bio-real-id");
+    const taglineField = draft!.fields.find((f) => f.name === "tagline");
+    expect(taglineField?.id).toBeTruthy();
+    expect(taglineField?.id).not.toBe("bio-real-id");
+  });
+});

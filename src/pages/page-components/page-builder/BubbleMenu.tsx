@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import { PAGES_SOURCE_ROOTS, PAGES_ROOT, COMPONENT_ROOT, STYLES_ROOT, MD_ROOT, isCoreStyleFilePath } from "../../../server/app-router/source-roots.js";
-import { PlusIcon, XIcon } from "../../../components/icons/index.js";
+import { PlusIcon, UploadIcon, XIcon } from "../../../components/icons/index.js";
 import { FolderComponentsIcon, FolderCssIcon, FolderMarkdownIcon, FolderRoutesIcon } from "../file-type-icons.js";
 import ConfirmDialog from "../../../components/ConfirmDialog.js";
 import SystemFilesPanel from "../core-styles/SystemFilesPanel.js";
@@ -44,6 +44,13 @@ export interface BubbleMenuProps {
   onCreateFile: (path: string, code: string) => Promise<void>;
   onRenameFile: (from: string, to: string) => Promise<void>;
   onDeleteFile: (path: string) => Promise<void>;
+  /** Right-click "Build" on one `pages/**\/page.tsx` file - builds and
+   * publishes just the pathname(s) it resolves to. */
+  onBuildFile: (entryPath: string) => void;
+  /** Right-click "Build" on a folder - every `page.tsx` nested under it. */
+  onBuildFolder: (folderPath: string) => void;
+  /** Header "Build all" button, next to "+" - every page on the site. */
+  onBuildAll: () => void;
   onClose: () => void;
 }
 
@@ -95,6 +102,11 @@ export default function BubbleMenu(props: BubbleMenuProps) {
           </button>
         ))}
         <span class="spacer" />
+        {props.activeRoot === PAGES_ROOT && (
+          <button type="button" class="icon ghost sm" aria-label="Build all pages" title="Build and publish every page" onClick={props.onBuildAll}>
+            <UploadIcon />
+          </button>
+        )}
         <button type="button" class="icon ghost sm" aria-label="New file" title={`New file in ${props.activeRoot}/`} onClick={() => setCreateSignal((n) => n + 1)}>
           <PlusIcon />
         </button>
@@ -120,6 +132,8 @@ export default function BubbleMenu(props: BubbleMenuProps) {
         // from offering an action that can only ever fail.
         canDelete={(path) => !isCoreStyleFilePath(path)}
         onDeleteFile={setPendingDelete}
+        onBuildFile={props.onBuildFile}
+        onBuildFolder={props.onBuildFolder}
       />
 
       <ConfirmDialog
