@@ -29,8 +29,15 @@ function runStatements(handle: SqliteHandle, statements: Statement[]): void {
 const CONTENT_TYPES_RESOURCE = "__content-types__";
 
 function getResourceVersion(handle: SqliteHandle, resource: string): number {
-  const rows = handle.all<{ version: number }>('SELECT "version" FROM "_versions" WHERE "resource" = ?;', [resource]);
-  return rows[0]?.version ?? 0;
+  // Tolerates the table not existing yet: the legacy-import path below reads
+  // this BEFORE `bootstrapDefaultContentSchema` has had a chance to create
+  // it, and "no counter yet" is exactly 0.
+  try {
+    const rows = handle.all<{ version: number }>('SELECT "version" FROM "_versions" WHERE "resource" = ?;', [resource]);
+    return rows[0]?.version ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 function setResourceVersion(handle: SqliteHandle, resource: string, version: number): void {
@@ -132,8 +139,15 @@ export function createSqliteContentEngineAdapter(
     if (bootstrapped && stored) return stored;
 
     // No document yet: either a brand-new project, or one created before the
-    // schema moved out of `metadata` - import that table's rows once.
-    let doc = stored ?? { ...emptySchemaDocument(), applied: readLegacyMetadata(handle) };
+    // schema moved out of `metadata` - import that table's rows once. The
+    // revision continues from the old `_versions` counter rather than
+    // restarting at 0, so a client holding a cached data-version from before
+    // the move can never mistake a newer schema for one it already has.
+    let doc = stored ?? {
+      ...emptySchemaDocument(),
+      revision: getResourceVersion(handle, CONTENT_TYPES_RESOURCE),
+      applied: readLegacyMetadata(handle),
+    };
     const seeded = bootstrapDefaultContentSchema(handle, new Set(doc.applied.map((type) => type.name.toLowerCase())));
     if (seeded.length > 0 || !stored) {
       for (const definition of seeded) doc = withAppliedType(doc, definition);

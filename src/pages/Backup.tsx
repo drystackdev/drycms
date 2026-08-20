@@ -5,6 +5,11 @@ import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
 import { ArchiveIcon, UploadIcon } from "../components/icons/index.js";
 import { downloadBackup, restoreBackup } from "../page-components/backup-http-api.js";
+import {
+  SCHEMA_DOCUMENT_EXPORT_ENDPOINT,
+  importSchemaDocument,
+} from "../content-types/schema-document-http-api.js";
+import { hydrateContentTypeDraftIndex } from "../content-types/draft-store.js";
 import { downloadStorageBackup, restoreStorageBackup } from "../page-components/storage-backup-http-api.js";
 import { authState } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -41,14 +46,26 @@ function triggerDownload(blob: Blob, filename: string): void {
  *   for why it's streamed instead of built in memory.
  * Both restores are a full replace, not a merge, and both require typing
  * "RESTORE" into `ConfirmDialog` before the destructive action enables.
+ *
+ * Plus a third, deliberately NON-destructive pair for the content-type
+ * schema alone (`routes/content-type-document.ts`): `content/types.json`
+ * downloads as-is, and an uploaded file is STAGED as drafts rather than
+ * applied - the real migration still goes through Content Types -> "Apply
+ * and build", which dry-runs it and reports destructive changes first. That
+ * is what makes it usable for moving a schema between projects, where a
+ * blind table replace would be exactly the wrong thing.
  */
 export default function Backup() {
   useDocumentTitle("Backup");
   const dbFileInputRef = useRef<HTMLInputElement>(null);
   const storageFileInputRef = useRef<HTMLInputElement>(null);
+  const typesFileInputRef = useRef<HTMLInputElement>(null);
 
   const [downloadingDb, setDownloadingDb] = useState(false);
   const [downloadingStorage, setDownloadingStorage] = useState(false);
+  const [downloadingTypes, setDownloadingTypes] = useState(false);
+  const [importingTypes, setImportingTypes] = useState(false);
+  const [pendingTypeImport, setPendingTypeImport] = useState<File | null>(null);
   const [pendingRestore, setPendingRestore] = useState<PendingRestore | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [restoring, setRestoring] = useState(false);
@@ -80,6 +97,55 @@ export default function Backup() {
       toast.add({ type: "success", title: "Media backup downloaded." });
     } finally {
       setDownloadingStorage(false);
+    }
+  }
+
+  async function handleDownloadTypes() {
+    setDownloadingTypes(true);
+    try {
+      const result = await downloadBackup(SCHEMA_DOCUMENT_EXPORT_ENDPOINT);
+      if (!result.ok || !result.blob) {
+        toast.add({ type: "error", title: "Export failed", description: result.reason });
+        return;
+      }
+      triggerDownload(result.blob, result.filename ?? "drycms-content-types.json");
+      toast.add({ type: "success", title: "Content types exported." });
+    } finally {
+      setDownloadingTypes(false);
+    }
+  }
+
+  function pickTypeImportFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (file) setPendingTypeImport(file);
+  }
+
+  async function handleConfirmTypeImport() {
+    if (!pendingTypeImport) return;
+    setImportingTypes(true);
+    try {
+      const result = await importSchemaDocument(pendingTypeImport);
+      if (!result.ok) {
+        toast.add({ type: "error", title: "Import failed", description: result.reason });
+        return;
+      }
+      setPendingTypeImport(null);
+      const staged = (result.added?.length ?? 0) + (result.updated?.length ?? 0);
+      // The badge/list on the Content Types page reads the same draft store,
+      // so pull the new staging area in now rather than on next navigation.
+      await hydrateContentTypeDraftIndex();
+      toast.add({
+        type: staged > 0 ? "success" : "info",
+        title: staged > 0 ? `${staged} content type${staged === 1 ? "" : "s"} staged as drafts` : "Nothing to stage",
+        description:
+          staged > 0
+            ? `Open Content Types and run "Apply and build" to review and migrate. ${result.unchanged?.length ?? 0} already matched.`
+            : "Every content type in that file already matches this project.",
+      });
+    } finally {
+      setImportingTypes(false);
     }
   }
 
@@ -184,6 +250,49 @@ export default function Backup() {
           </button>
         </div>
       </section>
+
+      <section class="card">
+        <header>
+          <h2>Content types</h2>
+          <p>
+            The whole schema - every collection, singleton and component - as the single <code>content/types.json</code> file it
+            lives in. Importing one stages its types as drafts; nothing is migrated until you run "Apply and build" on the Content
+            Types page.
+          </p>
+        </header>
+        <div class="under row" style={{ flexWrap: "wrap", gap: "0.75rem" }}>
+          <button
+            type="button"
+            disabled={downloadingTypes}
+            aria-busy={downloadingTypes || undefined}
+            onClick={() => void handleDownloadTypes()}
+          >
+            <ArchiveIcon /> Download JSON
+          </button>
+          <input ref={typesFileInputRef} type="file" accept=".json,application/json" hidden onChange={pickTypeImportFile} />
+          <button type="button" class="outline" onClick={() => typesFileInputRef.current?.click()}>
+            <UploadIcon /> Import from file...
+          </button>
+        </div>
+      </section>
+
+      <ConfirmDialog
+        open={!!pendingTypeImport}
+        title="Import content types"
+        busy={importingTypes}
+        confirmLabel="Stage as drafts"
+        onConfirm={() => void handleConfirmTypeImport()}
+        onCancel={() => {
+          if (!importingTypes) setPendingTypeImport(null);
+        }}
+        message={
+          <p>
+            Every content type in <strong>{pendingTypeImport?.name}</strong> is staged as a pending draft, replacing any draft
+            already staged for the same type. No table is created, changed or dropped until you review the changes under Content
+            Types and run "Apply and build".
+          </p>
+        }
+      />
 
       <ConfirmDialog
         open={!!pendingRestore}

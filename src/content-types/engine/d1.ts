@@ -130,7 +130,12 @@ export function createD1ContentEngineAdapter(
       )
       .run();
 
-    let doc = stored ?? { ...emptySchemaDocument(), applied: await readLegacyMetadata() };
+    // Same legacy import as the sqlite adapter, including continuing the old
+    // `_versions` counter instead of restarting the revision at 0.
+    const legacyRevision = stored
+      ? 0
+      : (await db.prepare('SELECT "version" FROM "_versions" WHERE "resource" = ?;').bind(CONTENT_TYPES_RESOURCE).all<{ version: number }>()).results?.[0]?.version ?? 0;
+    let doc = stored ?? { ...emptySchemaDocument(), revision: legacyRevision, applied: await readLegacyMetadata() };
     const { statements, definitions } = pendingSeed(new Set(doc.applied.map((type) => type.name.toLowerCase())));
     await runBatch(db, statements);
     if (definitions.length > 0 || !stored) {

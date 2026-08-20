@@ -11,7 +11,7 @@ import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
-import * as contentTypeDraftsRoute from "./routes/content-type-drafts.js";
+import * as contentTypeDocumentRoute from "./routes/content-type-document.js";
 import * as aiContentTypeDraftsRoute from "./routes/ai-content-type-drafts.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
@@ -79,10 +79,11 @@ const API_ROUTES: Record<string, RouteModule> = {
   icons: iconsRoute,
   iconify: iconifyRoute,
   "content-types": contentTypesRoute,
-  // The staging half of `content/types.json` (`schema-document.ts`) - its
-  // own segment rather than a slug under `content-types`, since routing here
-  // only dispatches on the first segment and a slug there is a type id.
-  "content-type-drafts": contentTypeDraftsRoute,
+  // `content/types.json` itself (`schema-document.ts`): its staging half,
+  // plus export/import. Its own segment rather than a slug under
+  // `content-types`, since routing here only dispatches on the first segment
+  // and a slug there is already a content type id.
+  "content-type-document": contentTypeDocumentRoute,
   "ai-content-type-drafts": aiContentTypeDraftsRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,

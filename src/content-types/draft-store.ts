@@ -2,6 +2,8 @@ import { signal } from "@preact/signals";
 import type { ContentTypeDefinition } from "./types.js";
 import type { SchemaDraft } from "./schema-document.js";
 
+import { SCHEMA_DOCUMENT_ENDPOINT } from "./schema-document-http-api.js";
+
 const { path } = window.__DRY_CONFIG__;
 
 export type DraftSource = "local" | "ai";
@@ -28,7 +30,7 @@ type DraftMap = Record<string, DraftEntry>;
  * "staged changes" store behind the Content Types builder's "Apply and
  * build" flow (see `status/content-type-staged-apply.md`). Backed by the
  * `drafts` half of `content/types.json` (`schema-document.ts`) through
- * `GET`/`PUT {path}/api/content-type-drafts` - the SAME file the applied
+ * `GET`/`PUT {path}/api/content-type-document` - the SAME file the applied
  * schema lives in, so a staged change travels with the project (and is
  * committed to git by "Apply and build") instead of living in one browser
  * profile's IndexedDB, which is where this store used to keep it.
@@ -47,7 +49,7 @@ export const drafts = signal<DraftMap>({});
 
 export async function hydrateContentTypeDraftIndex(): Promise<void> {
   try {
-    const response = await fetch(`${path}/api/content-type-drafts`, { credentials: "same-origin" });
+    const response = await fetch(SCHEMA_DOCUMENT_ENDPOINT, { credentials: "same-origin" });
     if (!response.ok) return;
     const body = (await response.json()) as { drafts?: SchemaDraft[] };
     const next: DraftMap = {};
@@ -81,7 +83,7 @@ function persistDrafts(): void {
       updatedAt: Date.now(),
     }));
     try {
-      await fetch(`${path}/api/content-type-drafts`, {
+      await fetch(SCHEMA_DOCUMENT_ENDPOINT, {
         method: "PUT",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },

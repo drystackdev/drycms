@@ -130,6 +130,31 @@ draft nằm ở bản storage của cùng file đó (server), và server commit 
 đó khi "Apply and build" - vẫn đúng yêu cầu "draft vào git khi apply", không
 làm hỏng commit code.
 
+### Export / Import (thêm 2026-08-21, theo yêu cầu "thêm nút upload, backup json")
+
+- Route đổi tên `content-type-drafts` -> **`content-type-document`** (nó là
+  cả file, không chỉ drafts): `GET` (drafts), `PUT` (thay drafts),
+  `GET /export` (tải cả file JSON kèm `Content-Disposition`),
+  `POST /import` (nhận file JSON, multipart hoặc raw).
+- **Import = stage thành draft, KHÔNG restore đè.** Lý do: restore đè mà
+  không chạy migration thì bảng thật lệch với file; còn stage draft thì đi
+  đúng luồng "Apply and build" đã có (dry-run + cảnh báo destructive rồi mới
+  chạy DDL). Quy tắc: type chưa có -> draft `isNew`, `version: 0`; type đã có
+  mà khác -> draft với `version` của BẢN LIVE (version trong file bị bỏ, vì
+  nó là optimistic lock của project khác); giống hệt -> bỏ qua (báo
+  `unchanged`). Nhận cả file export đầy đủ lẫn mảng `ContentTypeDefinition[]`
+  viết tay. Import KHÔNG xoá type thừa.
+- UI: thêm card thứ 3 **"Content types"** ở trang Backup
+  (`src/pages/Backup.tsx`, Super Admin), nút "Download JSON" +
+  "Import from file..." + ConfirmDialog (không cần gõ RESTORE vì không phá
+  gì), xong thì `hydrateContentTypeDraftIndex()` để badge draft cập nhật
+  ngay. Client API: `content-types/schema-document-http-api.ts`.
+- Sửa thêm: khi import `metadata` cũ, `revision` nối tiếp từ `_versions` cũ
+  thay vì reset về 0 (tránh client giữ data-version cũ hiểu nhầm là chưa
+  đổi).
+- Test: `content-type-document.test.ts` giờ 6 test (thêm export, import 3
+  trường hợp added/updated/unchanged, mảng trần, file hỏng, slug lạ).
+
 ### Còn lại
 
 - MCP `propose_content_type` vẫn staging ở KV (`ai-content-type-drafts.ts`);
