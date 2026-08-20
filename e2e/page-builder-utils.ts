@@ -46,13 +46,14 @@ export const BUILDER_TIMEOUT = 180_000;
  * That clearing matters whenever a test opens the builder a SECOND time:
  * `PageBuilder.tsx` restores `panelMode`/`fileDialogPath` from
  * `sessionStorage`, so a `FileDialog` left open earlier re-opens over the
- * dock and swallows its clicks. It is deliberately done here (before the
+ * dock and swallows its clicks (a FRESH session opens neither - see the
+ * `code` option below). It is deliberately done here (before the
  * navigation) rather than in an `addInitScript`, which would re-run on every
  * later `page.reload()` and make the restore itself untestable. A brand-new
  * Playwright context starts with empty `sessionStorage` anyway - `storageState`
  * carries cookies and localStorage only.
  */
-export async function openBuilder(page: Page, pathname = "/"): Promise<void> {
+export async function openBuilder(page: Page, pathname = "/", options: { code?: boolean } = {}): Promise<void> {
   if (page.url().startsWith("http")) {
     await page
       .evaluate(() => {
@@ -66,6 +67,14 @@ export async function openBuilder(page: Page, pathname = "/"): Promise<void> {
   }
   await page.goto(`/dry/page-builder?path=${encodeURIComponent(pathname)}`);
   await expect(page.locator(".dock")).toBeVisible({ timeout: 60_000 });
+  // Entering the builder now shows the dock ONLY - the code editor used to
+  // open itself on a fresh session and no longer does. Most specs here are
+  // about editing, so they still want it open; `{ code: false }` is for the
+  // ones asserting the entry state itself.
+  if (options.code !== false) {
+    await page.locator(".dock").getByRole("button", { name: "Code editor" }).click();
+    await expect(page.locator(".page-builder-code-panel")).toBeVisible();
+  }
 }
 
 export function dock(page: Page): Locator {

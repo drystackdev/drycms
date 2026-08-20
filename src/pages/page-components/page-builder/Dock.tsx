@@ -45,6 +45,11 @@ export interface DockProps {
  * can grow a mutation that adds content but can't shrink one that removes it
  * (e.g. the save badge disappearing entirely). "auto" always yields the true
  * content-fit size in either direction.
+ *
+ * The FIRST run animates too: the dock mounts only once Page Builder's
+ * preview is ready, replacing the single round loading button
+ * (`PageBuilder.tsx`'s `PageBuilderLoadingLayer`), so it starts at that
+ * circle's size and unrolls to its content width.
  */
 function useDockWidthAnimation(deps: readonly unknown[]) {
   const ref = useRef<HTMLDivElement>(null);
@@ -53,29 +58,57 @@ function useDockWidthAnimation(deps: readonly unknown[]) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Nothing to animate a mount FROM - just record the resting size this
-    // render settled on, for the next change to measure against.
-    if (!mounted.current) {
+    // Release the explicit px back to "auto" once the transition finishes,
+    // so the dock's resting state stays content-fit (not pinned to whatever
+    // pixel width the last animation landed on). `expanding` only exists for
+    // the duration of the mount animation below (it clips the buttons the
+    // dock is not wide enough to show yet).
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.propertyName !== "width") return;
+      el.style.width = "auto";
+      el.classList.remove("expanding");
+    };
+    el.addEventListener("transitionend", handleTransitionEnd);
+
+    let before: number;
+    if (mounted.current) {
+      before = widthRef.current ?? el.getBoundingClientRect().width;
+      el.style.width = "auto";
+    } else {
       mounted.current = true;
-      widthRef.current = el.getBoundingClientRect().width;
-      return;
+      // Reduced motion: land on the resting size directly - the dock still
+      // appears, it just doesn't unroll.
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        widthRef.current = el.getBoundingClientRect().width;
+        return () => el.removeEventListener("transitionend", handleTransitionEnd);
+      }
+      // The dock replaces `PageBuilder.tsx`'s loading circle, which is one
+      // round button - i.e. exactly as wide as the dock is tall, since the
+      // dock's own padding is symmetric around a button of that same size.
+      // Starting the width there makes the arrival read as that circle
+      // unrolling into the toolbar rather than as a swap.
+      before = el.getBoundingClientRect().height;
+      el.classList.add("expanding");
     }
-    const before = widthRef.current ?? el.getBoundingClientRect().width;
-    el.style.width = "auto";
     const after = el.getBoundingClientRect().width;
     el.style.width = `${before}px`;
     requestAnimationFrame(() => {
       el.style.width = `${after}px`;
     });
     widthRef.current = after;
-    // Release the explicit px back to "auto" once the transition finishes,
-    // so the dock's resting state stays content-fit (not pinned to whatever
-    // pixel width the last animation landed on).
-    const handleTransitionEnd = (event: TransitionEvent) => {
-      if (event.propertyName === "width") el.style.width = "auto";
+
+    // `transitionend` is the normal exit, but a change that happens to leave
+    // the width identical never fires one - and `expanding` clips the save
+    // badge for as long as it stays on. Settle it either way.
+    const settle = setTimeout(() => {
+      el.style.width = "auto";
+      el.classList.remove("expanding");
+    }, 400);
+
+    return () => {
+      clearTimeout(settle);
+      el.removeEventListener("transitionend", handleTransitionEnd);
     };
-    el.addEventListener("transitionend", handleTransitionEnd);
-    return () => el.removeEventListener("transitionend", handleTransitionEnd);
     // `deps` drives WHEN this runs; the body itself only ever reads the DOM.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

@@ -22,12 +22,10 @@
     }
   }
 
-  @keyframes page-builder-loading-overlay-in {
+  @keyframes page-builder-dock-loading-in {
     from {
       opacity: 0;
-    }
-    to {
-      opacity: 1;
+      transform: scale(0.8);
     }
   }
 
@@ -8213,23 +8211,45 @@
       border: 0;
     }
 
-    .page-builder-loading-overlay {
+    /* The entry state's ONLY busy affordance: one round button sitting
+     * exactly where `.dock` is about to expand out of it (`Dock.tsx`'s mount
+     * animation), so the published page underneath stays fully readable. Not
+     * a `.dock` itself - see `PageBuilder.tsx`'s `PageBuilderLoadingLayer`. */
+    .page-builder-dock-loading {
       position: absolute;
-      inset: 0;
+      left: 1rem;
+      bottom: 1rem;
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      padding: 0.5rem;
+      border-radius: 32px;
+      background: var(--dry-popover);
+      border: 1px solid var(--dry-border);
+      box-shadow: var(--dry-shadow-lg);
+      color: var(--dry-foreground);
+      animation: page-builder-dock-loading-in 200ms ease-out both;
+    }
+
+    .page-builder-dock-loading-button {
+      position: relative;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 0.75rem;
-      background: color-mix(in srgb, var(--dry-background) 45%, transparent);
-      color: var(--dry-foreground);
-      backdrop-filter: blur(2px);
-      animation: page-builder-loading-overlay-in 240ms ease-out both;
+      width: 2.25rem;
+      height: 2.25rem;
+      color: var(--dry-muted-foreground);
 
-      & .spinner {
-        width: 1.75rem;
-        height: 1.75rem;
-        border-width: 3px;
+      /* The spinner rides the button's own edge rather than replacing the
+       * pen icon - the icon is what identifies the circle as the same "Edit"
+       * button that got the admin here. */
+      &::after {
+        content: "";
+        position: absolute;
+        inset: -1px;
+        border: 2px solid transparent;
+        border-top-color: var(--dry-primary);
+        border-radius: 50%;
+        animation: dry-spin 700ms linear infinite;
       }
     }
 
@@ -8313,7 +8333,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       .page-builder-drawer-backdrop,
-      .page-builder-loading-overlay,
+      .page-builder-dock-loading,
       .page-builder-code-panel,
       .page-builder-vei-sheet.docked,
       .page-builder-vei-sheet.docked .page-builder-vei-panel {
@@ -8368,6 +8388,13 @@
       color: var(--dry-foreground);
       font-size: var(--dry-text-sm);
       transition: width 160ms ease;
+
+      /* Only while the mount animation runs (`Dock.tsx`): the dock is
+       * narrower than its buttons for those few frames, and the save badge
+       * that hangs outside the pill must not be clipped once it stops. */
+      &.expanding {
+        overflow: hidden;
+      }
 
       & > * {
         flex-shrink: 0;

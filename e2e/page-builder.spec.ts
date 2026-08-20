@@ -15,7 +15,7 @@ test.describe.configure({ timeout: BUILDER_TIMEOUT });
 
 test.describe("Page Builder shell", () => {
   test("renders the previewed route and every dock action", async ({ page }) => {
-    await openBuilder(page, "/");
+    await openBuilder(page, "/", { code: false });
 
     // The preview is a real build of `pages/page.tsx` through the layout, not
     // a server render: `pages/layout.tsx`'s header is only there if the
@@ -37,11 +37,18 @@ test.describe("Page Builder shell", () => {
   });
 
   test("toggles between the code panel, the visual editor and neither", async ({ page }) => {
-    await openBuilder(page, "/");
+    await openBuilder(page, "/", { code: false });
     const codeToggle = dock(page).getByRole("button", { name: "Code editor" });
     const veiToggle = dock(page).getByRole("button", { name: "Visual editing" });
 
-    // A fresh session starts on the previewed route's own page.tsx.
+    // A fresh session lands on the dock alone - no panel covers the preview
+    // until the admin asks for one.
+    await expect(codeToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(veiToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(codePanel(page)).toHaveCount(0);
+
+    // Opening it starts on the previewed route's own page.tsx.
+    await codeToggle.click();
     await expect(codeToggle).toHaveAttribute("aria-pressed", "true");
     await expect(codePanel(page)).toBeVisible();
     await expect(codePanel(page).locator(".page-builder-code-panel-path")).toHaveText("pages/page.tsx");

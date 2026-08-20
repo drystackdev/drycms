@@ -8,6 +8,7 @@ import type { DryVeiContext } from "../content-types/dry-context.js";
 import { dryVeiOverrideKey, type DryVeiOverrideMap } from "../content-types/dry-reader-http.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { EntryValue } from "../content-types/engine/entry-codec.js";
+import { EditIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { fetchJson, type AssetHrefs } from "../page-components/pages-source-http.js";
@@ -59,6 +60,19 @@ interface PersistedBuilderState {
   veiTarget: PreviewVeiClickRef | null;
 }
 
+/**
+ * What the builder shows until its own preview is ready: the published page
+ * itself, plus ONE round "edit" button where the dock is about to be.
+ *
+ * Deliberately no dimming/blurred overlay and no "Loading…" label any more -
+ * the page being edited stays fully readable, and the only thing that reads
+ * as busy is that single circle (the same pen icon
+ * `apps/edit-launcher.ts` was clicked on to get here). It is a plain circle,
+ * not a `<Dock>`, so `.dock` still means "the builder is usable" for
+ * anything waiting on it - and so the real dock's own mount animation
+ * (`Dock.tsx`, expanding from exactly this circle's size) reads as this
+ * button unrolling into the toolbar.
+ */
 function PageBuilderLoadingLayer({ pathname }: { pathname: string }) {
   return (
     <div class="page-builder-loading-layer">
@@ -69,9 +83,8 @@ function PageBuilderLoadingLayer({ pathname }: { pathname: string }) {
         aria-hidden="true"
         tabIndex={-1}
       />
-      <div class="page-builder-loading-overlay" role="status" aria-label="Loading Page Builder">
-        <span class="spinner" />
-        <span>Loading…</span>
+      <div class="page-builder-dock-loading" role="status" aria-label="Loading Page Builder">
+        <span class="page-builder-dock-loading-button"><EditIcon /></span>
       </div>
     </div>
   );
@@ -113,11 +126,16 @@ function staticPathnameForPageFile(filePath: string): string | null {
 }
 
 function readBuilderState(): PersistedBuilderState {
-  const fallback: PersistedBuilderState = { panelMode: "code", panelWidth: 480, fileDialogPath: null, veiTarget: null };
+  // `panelMode: null` - entering the builder opens the DOCK only. The code
+  // editor used to be the fresh-session default, which meant every arrival
+  // from the site's Edit button landed in a half-covered preview nobody had
+  // asked to edit the source of. A panel the admin opened themselves is
+  // still restored below, across a reload of the same tab.
+  const fallback: PersistedBuilderState = { panelMode: null, panelWidth: 480, fileDialogPath: null, veiTarget: null };
   try {
     const value = JSON.parse(sessionStorage.getItem(BUILDER_STATE_KEY) ?? "null") as Partial<PersistedBuilderState> | null;
     if (!value) return fallback;
-    const panelMode = value.panelMode === "vei" || value.panelMode === "code" || value.panelMode === null ? value.panelMode : "code";
+    const panelMode = value.panelMode === "vei" || value.panelMode === "code" ? value.panelMode : null;
     return {
       panelMode,
       panelWidth: typeof value.panelWidth === "number" ? value.panelWidth : 480,
@@ -1149,7 +1167,10 @@ export default function StandalonePreview() {
 
       {!previewReady && <PageBuilderLoadingLayer pathname={pathname} />}
 
-      {!review && <Toolbar
+      {/* Held back until the preview is ready so the dock's mount animation
+        * (`Dock.tsx`) plays where the loading circle above just was, instead
+        * of behind the loading layer that still covers it. */}
+      {!review && previewReady && <Toolbar
         // Back to the public page being previewed - the return leg of
         // `apps/edit-launcher.ts`'s "Edit" button, which is how a signed-in
         // admin gets here from the site in the first place.
