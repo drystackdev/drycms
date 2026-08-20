@@ -194,6 +194,7 @@ export default function PageBuilder() {
     remoteUpdateNotice,
     dismissRemoteUpdateNotice,
     remoteDiverged,
+    setPollPaused,
   } = usePageBuilderSource(path, canEnterBuilder);
   const [origin] = useState(() => window.location.origin);
   const [historyPath, setHistoryPath] = useState<string | null | undefined>(undefined);
@@ -878,6 +879,11 @@ export default function StandalonePreview() {
     const totalWrites = drafts.length;
     let completedWrites = 0;
     setSaveProgress({ percent: 0, label: "Preparing changes…" });
+    // The background remote poll shares `withGitLock` with this flow's own
+    // commit/push - left running, it would queue behind (or redundantly
+    // re-fetch) the exact commit this function is about to push itself,
+    // every 5s for as long as the build takes.
+    setPollPaused(true);
     try {
       for (const draft of drafts) {
         const type = types.find((candidate) => candidate.name === draft.typeSlug);
@@ -982,6 +988,8 @@ export default function StandalonePreview() {
     } catch (error) {
       setSaveProgress(null);
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : "Unknown error" });
+    } finally {
+      setPollPaused(false);
     }
   }
 

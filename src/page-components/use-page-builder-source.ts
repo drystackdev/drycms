@@ -137,7 +137,7 @@ export interface UsePageBuilderSourceResult {
   deleteFile: (path: string) => Promise<void>;
   /** Re-reads the whole tree from storage, discarding local edits. */
   reload: () => Promise<void>;
-  /** Set once a background poll (every 5s, git only) auto-pulls new commits
+  /** Set once a background poll (every 30s, git only) auto-pulls new commits
    * from the remote - the paths it pulled, for a one-time "here's what
    * changed" dialog. `null` once dismissed. */
   remoteUpdateNotice: { changedPaths: string[] } | null;
@@ -145,6 +145,10 @@ export interface UsePageBuilderSourceResult {
   /** The remote has moved but this working copy has uncommitted edits, so the
    * background poll could not auto-pull - a soft warning, not a block. */
   remoteDiverged: boolean;
+  /** Suspends the background remote poll - `saveAndPublish` holds this while
+   * it commits/pushes/builds, so the poll never contends with (or redoes)
+   * that same work. */
+  setPollPaused: (paused: boolean) => void;
 }
 
 export function usePageBuilderSource(adminPath: string, enabled = true): UsePageBuilderSourceResult {
@@ -161,6 +165,13 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   const editBaseByPathRef = useRef<Record<string, string>>({});
   /** Debounced writes still in flight, keyed by path (see `updateSource`). */
   const pendingWritesRef = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; code: string; done: Promise<void> }>());
+  /** Set while `saveAndPublish` (`PageBuilder.tsx`) is committing/pushing/
+   * building - a ref, not state, since nothing needs to re-render on it. The
+   * background remote poll (below) shares `withGitLock` with that flow's own
+   * git calls and would otherwise queue behind them (or redundantly re-fetch
+   * the commit `saveAndPublish` itself just pushed) every 30s for as long as a
+   * build runs - pure added latency with nothing to show for it. */
+  const pollPausedRef = useRef(false);
   const [autosaving, setAutosaving] = useState(false);
   /** See `UNPUBLISHED_KEY` - only maintained when there is no repository; with
    * one, `gitState.dirty` is the authoritative answer and this stays empty. */
@@ -329,10 +340,10 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     let cancelled = false;
     let polling = false;
     const poll = async () => {
-      if (polling) return;
+      if (polling || pollPausedRef.current) return;
       // Only once a working copy actually exists: "cloning" hasn't produced
       // one yet, and "error" (a broken PAT, a repo that no longer resolves)
-      // won't be fixed by retrying the same request every 5s - the admin has
+      // won't be fixed by retrying the same request every 30s - the admin has
       // to fix the config, at which point a full reload re-clones anyway.
       const phase = gitState.value.phase;
       if (phase !== "ready" && phase !== "diverged") return;
@@ -344,7 +355,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         // A cheap `info/refs` GET first - "has the branch tip moved at all".
         // Only when it has is `ensureRepoReady`'s full fetch-and-fast-forward
         // (refs AND a pack transfer) worth paying for; otherwise an idle tab
-        // would run that every 5 seconds for as long as it stays open.
+        // would run that every 30 seconds for as long as it stays open.
         const { remoteHeadSha } = await import("./git/git-repo.js");
         const remoteSha = await remoteHeadSha(adminPath, branch);
         if (cancelled || !remoteSha || remoteSha === before) return;
@@ -370,13 +381,13 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
         setPendingRemotePaths((previous) => new Set([...previous, ...changed]));
         setRemoteUpdateNotice({ changedPaths: changed });
       } catch {
-        // A missed poll just tries again in 5s - not worth interrupting an
+        // A missed poll just tries again in 30s - not worth interrupting an
         // edit session for.
       } finally {
         polling = false;
       }
     };
-    const timer = window.setInterval(() => void poll(), 5_000);
+    const timer = window.setInterval(() => void poll(), 30_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -384,6 +395,9 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   }, [enabled, usingGit, adminPath]);
 
   const dismissRemoteUpdateNotice = useCallback(() => setRemoteUpdateNotice(null), []);
+  const setPollPaused = useCallback((paused: boolean) => {
+    pollPausedRef.current = paused;
+  }, []);
 
   /**
    * Typing persists itself - there is no Save button anywhere in Page
@@ -753,5 +767,6 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
     remoteUpdateNotice,
     dismissRemoteUpdateNotice,
     remoteDiverged,
+    setPollPaused,
   };
 }
