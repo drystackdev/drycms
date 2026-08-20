@@ -135,6 +135,13 @@ export default function PreviewFrame(props: PreviewFrameProps) {
       } catch (err) {
         if (seq !== seqRef.current) return;
         setError(err instanceof Error ? err.message : "Preview failed.");
+        // A build failure still means the FIRST attempt has settled - the
+        // error banner already reports it, so the loading overlay shouldn't
+        // stay up forever waiting for a success that may never come (found
+        // live: a broken import in layout.tsx left `previewReady` stuck
+        // `false`, blocking every click in Page Builder's own chrome, not
+        // just the preview).
+        props.onReady();
       } finally {
         if (seq === seqRef.current) setLoading(false);
       }
