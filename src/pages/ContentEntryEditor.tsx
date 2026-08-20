@@ -914,16 +914,14 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 <HistoryIcon /> History
               </button>
             )}
-            {!isNew && isDirty && (
-              <button
-                type="button"
-                class="outline"
-                onClick={() => setShowPreview(true)}
-              >
-                <PreviewIcon /> Preview
-                <span class="badge sm secondary">{previewDiffs.length}</span>
-              </button>
-            )}
+            {/* No Preview button here, on purpose: this panel sits beside
+             * Page Builder's live preview, which already shows the pending
+             * edits as they are typed (`vei:input` -> `PreviewPatchDetail`),
+             * so a diff dialog inside the narrow iframe only duplicated it.
+             * `EntryPreviewDialog` still mounts below - it just has no
+             * trigger in this mode, which also means its per-field Reset is
+             * out of reach here (the whole-entry "Clear all" below still
+             * isn't). Same reasoning as the Save button further down. */}
             {isNew && isDirty && (
               <button
                 type="button"

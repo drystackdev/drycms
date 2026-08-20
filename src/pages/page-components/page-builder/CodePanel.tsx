@@ -30,8 +30,9 @@ export interface CodePanelProps {
   onOpenHistory?: () => void;
   /** Page Builder's hover/cursor sync with the preview
    * (`status/page-builder-code-preview-sync.md`) - passed straight through
-   * to `Editer`. */
-  highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number } | null;
+   * to `Editer`. `reveal` (set only for a click, never a hover) is what
+   * scrolls the editor to the range. */
+  highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number; reveal?: boolean } | null;
   onCursorMove?: (loc: { line: number; column: number }) => void;
   /** Ctrl/Cmd+click a JSX component tag - passed straight through to `Editer`. */
   onGoToDefinition?: (identifier: string) => void;

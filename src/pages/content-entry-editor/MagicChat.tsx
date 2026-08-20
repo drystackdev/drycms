@@ -251,7 +251,9 @@ export interface MagicChatProps {
   canUse: boolean;
   /** The Visual Editing Interface's dialog iframe skips `DryLayout` (see
    * `BuilderBridgeFrame.tsx`) and shifts `Toaster` to `bottom-start` to avoid its own
-   * dock - the bubble/panel mirror that same shift so they don't collide. */
+   * dock - the panel mirrors that same shift so they don't collide. Also
+   * suppresses the bubble entirely (see its render below): the Page Builder
+   * page hosting this iframe already has its own Magic bubble. */
   veiFrame?: boolean;
   /** Lifted up to `ContentEntryEditor.tsx` (`status/richtext-rewrite-shared-chat.md`)
    * so it loads as soon as the entry editor mounts, not just after the
@@ -1126,8 +1128,16 @@ export default function MagicChat({
 
       {/* Hidden while the panel itself is open - the panel already IS the
        * "chat is here" surface (its own "-" gets back to bubble-only), so
-       * showing both at once just duplicated the same affordance. */}
-      {!open && (
+       * showing both at once just duplicated the same affordance.
+       *
+       * Also hidden inside Page Builder's VEI iframe: that page already
+       * carries its own Magic bubble (`page-builder/PageSourceMagicChat.tsx`,
+       * mounted by `PageBuilder.tsx`), so this one only stacked a second,
+       * duplicate bubble into the same corner. The component still mounts -
+       * `rewriteFnRef` (RichText's "Rewrite selection") and the panel itself
+       * are unaffected, the panel just opens from a rewrite rather than from
+       * a bubble click while in the frame. */}
+      {!open && !veiFrame && (
         <button
           type="button"
           class={`magic-chat-bubble${badgeSpinning ? " busy" : ""}`}

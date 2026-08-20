@@ -329,6 +329,12 @@ export default function PageBuilder() {
    * (`status/page-builder-code-preview-sync.md`) - not persisted, both reset
    * to `null` on every load/navigation like `bubbleRoot`. */
   const [inspectorHoverLoc, setInspectorHoverLoc] = useState<PreviewInspectorLoc | null>(null);
+  /** The loc of the LAST inspector click, kept separate from the hover loc
+   * above because only a click may scroll the code editor (`Editer`'s
+   * `highlightLoc.reveal`). Hovering still highlights, but sweeping the
+   * pointer across the preview must never yank the editor around. Cleared
+   * as soon as the hover moves on to another element. */
+  const [inspectorRevealLoc, setInspectorRevealLoc] = useState<PreviewInspectorLoc | null>(null);
   const [codeCursor, setCodeCursor] = useState<{ line: number; column: number } | null>(null);
   const [contentRevision, setContentRevision] = useState(0);
   const [veiOverrides, setVeiOverrides] = useState<DryVeiOverrideMap>({});
@@ -474,8 +480,21 @@ export default function PageBuilder() {
   const codePanelOpen = canEditCode && panelMode === "code" && !!openFilePath;
   // Hover preview -> highlight code: only when the hovered element's OWN
   // file is the one currently open (never auto-switches tabs - matches what
-  // was asked for).
-  const highlightLoc = codePanelOpen && inspectorHoverLoc && inspectorHoverLoc.path === openFilePath ? inspectorHoverLoc : null;
+  // was asked for). A clicked loc takes precedence and is the only one that
+  // carries `reveal`, i.e. the only one that scrolls the editor.
+  //
+  // `useMemo`'d for the same reason `previewCursorLoc` below is: this builds
+  // a new object literal, and `Editer`'s highlight effect keys on reference,
+  // so an unmemoized one would re-run (and re-scroll) on every unrelated
+  // re-render.
+  const activeInspectorLoc = inspectorRevealLoc ?? inspectorHoverLoc;
+  const highlightLoc = useMemo(
+    () =>
+      codePanelOpen && activeInspectorLoc && activeInspectorLoc.path === openFilePath
+        ? { ...activeInspectorLoc, reveal: activeInspectorLoc === inspectorRevealLoc }
+        : null,
+    [codePanelOpen, activeInspectorLoc, inspectorRevealLoc, openFilePath],
+  );
   // Code cursor -> highlight preview.
   //
   // `useMemo`'d (not a plain const like `highlightLoc` above) because this
@@ -761,7 +780,17 @@ export default function StandalonePreview() {
     setOpenFilePath(loc.path);
     setPanelMode("code");
     setFileParam(loc.path);
+    // The click - not the hover that preceded it - is what asks the editor
+    // to scroll to this range (`inspectorRevealLoc`'s own comment).
+    setInspectorRevealLoc(loc);
   }, [setFileParam]);
+  /** A hover onto a DIFFERENT marked element (the bridge script only reports
+   * changes) retires the standing click target, so the next hover highlights
+   * without scrolling again. */
+  const handleInspectorHover = useCallback((loc: PreviewInspectorLoc | null) => {
+    setInspectorHoverLoc(loc);
+    setInspectorRevealLoc(null);
+  }, []);
   const handleVeiFocus = useCallback((detail: FieldFocusEventDetail) => {
     const type = allTypes?.find((candidate) => candidate.name === detail.typeSlug);
     const decodedId = detail.entryId === null ? null : decodeEntryId(detail.entryId);
@@ -1113,7 +1142,7 @@ export default function StandalonePreview() {
         contentRevision={contentRevision}
         veiOverrides={veiOverrides}
         inspectorEnabled={codePanelOpen}
-        onInspectorHover={setInspectorHoverLoc}
+        onInspectorHover={handleInspectorHover}
         onInspectorClick={handleInspectorClick}
         cursorLoc={previewCursorLoc}
       />

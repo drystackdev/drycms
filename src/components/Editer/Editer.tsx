@@ -94,10 +94,13 @@ export interface EditerProps {
   readOnly?: boolean;
   /** Page Builder's "hover preview -> highlight code" direction
    * (`status/page-builder-code-preview-sync.md`) - a whole-line highlight
-   * decoration on `[startLine, endLine]`, scrolled into view. `"tsx"`
-   * language only (there's no preview to sync a `"css"`/`"md"` file
-   * against); ignored otherwise. Live-updatable, `null` clears it. */
-  highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number } | null;
+   * decoration on `[startLine, endLine]`. `"tsx"` language only (there's no
+   * preview to sync a `"css"`/`"md"` file against); ignored otherwise.
+   * Live-updatable, `null` clears it. `reveal` additionally scrolls the
+   * range into view - deliberately opt-in, so merely sweeping the pointer
+   * across the preview never yanks the editor around; only a real click
+   * (which is the admin asking "take me to this code") does. */
+  highlightLoc?: { startLine: number; startCol: number; endLine: number; endCol: number; reveal?: boolean } | null;
   /** Fires on every cursor/selection change - the reverse direction, "code
    * cursor -> highlight preview". `"tsx"` language only, same reasoning as
    * `highlightLoc`. Not debounced here - the caller already only acts on it
@@ -384,10 +387,10 @@ function clearInspectorHighlightLines(editor: PrismEditor): void {
   for (let i = 1; i < editor.lines.length; i++) editor.lines[i]?.classList.remove(INSPECTOR_HIGHLIGHT_CLASS);
 }
 
-function applyInspectorHighlight(editor: PrismEditor, loc: { startLine: number; endLine: number }): void {
+function applyInspectorHighlight(editor: PrismEditor, loc: { startLine: number; endLine: number; reveal?: boolean }): void {
   clearInspectorHighlightLines(editor);
   for (let line = loc.startLine; line <= loc.endLine; line++) editor.lines[line]?.classList.add(INSPECTOR_HIGHLIGHT_CLASS);
-  editor.lines[loc.startLine]?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (loc.reveal) editor.lines[loc.startLine]?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 /**

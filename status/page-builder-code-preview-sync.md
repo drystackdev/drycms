@@ -208,3 +208,76 @@ process khác) sau khi gây sự cố 3 lần trong 1 phiên.
 Bắt đầu và hoàn thành 2026-08-18, làm liên tục theo yêu cầu user (không
 dừng để hỏi giữa chừng), gồm cả yêu cầu bổ sung (bugfix, shift, đổi luồng
 mở file) phát sinh trong lúc QA.
+
+## Bổ sung 2026-08-20 - hover không còn tự scroll code
+
+Yêu cầu user: "tại preview khi hover vào 1 thành phần không tự ý scroll đến
+file code, khi click vào mới scroll đến".
+
+Trước đó `Editer`'s `applyInspectorHighlight` luôn gọi `scrollIntoView` cho
+mọi `highlightLoc`, mà `highlightLoc` được nuôi bằng hover - nên chỉ quét
+chuột ngang qua preview là editor bị giật liên tục.
+
+Sửa:
+
+- `Editer.tsx`: `highlightLoc` thêm cờ `reveal?: boolean`; chỉ khi
+  `reveal` mới `scrollIntoView`. Highlight (tô nền dòng) vẫn chạy cho cả
+  hover lẫn click - phần đó không đổi.
+- `CodePanel.tsx`: chỉ nới kiểu prop, truyền thẳng như cũ.
+- `PageBuilder.tsx`: thêm state `inspectorRevealLoc`, set trong
+  `handleInspectorClick` (click preview -> mở file). `highlightLoc` giờ là
+  `useMemo` từ `inspectorRevealLoc ?? inspectorHoverLoc`, `reveal` chỉ true
+  khi loc đang dùng là loc của click. Bọc `onInspectorHover` bằng
+  `handleInspectorHover` để hover sang phần tử KHÁC thì xoá
+  `inspectorRevealLoc` (bridge script chỉ báo hover khi đổi phần tử, nên
+  click xong không bị hover kế tiếp xoá nhầm).
+  `useMemo` là bắt buộc ở đây, cùng lý do đã ghi cho `previewCursorLoc`:
+  effect của `Editer` key theo reference, object literal mới mỗi render sẽ
+  scroll lại liên tục.
+
+## Bổ sung 2026-08-20 - bỏ bubble Magic trùng trong iframe VEI
+
+Yêu cầu user: magic chat của VEI không cần hiện trong iframe, vì trang
+page-builder đã có sẵn nút đó rồi - hiện thêm là dư ra 1 nút.
+
+`MagicChat.tsx` (entry editor) giờ ẩn `.magic-chat-bubble` khi
+`veiFrame === true` (`?_vei=1`, tức chỉ trong iframe của
+`VeiEntryFrame.tsx`). Component vẫn mount nguyên vẹn - `rewriteFnRef`
+("Rewrite selection" của RichText) và panel không đổi, panel chỉ mở từ
+rewrite thay vì từ click bubble khi đang ở trong frame. Bubble của chính
+trang page-builder (`PageSourceMagicChat`) không liên quan, vẫn hiện.
+
+Bổ sung cùng ngày theo yêu cầu tiếp theo của user ("ẩn luôn nút preview ở
+veiFrame"): nút **Preview** (diff dialog) trong header cục bộ của
+`ContentEntryEditor.tsx` cũng ẩn khi `veiFrame` - panel này nằm ngay cạnh
+preview live của Page Builder, vốn đã hiện đúng những sửa đổi đang gõ
+(`vei:input` -> `PreviewPatchDetail`), nên dialog diff trong iframe hẹp chỉ
+là trùng lặp. Cùng lý do với nút Save vốn đã ẩn sẵn ở đó từ trước.
+`EntryPreviewDialog` vẫn mount, chỉ là không còn trigger trong chế độ này -
+kéo theo Reset-từng-field (chỉ có trong dialog đó) không với tới được khi ở
+trong iframe; "Clear all" cho entry mới vẫn còn.
+
+Verify: `bun run typecheck` sạch, `bun run test` 1450 pass (150 files).
+
+### Không verify được bằng e2e (lỗi có sẵn, không do thay đổi này)
+
+Định chạy `e2e/page-builder*.spec.ts` để kiểm chứng thì phát hiện toàn bộ
+nhóm spec này ĐANG FAIL sẵn trên master sạch: `openBuilder` timeout chờ
+`.dock`, trang chỉ hiện toast "HTTP Error: 401 Unauthorized". Đã stash hết
+sửa đổi local và chạy lại 1 test → vẫn fail y hệt, nên không liên quan
+thay đổi ở trên.
+
+Root cause (drive Chromium thật vào `bun scripts/e2e-server.mjs` và log mọi
+response >= 400): request fail là
+`GET /dry/api/git/info/refs?service=git-upload-pack`. Page Builder đang ở
+chế độ GIT chứ không phải chế độ HTTP pages-source như comment đầu
+`e2e/page-builder-utils.ts` mô tả - `usingGit` = `gitPhase !== "unconfigured"`
+(`use-page-builder-source.ts:200`), mà git state lấy từ singleton
+`githubSync` trong DB, đúng cái mà `e2e/global-setup.ts` PUT vào (repo
+`e2e-org/e2e-repo` + token giả) chỉ để bỏ qua redirect `/dry/github-setup`.
+Việc `scripts/e2e-server.mjs` blank `GITHUB_REPO`/`GITHUB_BRANCH`/
+`GITHUB_PAT_KEY` không còn tắt được git nữa → builder đi clone repo giả →
+401 → app không mount.
+
+Chưa sửa (ngoài phạm vi yêu cầu). Muốn e2e nhóm này sống lại thì phải tách
+"dismiss gate github-setup" khỏi "bật git mode" trong global-setup.
