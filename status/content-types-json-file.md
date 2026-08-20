@@ -144,11 +144,17 @@ làm hỏng commit code.
   nó là optimistic lock của project khác); giống hệt -> bỏ qua (báo
   `unchanged`). Nhận cả file export đầy đủ lẫn mảng `ContentTypeDefinition[]`
   viết tay. Import KHÔNG xoá type thừa.
-- UI: thêm card thứ 3 **"Content types"** ở trang Backup
-  (`src/pages/Backup.tsx`, Super Admin), nút "Download JSON" +
-  "Import from file..." + ConfirmDialog (không cần gõ RESTORE vì không phá
-  gì), xong thì `hydrateContentTypeDraftIndex()` để badge draft cập nhật
-  ngay. Client API: `content-types/schema-document-http-api.ts`.
+- UI ở **2 chỗ**, dùng chung 1 client API
+  (`content-types/schema-document-http-api.ts`) và 1 helper tải file
+  (`lib/download.ts`, tách ra từ `Backup.tsx`):
+  - Trang **Backup** (`src/pages/Backup.tsx`, Super Admin): card thứ 3
+    "Content types" - "Download JSON" + "Import from file...".
+  - Trang **Content Types** (`src/pages/BuilderContentType.tsx`,
+    `/dry/content-types`): 2 nút outline "Download JSON" + "Upload JSON" ngay
+    cạnh "Apply Builder" ở page header - đây mới là chỗ người ta thật sự làm
+    việc với schema.
+  Cả 2 đều mở ConfirmDialog (không cần gõ RESTORE vì không phá gì), xong thì
+  `hydrateContentTypeDraftIndex()` để draft/badge hiện ra ngay.
 - Sửa thêm: khi import `metadata` cũ, `revision` nối tiếp từ `_versions` cũ
   thay vì reset về 0 (tránh client giữ data-version cũ hiểu nhầm là chưa
   đổi).

@@ -14,10 +14,18 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import { diffContentType } from "../content-types/draft-diff.js";
 import {
   drafts as draftsSignal,
+  hydrateContentTypeDraftIndex,
   syncAiContentTypeDrafts,
   resolveAiDraftConflict,
   type AiDraftConflict,
 } from "../content-types/draft-store.js";
+import {
+  SCHEMA_DOCUMENT_EXPORT_ENDPOINT,
+  importSchemaDocument,
+} from "../content-types/schema-document-http-api.js";
+import { downloadBackup } from "../page-components/backup-http-api.js";
+import { triggerDownload } from "../lib/download.js";
+import { toast } from "../components/Toast.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import { fieldTypes } from "../content-types/field-registry.js";
 import { relationMirrorFieldsFor } from "../content-types/system-fields.js";
@@ -29,7 +37,7 @@ import {
   fieldTypeColors,
   fieldTypeIcons,
 } from "../components/fields/field-type-icons.js";
-import { PlusIcon, UploadIcon } from "../components/icons/index.js";
+import { ExportIcon, PlusIcon, UploadIcon } from "../components/icons/index.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
@@ -376,6 +384,14 @@ export default function BuilderContentType() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingKind, setAddingKind] = useState<ContentTypeKind | null>(null);
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  /** Download/upload of `content/types.json` - the same pair the Backup page
+   * offers, here because this is where someone actually works on the schema
+   * (`status/content-types-json-file.md`). Upload only ever STAGES drafts;
+   * "Apply Builder" is still what migrates a table. */
+  const [downloadingJson, setDownloadingJson] = useState(false);
+  const [importingJson, setImportingJson] = useState(false);
+  const [pendingJsonImport, setPendingJsonImport] = useState<File | null>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const [applyBuilderId, setApplyBuilderId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const api = useMemo(
@@ -500,6 +516,56 @@ export default function BuilderContentType() {
     setOpenDraftId(undefined);
   }, [openDraftId, definitions, aiDraftsSynced]);
 
+  async function handleDownloadJson() {
+    setDownloadingJson(true);
+    try {
+      const result = await downloadBackup(SCHEMA_DOCUMENT_EXPORT_ENDPOINT);
+      if (!result.ok || !result.blob) {
+        toast.add({ type: "error", title: "Export failed", description: result.reason });
+        return;
+      }
+      triggerDownload(result.blob, result.filename ?? "drycms-content-types.json");
+      toast.add({ type: "success", title: "Content types exported." });
+    } finally {
+      setDownloadingJson(false);
+    }
+  }
+
+  function pickJsonImportFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    // Cleared right away so picking the SAME file twice still fires `change`.
+    input.value = "";
+    if (file) setPendingJsonImport(file);
+  }
+
+  async function handleConfirmJsonImport() {
+    if (!pendingJsonImport) return;
+    setImportingJson(true);
+    try {
+      const result = await importSchemaDocument(pendingJsonImport);
+      if (!result.ok) {
+        toast.add({ type: "error", title: "Import failed", description: result.reason });
+        return;
+      }
+      setPendingJsonImport(null);
+      const staged = (result.added?.length ?? 0) + (result.updated?.length ?? 0);
+      // This page renders `draftsSignal` directly, so the imported drafts
+      // (and the "Apply Builder" button) appear as soon as it re-hydrates.
+      await hydrateContentTypeDraftIndex();
+      toast.add({
+        type: staged > 0 ? "success" : "info",
+        title: staged > 0 ? `${staged} content type${staged === 1 ? "" : "s"} staged as drafts` : "Nothing to stage",
+        description:
+          staged > 0
+            ? `Review them here, then run "Apply Builder" to migrate. ${result.unchanged?.length ?? 0} already matched.`
+            : "Every content type in that file already matches this project.",
+      });
+    } finally {
+      setImportingJson(false);
+    }
+  }
+
   if (!canAccess(CONTENT_TYPES_RESOURCE_ID, "setting")) {
     return <span class="error">You don't have permission to access Content Types.</span>;
   }
@@ -515,6 +581,25 @@ export default function BuilderContentType() {
           </p>
         </div>
         <div class="row">
+          <button
+            type="button"
+            class="outline"
+            disabled={downloadingJson}
+            aria-busy={downloadingJson || undefined}
+            onClick={() => void handleDownloadJson()}
+          >
+            <ExportIcon /> Download JSON
+          </button>
+          <input
+            ref={jsonFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={pickJsonImportFile}
+          />
+          <button type="button" class="outline" onClick={() => jsonFileInputRef.current?.click()}>
+            <UploadIcon /> Upload JSON
+          </button>
           {pendingCount > 0 && (
             <button
               type="button"
@@ -596,6 +681,23 @@ export default function BuilderContentType() {
           setAddingKind(null);
         }}
       />
+      <ConfirmDialog
+        open={!!pendingJsonImport}
+        title="Upload content types"
+        busy={importingJson}
+        confirmLabel="Stage as drafts"
+        onConfirm={() => void handleConfirmJsonImport()}
+        onCancel={() => {
+          if (!importingJson) setPendingJsonImport(null);
+        }}
+        message={
+          <p>
+            Every content type in <strong>{pendingJsonImport?.name}</strong> is staged as a pending draft, replacing any draft
+            already staged for the same type. No table is created, changed or dropped until you run "Apply Builder".
+          </p>
+        }
+      />
+
       <ApplyBuildDialog
         open={applyDialogOpen}
         contentTypeId={applyBuilderId ?? undefined}

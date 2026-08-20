@@ -11,6 +11,7 @@ import {
 } from "../content-types/schema-document-http-api.js";
 import { hydrateContentTypeDraftIndex } from "../content-types/draft-store.js";
 import { downloadStorageBackup, restoreStorageBackup } from "../page-components/storage-backup-http-api.js";
+import { triggerDownload } from "../lib/download.js";
 import { authState } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -21,17 +22,6 @@ const STORAGE_ENDPOINT = `${path}/api/storage-backup`;
 interface PendingRestore {
   kind: "database" | "storage";
   file: File;
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 /**
