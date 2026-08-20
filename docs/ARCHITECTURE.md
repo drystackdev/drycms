@@ -1,7 +1,7 @@
 # Architecture
 
-drycms is a standalone Preact + Vite + Node app - no Astro, no separate
-library package (see `AGENTS.md` for the file layout and dev commands). This
+drycms is a standalone Preact + Vite + Node app - no separate library
+package (see `AGENTS.md` for the file layout and dev commands). This
 doc is about how the pieces fit together and why; read it before touching
 `src/server/**`, `src/content-types/**`, `src/storage/**`, or
 `src/components/RichTextField/**`.

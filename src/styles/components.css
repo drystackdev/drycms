@@ -7977,23 +7977,30 @@
       }
     }
 
+    /* Non-scrolling OverlayScrollbars host - scroll/overflow is managed on
+     * `.page-builder-save-dialog-body-viewport` below via the hook's
+     * `viewportRef` opt-in, not on this element (same host/viewport split as
+     * `.magic-chat-messages`/`.magic-chat-messages-viewport`). */
     .page-builder-save-dialog-body {
-      display: flex;
-      flex-direction: column;
       flex: 1 1 auto;
       min-height: 0;
-      gap: 1rem;
-      overflow-y: auto;
-      overscroll-behavior-y: contain;
-      scrollbar-gutter: stable;
       margin-inline: -1rem;
       padding-inline: 1.25rem;
     }
 
-    .page-builder-save-dialog-body > [data-overlayscrollbars-viewport] {
+    /* The real scrolling element AND the direct flex parent of
+     * `.page-builder-save-group` - kept a genuine DOM node the library
+     * doesn't relocate children out of (see `useOverlayScrollbars`'s
+     * `viewportRef` doc comment); `display: flex` here MUST stay directly on
+     * the element OverlayScrollbars manages scroll on, not on
+     * `.page-builder-save-dialog-body`, or the list collapses into the
+     * library's forced `flex-direction: row` on its next re-render (e.g.
+     * `progress` ticking during a publish). */
+    .page-builder-save-dialog-body-viewport {
       display: flex;
       flex-direction: column;
       gap: 1rem;
+      overscroll-behavior-y: contain;
     }
 
     .dialog-title {

@@ -139,7 +139,3 @@ specifically re-checking whenever relevant code changes:
 - A "header" child inside a `display: grid` container that becomes
   multi-column at a breakpoint needs `grid-column: 1 / -1`, or it only spans
   one cell once the grid goes multi-column.
-- Converting an `.astro`-style scoped-style block to a `.tsx` component
-  silently drops that CSS (Preact has no scoped-style equivalent) - grep for
-  a trailing `<style>` block before deleting any legacy source file, and
-  migrate its rules into `components.css`.

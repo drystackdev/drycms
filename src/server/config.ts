@@ -4,8 +4,7 @@ import { resolveOptions } from "./options.js";
 /**
  * Resolved once at server startup (dev: when Vite's SSR module graph first
  * loads this module; prod: at process start) and reused for the lifetime of
- * the process - same "resolve once, read everywhere" contract the old
- * `virtual:drycms/*-config` Vite plugins gave each injected Astro route.
+ * the process - "resolve once, read everywhere".
  *
  * No project-level config file (there used to be a `dry.config.ts` here) -
  * `kind` is the only thing this app ever set, and it's now derived

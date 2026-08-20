@@ -8,11 +8,10 @@ import { prepare, runBatch, type D1Database } from "./d1-driver.js";
 import { ContentEngineError, type ContentEngineAdapter, type SaveBatchContext } from "./types.js";
 
 /**
- * Looks up the live `D1Database` for `option.binding` on `runtimeEnv`
- * (`context.locals.runtime.env` under `@astrojs/cloudflare` - drycms itself
- * doesn't depend on that adapter, the caller is expected to pass the right
- * object through). Unlike the sqlite engine, this can't be resolved once at
- * module scope: the binding only exists per-request.
+ * Looks up the live `D1Database` for `option.binding` on `runtimeEnv` (the
+ * Workers `env` object, passed through by the caller). Unlike the sqlite
+ * engine, this can't be resolved once at module scope: the binding only
+ * exists per-request.
  */
 /**
  * Keyed by the live binding rather than held in the adapter's own closure:

@@ -31,7 +31,7 @@ export default function SavePreviewDialog(props: {
   onClose: () => void;
 }) {
   const dialogRef = useDialogSync(props.open, props.onClose);
-  const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([props.open]);
+  const { ref: bodyScroll, viewportRef: bodyViewport } = useOverlayScrollbars<HTMLDivElement>([props.open]);
   const [draftPreview, setDraftPreview] = useState<{ draft: EntryDraftRecord; diffs: EntryFieldDiff[] } | null>(null);
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
   const typeByName = new Map(props.allTypes.map((type) => [type.name, type] as const));
@@ -70,47 +70,49 @@ export default function SavePreviewDialog(props: {
         </div>
       </header>
       <div class="under page-builder-save-dialog-body" ref={bodyScroll}>
-        <div class="page-builder-save-group">
-          <div class="row"><strong>Code files</strong><span class="badge sm secondary">{props.dirtyPaths.length}</span></div>
-          {props.dirtyPaths.length > 0 ? (
-            <ul class="page-builder-save-list">
-              {props.dirtyPaths.map((filePath) => (
-                <li key={filePath}>
-                  <div class="row">
-                    <code>{filePath}</code><span class="spacer" />
-                    <button type="button" class="ghost icon sm" title="Preview" onClick={() => props.onPreviewCode(filePath)}><PreviewIcon /></button>
-                    <button type="button" class="ghost icon sm" title="Revert" onClick={() => props.onRevertCode(filePath)}><UndoIcon /></button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : <p class="hint">No code changes.</p>}
-        </div>
-
-        <div class="page-builder-save-group">
-          <div class="row"><strong>Content entries</strong><span class="badge sm secondary">{props.drafts.length}</span></div>
-          {props.drafts.length > 0 ? (
-            <ul class="page-builder-save-list">
-              {props.drafts.map((draft) => (
-                <li key={draft.key}>
-                  <div class="row">
-                    <div><strong>{typeByName.get(draft.typeSlug)?.label ?? draft.typeSlug}</strong><div class="hint">{draft.entryId ?? "Singleton / new entry"}</div></div>
-                    <span class="spacer" />
-                    <button type="button" class="ghost icon sm" title="Preview" aria-busy={previewLoadingKey === draft.key} onClick={() => void openDraftPreview(draft)}><PreviewIcon /></button>
-                    <button type="button" class="ghost icon sm" title="Revert" onClick={() => props.onRevertDraft(draft)}><UndoIcon /></button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : <p class="hint">No content changes.</p>}
-        </div>
-
-        {props.progress && (
-          <div class="stack page-builder-save-progress" aria-live="polite">
-            <div class="row"><strong>{props.progress.label}</strong><span class="spacer" /><span>{props.progress.percent}%</span></div>
-            <progress value={props.progress.percent} max={100} />
+        <div class="page-builder-save-dialog-body-viewport" ref={bodyViewport}>
+          <div class="page-builder-save-group">
+            <div class="row"><strong>Code files</strong><span class="badge sm secondary">{props.dirtyPaths.length}</span></div>
+            {props.dirtyPaths.length > 0 ? (
+              <ul class="page-builder-save-list">
+                {props.dirtyPaths.map((filePath) => (
+                  <li key={filePath}>
+                    <div class="row">
+                      <code>{filePath}</code><span class="spacer" />
+                      <button type="button" class="ghost icon sm" title="Preview" onClick={() => props.onPreviewCode(filePath)}><PreviewIcon /></button>
+                      <button type="button" class="ghost icon sm" title="Revert" onClick={() => props.onRevertCode(filePath)}><UndoIcon /></button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : <p class="hint">No code changes.</p>}
           </div>
-        )}
+
+          <div class="page-builder-save-group">
+            <div class="row"><strong>Content entries</strong><span class="badge sm secondary">{props.drafts.length}</span></div>
+            {props.drafts.length > 0 ? (
+              <ul class="page-builder-save-list">
+                {props.drafts.map((draft) => (
+                  <li key={draft.key}>
+                    <div class="row">
+                      <div><strong>{typeByName.get(draft.typeSlug)?.label ?? draft.typeSlug}</strong><div class="hint">{draft.entryId ?? "Singleton / new entry"}</div></div>
+                      <span class="spacer" />
+                      <button type="button" class="ghost icon sm" title="Preview" aria-busy={previewLoadingKey === draft.key} onClick={() => void openDraftPreview(draft)}><PreviewIcon /></button>
+                      <button type="button" class="ghost icon sm" title="Revert" onClick={() => props.onRevertDraft(draft)}><UndoIcon /></button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : <p class="hint">No content changes.</p>}
+          </div>
+
+          {props.progress && (
+            <div class="stack page-builder-save-progress" aria-live="polite">
+              <div class="row"><strong>{props.progress.label}</strong><span class="spacer" /><span>{props.progress.percent}%</span></div>
+              <progress value={props.progress.percent} max={100} />
+            </div>
+          )}
+        </div>
       </div>
       <footer>
         <button type="button" class="outline" disabled={props.progress !== null} onClick={props.onClose}>Cancel</button>

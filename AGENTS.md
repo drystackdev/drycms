@@ -8,9 +8,9 @@ file in isolation.
 
 ## Layout
 
-drycms is a standalone Preact app - no Astro, no separate library package.
+drycms is a standalone Preact app - no separate library package.
 `packages/drycms` no longer exists; everything lives directly under `src/` at
-the repo root (see `status/remove-astro.md` for the migration this replaced).
+the repo root.
 
 - `src/` - the whole app: Preact components/pages/routers, plus `src/server/`
   (the API route handlers, config resolution, and adapters).

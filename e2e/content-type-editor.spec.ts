@@ -74,9 +74,9 @@ async function addTextField(page: Page, label: string): Promise<void> {
 }
 
 /** Deletes via `fetch()` run inside the page itself (not Playwright's
- * out-of-process `page.request`) - Astro's CSRF check rejects cross-origin
- * DELETEs, and `page.request` doesn't carry the real page origin the way an
- * in-page `fetch()` does. */
+ * out-of-process `page.request`) - the app's own CSRF check (`server/csrf.ts`)
+ * rejects cross-origin DELETEs, and `page.request` doesn't carry the real
+ * page origin the way an in-page `fetch()` does. */
 async function deleteContentType(page: Page, id: string): Promise<void> {
   await page.evaluate(
     (deleteId) => fetch(`/dry/api/content-types/${encodeURIComponent(deleteId)}`, { method: "DELETE" }),

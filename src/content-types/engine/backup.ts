@@ -5,9 +5,14 @@ import type { SqliteHandle } from "./sqlite-driver.js";
 
 /** Table names D1/SQLite manage for themselves - never part of a content
  * backup/restore, and dropping them would break the live connection or
- * D1's own bookkeeping. */
+ * D1's own bookkeeping. `dry_kv_*` (`kv/d1.ts`/`kv/sqlite.ts`) is this app's
+ * own auth/session/rate-limit store under `kind: "cloudflare"` - it shares
+ * this same database (`options.ts`'s `resolveKvOption` points `kv.kind:
+ * "D1"` at the identical `CONTENT_DB` binding as `content`), not a separate
+ * one, so without this exclusion a content restore/reset would silently wipe
+ * every live session, MCP/OAuth token, and login rate-limit counter too. */
 function isInternalTable(name: string): boolean {
-  return name.startsWith("sqlite_") || name.startsWith("_cf_") || name === "d1_migrations";
+  return name.startsWith("sqlite_") || name.startsWith("_cf_") || name === "d1_migrations" || name.startsWith("dry_kv_");
 }
 
 /**

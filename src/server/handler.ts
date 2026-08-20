@@ -67,8 +67,7 @@ function secureResponse(response: Response, request?: Request): Response {
 }
 
 /**
- * Direct replacement for the 6 `injectRoute` calls the old Astro integration
- * made - one router keyed by the path segment right after `${path}/api/`,
+ * One router keyed by the path segment right after `${path}/api/`,
  * dispatching by HTTP method within it. `content-types` vs `content` matters
  * here only as distinct map keys (an exact segment match, not a prefix
  * match), so the two never collide despite one being a prefix of the other.
@@ -139,10 +138,10 @@ export function isApiRequest(pathname: string): boolean {
 }
 
 /**
- * The whole server-side API surface as one Fetch-API-shaped function. `env`
- * stands in for Astro's `context.locals.runtime.env` - the Node adapter has
- * nothing to put there (`{}`), a future Workers adapter passes the real
- * `env` argument from `fetch(request, env, ctx)` straight through.
+ * The whole server-side API surface as one Fetch-API-shaped function. The
+ * Node adapter has nothing to put in `env` (`{}`), the Workers adapter
+ * passes the real `env` argument from `fetch(request, env, ctx)` straight
+ * through.
  */
 export async function handleApiRequest(
   request: Request,

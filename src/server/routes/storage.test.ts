@@ -72,13 +72,13 @@ describe("GET /dry/api/storage/[...slug]", () => {
     expect((await response.json()).error).toBe("not_found");
   });
 
-  it("decodes a percent-encoded slug - `params.slug` from Astro is raw, not pre-decoded", async () => {
+  it("decodes a percent-encoded slug - `params.slug` is raw, not pre-decoded", async () => {
     const name = "vacation photo, July 2026.txt";
     await upload("", new File(["x"], name, { type: "text/plain" }));
 
-    // Simulates the real request Astro hands the route: the raw (still-encoded)
-    // path segment, same as what `previewUrl`/`file-manager-http-source.ts`
-    // build via `encodeURIComponent`.
+    // Simulates the real request `handler.ts` hands the route: the raw
+    // (still-encoded) path segment, same as what `previewUrl`/
+    // `file-manager-http-source.ts` build via `encodeURIComponent`.
     const response = await GET(context({ slug: encodeURIComponent(name) }));
 
     expect(response.status).toBe(200);

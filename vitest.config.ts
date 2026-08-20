@@ -7,9 +7,7 @@ import { appRouterPlugin } from "./src/server/app-router/app-router-plugin.js";
  * `e2e/**` (Playwright specs, fail immediately under vitest's `test`/
  * `expect`), the vendored `packages/Sortable-master`, and the unrelated
  * `packages/drystack` project living alongside this one. Scoping to `src/`
- * matches drycms's own test layout - same scope the old
- * `bun run --cwd packages/drycms test` had before the migration
- * (see `status/remove-astro.md`).
+ * matches drycms's own test layout.
  */
 export default defineConfig({
   // `appRouterPlugin` transforms local `pagesSourceStorage` modules and the

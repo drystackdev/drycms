@@ -46,8 +46,8 @@ const Settings = lazy(() => import("../pages/Settings.js"));
 const GithubSyncSettings = lazy(() => import("../pages/GithubSyncSettings.js"));
 const Backup = lazy(() => import("../pages/Backup.js"));
 
-/** Client-side redirect - Astro injects a single catch-all route, so the bare
- * base path and any unmatched path have to be sent to `/dashboard` here. */
+/** Client-side redirect - the bare base path and any unmatched path are sent
+ * to `/dashboard` here. */
 function Redirect({ to }: { to: string }) {
   const { route } = useLocation();
   useEffect(() => route(to, true), [to]);

@@ -23,11 +23,10 @@
  *
  * Deliberately flat (no \`&\` nesting) even though the rest of this app's
  * authored CSS uses it freely - that authoring-time nesting is flattened by
- * the Astro demo app's own CSS pipeline before it ever reaches a browser,
- * but this string is assigned as a \`<style>\` tag's raw text and parsed by
- * the browser directly at runtime with no build step in between, so it has
- * to already be in a form every target browser's CSS engine accepts
- * unprocessed.
+ * Vite's own CSS pipeline before it ever reaches a browser, but this string
+ * is assigned as a \`<style>\` tag's raw text and parsed by the browser
+ * directly at runtime with no build step in between, so it has to already
+ * be in a form every target browser's CSS engine accepts unprocessed.
  */
 
 export const richtextContentShadowStyles = `

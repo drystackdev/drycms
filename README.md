@@ -1,8 +1,8 @@
 # DryCMS
 
-A self-hosted, attribute-styled Preact CMS admin UI - no Astro, served by a
-pluggable server adapter (Node by default; Cloudflare Workers and Bun are on
-the roadmap, see `src/server/adapters/`).
+A self-hosted, attribute-styled Preact CMS admin UI, served by a pluggable
+server adapter (Node by default; Cloudflare Workers and Bun are on the
+roadmap, see `src/server/adapters/`).
 
 ```sh
 bun install
