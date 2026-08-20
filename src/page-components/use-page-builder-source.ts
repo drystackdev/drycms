@@ -336,9 +336,19 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       // to fix the config, at which point a full reload re-clones anyway.
       const phase = gitState.value.phase;
       if (phase !== "ready" && phase !== "diverged") return;
+      const before = gitState.value.head;
+      const branch = gitState.value.branch;
+      if (!before || !branch) return;
       polling = true;
       try {
-        const before = gitState.value.head;
+        // A cheap `info/refs` GET first - "has the branch tip moved at all".
+        // Only when it has is `ensureRepoReady`'s full fetch-and-fast-forward
+        // (refs AND a pack transfer) worth paying for; otherwise an idle tab
+        // would run that every 5 seconds for as long as it stays open.
+        const { remoteHeadSha } = await import("./git/git-repo.js");
+        const remoteSha = await remoteHeadSha(adminPath, branch);
+        if (cancelled || !remoteSha || remoteSha === before) return;
+
         await ensureRepoReady(adminPath);
         if (cancelled) return;
         if (gitState.value.phase === "diverged") {

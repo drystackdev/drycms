@@ -227,6 +227,21 @@ export async function restoreFromHead(path: string): Promise<string> {
   });
 }
 
+/**
+ * Cheap remote-only check: one `info/refs` GET (git's own "list remote refs"
+ * negotiation step), no `git-upload-pack` object transfer, no `fs`/`dir` -
+ * nothing local is touched. What the Page Builder 5s remote-change poll uses
+ * so an idle tab isn't running a full clone-weight `fetch` (refs AND a pack
+ * transfer negotiation) every 5 seconds for as long as it stays open; only
+ * once this reports a real change does the poll pay for `ensureCloned`'s
+ * full fetch-and-fast-forward.
+ */
+export async function remoteHeadSha(adminPath: string, branch: string): Promise<string | null> {
+  const api = await git();
+  const info = (await api.getRemoteInfo({ http, url: remoteUrl(adminPath) })) as { refs?: { heads?: Record<string, string> } };
+  return info.refs?.heads?.[branch] ?? null;
+}
+
 /** Working-copy paths that differ from HEAD - the dirty list Page Builder's
  * Save/commit UI shows. `statusMatrix`'s rows are
  * `[path, head, workdir, stage]`; anything where workdir doesn't match head
